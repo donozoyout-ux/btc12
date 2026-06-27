@@ -278,16 +278,21 @@ def api_start():
 
         log("Starting bot...")
         bot = CryptoBot()
+
+        if not bot.check_connection():
+            log("Failed to connect to Alpaca API")
+            return jsonify({"success": False, "message": "Failed to connect to Alpaca API. Check your API keys."})
+
         bot_thread = threading.Thread(target=bot.run, daemon=True)
         bot_thread.start()
 
-        time.sleep(1)
+        time.sleep(2)
         if bot.running:
             log("Bot started successfully!")
             return jsonify({"success": True, "message": "Bot started"})
         else:
             log("Bot failed to start")
-            return jsonify({"success": False, "message": "Failed to connect to Alpaca"})
+            return jsonify({"success": False, "message": "Failed to start bot"})
     except Exception as e:
         log(f"Error: {e}")
         return jsonify({"success": False, "message": str(e)})

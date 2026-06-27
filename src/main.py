@@ -1,5 +1,4 @@
 import time
-import signal
 import sys
 import json
 import threading
@@ -25,13 +24,6 @@ class CryptoBot:
         self.last_scan_time = None
         self.total_scans = 0
         self.signals_sent = 0
-
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
-
-    def _signal_handler(self, sig, frame):
-        print("\n[STOP] Shutdown signal received...")
-        self.running = False
 
     def check_connection(self) -> bool:
         try:
@@ -151,12 +143,9 @@ class CryptoBot:
         print("[START] Crypto Scanner Bot")
         print(f"[*] {len(settings.symbols)} coins | ${settings.position_size_usd}/trade | Every {settings.check_interval}s")
 
-        if not self.check_connection():
-            return
-
+        self.running = True
         self.telegram.send_status(f"Bot started - {len(settings.symbols)} coins")
 
-        self.running = True
         while self.running:
             try:
                 if not self.paused:
