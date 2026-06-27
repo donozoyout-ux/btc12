@@ -214,15 +214,8 @@ def get_status():
 
 def poll_telegram():
     global telegram_bot_handler, bot
-    from src.telegram_bot import TelegramBot
-    telegram_bot_handler = TelegramBot(settings.telegram_bot_token, settings.telegram_chat_id)
-    telegram_bot_handler.send_message("Bot hazir! Komutlar icin /help yazin.")
-    while True:
-        try:
-            telegram_bot_handler.poll_commands(bot)
-        except Exception as e:
-            print(f"[TELEGRAM HATA] {e}")
-        time.sleep(2)
+    from src.telegram_bot import init_telegram
+    telegram_bot_handler = init_telegram()
 
 
 if __name__ == "__main__":
