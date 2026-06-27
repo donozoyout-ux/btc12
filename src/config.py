@@ -23,7 +23,8 @@ class Settings:
 
     def __post_init__(self):
         if self.symbols is None:
-            symbols_str = os.getenv("SYMBOLS", "BTC/USD")
+            default = "BTC/USD,ETH/USD,SOL/USD,XRP/USD,DOGE/USD,ADA/USD,AVAX/USD,LINK/USD,DOT/USD,SUI/USD,PEPE/USD,SHIB/USD,BONK/USD,WIF/USD,TRUMP/USD,ARB/USD,OP/USD,APT/USD,POL/USD,FIL/USD,UNI/USD,AAVE/USD,LTC/USD,BCH/USD,CRV/USD,LDO/USD,GRT/USD,RENDER/USD,SUSHI/USD,BAT/USD,ONDO/USD,PAXG/USD,HYPE/USD,SKY/USD,XTZ/USD,YFI/USD,USDC/USD,USDT/USD,ATOM/USD,ICP/USD,NEAR/USD,SEI/USD,INJ/USD,TIA/USD,JUP/USD,PYTH/USD,WLD/USD,FTM/USD,SAND/USD,MANA/USD,AXS/USD,GALA/USD,NOT/USD,TURBO/USD"
+            symbols_str = os.getenv("SYMBOLS", default)
             self.symbols = [s.strip() for s in symbols_str.split(",")]
 
     # Strategy
