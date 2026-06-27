@@ -1,14 +1,14 @@
 import sys
 sys.path.insert(0, '.')
-from flask import Flask, render_template_string, jsonify, request
+from flask import Flask, render_template_string, jsonify
 import threading
 import time
 from datetime import datetime
 from src.config import settings
-from src.main import CryptoBot
+from src.main import CryptoBot, start_bot, stop_bot, pause_bot, get_status
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'crypto-bot-secret'
+app.config['SECRET_KEY'] = 'crypto-scanner-terminal'
 
 bot = None
 bot_thread = None
@@ -19,294 +19,269 @@ def log(msg):
     timestamp = datetime.now().strftime('%H:%M:%S')
     entry = f"[{timestamp}] {msg}"
     log_messages.append(entry)
-    if len(log_messages) > 100:
+    if len(log_messages) > 200:
         log_messages.pop(0)
     print(entry)
 
 
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html>
+HTML = """<!DOCTYPE html>
+<html lang="tr">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crypto Scanner Bot</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #e0e0e0; min-height: 100vh; }
-        .header { background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f3460; }
-        .header h1 { color: #00d4ff; font-size: 22px; }
-        .status-box { display: flex; align-items: center; gap: 10px; }
-        .status-dot { width: 12px; height: 12px; border-radius: 50%; }
-        .dot-running { background: #00c853; box-shadow: 0 0 10px #00c853; animation: pulse 1s infinite; }
-        .dot-stopped { background: #ff1744; }
-        .dot-paused { background: #ffc107; }
-        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
-        .controls { display: flex; gap: 10px; margin: 20px 0; flex-wrap: wrap; }
-        .btn { padding: 14px 28px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: bold; transition: all 0.3s; }
-        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-        .btn:active { transform: translateY(0); }
-        .btn-start { background: #00c853; color: #000; }
-        .btn-stop { background: #ff1744; color: #fff; }
-        .btn-pause { background: #ffc107; color: #000; }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0; }
-        .stat-card { background: #1a1a2e; border: 1px solid #0f3460; border-radius: 12px; padding: 15px; text-align: center; }
-        .stat-card h3 { color: #00d4ff; font-size: 12px; margin-bottom: 5px; text-transform: uppercase; }
-        .stat-card .value { font-size: 24px; font-weight: bold; color: #fff; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
-        .section { background: #1a1a2e; border: 1px solid #0f3460; border-radius: 12px; overflow: hidden; }
-        .section-header { padding: 12px 15px; border-bottom: 1px solid #0f3460; background: #16213e; }
-        .section-header h2 { color: #00d4ff; font-size: 14px; }
-        .section-body { padding: 10px; max-height: 350px; overflow-y: auto; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #0f3460; }
-        th { color: #00d4ff; font-size: 11px; text-transform: uppercase; }
-        .buy { color: #00c853; font-weight: bold; }
-        .sell { color: #ff1744; font-weight: bold; }
-        .hold { color: #555; }
-        .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; }
-        .badge-high { background: #00c853; color: #000; }
-        .badge-med { background: #ffc107; color: #000; }
-        .badge-low { background: #ff5722; color: #fff; }
-        .log-box { background: #0d1117; border-radius: 8px; padding: 10px; font-family: monospace; font-size: 12px; max-height: 200px; overflow-y: auto; color: #8b949e; }
-        .log-entry { padding: 2px 0; }
-        .signal-item { background: #0f3460; border-radius: 6px; padding: 10px; margin: 5px 0; }
-        .signal-coin { font-weight: bold; font-size: 16px; }
-        .no-data { color: #555; text-align: center; padding: 30px; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-        .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #000; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 5px; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        #toast { position: fixed; top: 20px; right: 20px; padding: 15px 25px; border-radius: 8px; font-weight: bold; z-index: 999; transition: all 0.3s; opacity: 0; transform: translateX(100px); }
-        #toast.show { opacity: 1; transform: translateX(0); }
-        #toast.success { background: #00c853; color: #000; }
-        #toast.error { background: #ff1744; color: #fff; }
-        #toast.info { background: #2196f3; color: #fff; }
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TERMINAL.OS - Crypto Scanner</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script>
+tailwind.config={darkMode:"class",theme:{extend:{colors:{bg:"#0a0e17",surface:"#131314",surface2:"#1c2127",surface3:"#201f20",surface4:"#2a2a2b",surface5:"#353435",border:"#45464b",text:"#e5e2e2",text2:"#c6c6cc",text3:"#909096",green:"#10b981",red:"#f43f5e",accent:"#3b82f6"},fontFamily:{body:["Inter"],mono:["JetBrains Mono"]}}}}
+</script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hidden;height:100vh}
+.glass{background:rgba(28,33,39,0.8);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.05)}
+.glow-green{box-shadow:0 0 10px rgba(16,185,129,0.15)}
+.glow-red{box-shadow:0 0 10px rgba(244,63,94,0.15)}
+.scrollbar::-webkit-scrollbar{width:4px}
+.scrollbar::-webkit-scrollbar-track{background:#0e0e0f}
+.scrollbar::-webkit-scrollbar-thumb{background:#45464b;border-radius:2px}
+@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:0.4}}
+.pulse-dot{animation:pulse-dot 1.5s infinite}
+@keyframes scan-line{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+.scan-line{animation:scan-line 2s ease-in-out infinite}
+</style>
 </head>
-<body>
-    <div id="toast"></div>
-    <div class="header">
-        <h1>Crypto Scanner Bot</h1>
-        <div class="status-box">
-            <div id="statusDot" class="status-dot dot-stopped"></div>
-            <span id="statusText" style="font-weight:bold;">STOPPED</span>
-        </div>
-    </div>
-    <div class="container">
-        <div class="controls">
-            <button id="btnStart" class="btn btn-start" onclick="startBot()">START</button>
-            <button id="btnStop" class="btn btn-stop" onclick="stopBot()">STOP</button>
-            <button id="btnPause" class="btn btn-pause" onclick="pauseBot()">PAUSE</button>
-        </div>
+<body class="flex flex-col h-screen">
+<!-- HEADER -->
+<header class="bg-surface border-b border-border/30 flex items-center justify-between px-6 h-14 shrink-0">
+<div class="flex items-center gap-4">
+<h1 class="text-lg font-bold tracking-tight text-white">CRYPTO SCANNER</h1>
+<div id="statusBadge" class="flex items-center gap-2 px-3 py-1 bg-green/10 border border-green/20 rounded text-xs font-bold text-green">
+<span class="w-2 h-2 rounded-full bg-green pulse-dot"></span>
+<span>ONLINE</span>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<button onclick="startBot()" id="btnStart" class="px-4 py-1.5 bg-green hover:bg-green/80 text-black text-xs font-bold rounded flex items-center gap-1 transition-all active:scale-95">
+<span class="material-symbols-outlined text-sm">play_arrow</span> START
+</button>
+<button onclick="stopBot()" class="px-4 py-1.5 bg-red hover:bg-red/80 text-white text-xs font-bold rounded flex items-center gap-1 transition-all active:scale-95">
+<span class="material-symbols-outlined text-sm">stop</span> STOP
+</button>
+<button onclick="pauseBot()" id="btnPause" class="px-4 py-1.5 bg-surface4 hover:bg-surface5 text-text text-xs font-bold rounded flex items-center gap-1 transition-all active:scale-95">
+<span class="material-symbols-outlined text-sm">pause</span> PAUSE
+</button>
+<button onclick="refresh()" class="px-4 py-1.5 bg-surface4 hover:bg-surface5 text-text text-xs font-bold rounded flex items-center gap-1 transition-all active:scale-95">
+<span class="material-symbols-outlined text-sm">refresh</span>
+</button>
+<div class="w-px h-6 bg-border/30 mx-1"></div>
+<span class="text-text3 text-xs font-mono" id="clock"></span>
+</div>
+</header>
+<!-- MAIN -->
+<div class="flex flex-1 overflow-hidden">
+<!-- SIDEBAR -->
+<aside class="bg-surface2 border-r border-border/30 w-16 flex flex-col items-center py-4 gap-6 shrink-0">
+<div class="p-2 bg-accent/20 rounded-lg text-accent cursor-pointer"><span class="material-symbols-outlined">list_alt</span></div>
+<div class="p-2 text-text3 hover:text-text hover:bg-surface4 rounded-lg cursor-pointer transition-all"><span class="material-symbols-outlined">show_chart</span></div>
+<div class="p-2 text-text3 hover:text-text hover:bg-surface4 rounded-lg cursor-pointer transition-all"><span class="material-symbols-outlined">notifications</span></div>
+<div class="p-2 text-text3 hover:text-text hover:bg-surface4 rounded-lg cursor-pointer transition-all"><span class="material-symbols-outlined">smart_toy</span></div>
+<div class="mt-auto p-2 text-text3 hover:text-text hover:bg-surface4 rounded-lg cursor-pointer transition-all"><span class="material-symbols-outlined">settings</span></div>
+</aside>
+<!-- CONTENT -->
+<main class="flex-1 overflow-y-auto p-6 scrollbar">
+<!-- STATS -->
+<div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+<div class="glass rounded-lg p-4 text-center">
+<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">TARAMA</div>
+<div class="text-3xl font-mono font-bold text-white" id="sTotalScans">0</div>
+</div>
+<div class="glass rounded-lg p-4 text-center">
+<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">SINYAL</div>
+<div class="text-3xl font-mono font-bold text-accent" id="sSignalsSent">0</div>
+</div>
+<div class="glass rounded-lg p-4 text-center">
+<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">COIN</div>
+<div class="text-3xl font-mono font-bold text-white" id="sCoinsCount">0</div>
+</div>
+<div class="glass rounded-lg p-4 text-center">
+<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">SON TARMA</div>
+<div class="text-3xl font-mono font-bold text-green" id="sLastScan">--:--</div>
+</div>
+<div class="glass rounded-lg p-4 text-center">
+<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">FEAR/GREED</div>
+<div class="text-3xl font-mono font-bold" id="sFearGreed">-</div>
+</div>
+</div>
+<!-- TWO COL LAYOUT -->
+<div class="grid grid-cols-12 gap-4" style="height:calc(100vh - 220px)">
+<!-- LEFT: SCAN RESULTS -->
+<div class="col-span-12 lg:col-span-8 flex flex-col">
+<div class="flex items-center justify-between mb-3">
+<h2 class="text-sm font-bold text-white">Live Scan Results</h2>
+<div class="flex gap-2">
+<button onclick="filterAction('all')" class="filter-btn px-2 py-0.5 text-[10px] font-bold border border-border/30 rounded text-text3 hover:text-white">ALL</button>
+<button onclick="filterAction('BUY')" class="filter-btn px-2 py-0.5 text-[10px] font-bold border border-green/30 rounded text-green hover:bg-green/10">BUY</button>
+<button onclick="filterAction('SELL')" class="filter-btn px-2 py-0.5 text-[10px] font-bold border border-red/30 rounded text-red hover:bg-red/10">SELL</button>
+</div>
+</div>
+<div class="glass rounded-lg overflow-hidden flex-1">
+<table class="w-full text-left">
+<thead class="bg-surface3/50 border-b border-border/20">
+<tr>
+<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3">COIN</th>
+<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3">DURUM</th>
+<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3">GUVEN</th>
+<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">FIYAT</th>
+<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">RSI</th>
+<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">HACIM</th>
+</tr>
+</thead>
+<tbody id="scanBody" class="divide-y divide-border/10 scrollbar overflow-y-auto">
+<tr><td colspan="6" class="px-4 py-12 text-center text-text3 italic">Tarama bekleniyor...</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- RIGHT: SIGNALS -->
+<div class="col-span-12 lg:col-span-4 flex flex-col">
+<div class="flex items-center justify-between mb-3">
+<h2 class="text-sm font-bold text-white">Son Sinyaller</h2>
+<span class="text-text3 text-xs" id="signalCount">0 sinyal</span>
+</div>
+<div class="flex flex-col gap-2 overflow-y-auto flex-1 scrollbar pr-1" id="signalsList">
+<div class="glass rounded-lg p-4 text-center text-text3 text-sm">Sinyal bekleniyor...</div>
+</div>
+<div class="glass rounded-lg p-3 mt-3 text-center border-dashed border-border/30">
+<div class="text-[10px] font-bold tracking-widest text-text3" id="scanStatus">Bekleniyor...</div>
+<div class="w-full bg-surface4 h-1 rounded-full mt-2 overflow-hidden">
+<div class="bg-accent h-full w-0 transition-all duration-1000" id="progressBar"></div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<script>
+var currentFilter='all';
+var progressW=0;
+setInterval(()=>{progressW=(progressW+1.66)%100;document.getElementById('progressBar').style.width=progressW+'%'},1000);
+setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleTimeString('tr-TR')},1000);
 
-        <div class="stats">
-            <div class="stat-card"><h3>Durum</h3><div class="value" id="statStatus">-</div></div>
-            <div class="stat-card"><h3>Tarama</h3><div class="value" id="statScans">0</div></div>
-            <div class="stat-card"><h3>Sinyal</h3><div class="value" id="statSignals">0</div></div>
-            <div class="stat-card"><h3>Coin</h3><div class="value" id="statCoins">0</div></div>
-            <div class="stat-card"><h3>Son Tarama</h3><div class="value" id="statLastScan">--:--</div></div>
-            <div class="stat-card"><h3>Fear & Greed</h3><div class="value" id="statFG">-</div></div>
-        </div>
+function startBot(){
+    document.getElementById('btnStart').disabled=true;
+    fetch('/api/start',{method:'POST'}).then(r=>r.json()).then(d=>{
+        toast(d.message||'Baslatildi','success');
+        setTimeout(refresh,2000);
+        document.getElementById('btnStart').disabled=false;
+    }).catch(e=>{toast('Hata: '+e,'error');document.getElementById('btnStart').disabled=false});
+}
+function stopBot(){fetch('/api/stop',{method:'POST'}).then(r=>r.json()).then(d=>{toast('Durdu','info');setTimeout(refresh,1000)})}
+function pauseBot(){fetch('/api/pause',{method:'POST'}).then(r=>r.json()).then(d=>{toast(d.paused?'Duraklatildi':'Devam','info');setTimeout(refresh,1000)})}
+function refresh(){updateStatus()}
+function filterAction(f){currentFilter=f;updateStatus()}
 
-        <div class="grid">
-            <div class="section">
-                <div class="section-header"><h2>BUY / SELL Signals</h2></div>
-                <div class="section-body" id="signalsBody">
-                    <div class="no-data">No signals yet</div>
-                </div>
-            </div>
-            <div class="section">
-                <div class="section-header"><h2>All Scan Results</h2></div>
-                <div class="section-body" style="max-height:300px;">
-                    <table>
-                        <thead><tr><th>Coin</th><th>Action</th><th>Conf</th><th>Price</th><th>RSI</th></tr></thead>
-                        <tbody id="scanBody"><tr><td colspan="5" class="no-data">Waiting for scan...</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-        <div class="section" style="margin-top:15px;">
-            <div class="section-header"><h2>Logs</h2></div>
-            <div class="section-body">
-                <div class="log-box" id="logBox"></div>
-            </div>
-        </div>
-    </div>
+function toast(msg,type){
+    var t=document.createElement('div');
+    t.className='fixed top-20 right-6 px-4 py-2 rounded text-sm font-bold z-50 transition-all';
+    if(type==='success')t.className+=' bg-green text-black';
+    else if(type==='error')t.className+=' bg-red text-white';
+    else t.className+=' bg-surface4 text-white';
+    t.textContent=msg;document.body.appendChild(t);
+    setTimeout(()=>t.remove(),3000);
+}
 
-    <script>
-        function toast(msg, type) {
-            var t = document.getElementById('toast');
-            t.textContent = msg;
-            t.className = 'show ' + type;
-            setTimeout(function(){ t.className = ''; }, 3000);
+function updateStatus(){
+    fetch('/api/status').then(r=>r.json()).then(d=>{
+        // Status badge
+        var badge=document.getElementById('statusBadge');
+        if(d.running&&!d.paused){badge.innerHTML='<span class="w-2 h-2 rounded-full bg-green pulse-dot"></span><span>SCANNING</span>';badge.className='flex items-center gap-2 px-3 py-1 bg-green/10 border border-green/20 rounded text-xs font-bold text-green'}
+        else if(d.paused){badge.innerHTML='<span class="w-2 h-2 rounded-full bg-yellow-500 pulse-dot"></span><span>PAUSED</span>';badge.className='flex items-center gap-2 px-3 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded text-xs font-bold text-yellow-500'}
+        else{badge.innerHTML='<span class="w-2 h-2 rounded-full bg-red"></span><span>STOPPED</span>';badge.className='flex items-center gap-2 px-3 py-1 bg-red/10 border border-red/20 rounded text-xs font-bold text-red'}
+
+        document.getElementById('sTotalScans').textContent=d.total_scans.toLocaleString();
+        document.getElementById('sSignalsSent').textContent=d.signals_sent;
+        document.getElementById('sCoinsCount').textContent=d.symbols_count;
+        document.getElementById('sLastScan').textContent=d.last_scan_time||'--:--';
+
+        // Fear & Greed
+        if(d.fear_greed){
+            var fg=parseInt(d.fear_greed.value||50);
+            var el=document.getElementById('sFearGreed');
+            el.textContent=fg+' '+d.fear_greed.value_classification;
+            el.style.color=fg<25?'#f43f5e':fg<45?'#f97316':fg<55?'#eab308':fg<75?'#84cc16':'#10b981';
         }
 
-        function startBot() {
-            document.getElementById('btnStart').disabled = true;
-            document.getElementById('btnStart').innerHTML = '<span class="spinner"></span>Starting...';
-            fetch('/api/start', {method: 'POST'})
-                .then(function(r) { return r.json(); })
-                .then(function(d) {
-                    if(d.success) {
-                        toast('Bot started!', 'success');
-                        setTimeout(updateStatus, 2000);
-                    } else {
-                        toast(d.message || 'Failed to start', 'error');
-                    }
-                    document.getElementById('btnStart').disabled = false;
-                    document.getElementById('btnStart').innerHTML = 'START';
-                })
-                .catch(function(e) {
-                    toast('Error: ' + e, 'error');
-                    document.getElementById('btnStart').disabled = false;
-                    document.getElementById('btnStart').innerHTML = 'START';
-                });
+        // Scan results table
+        var results=d.scan_results||[];
+        if(currentFilter!=='ALL')results=results.filter(r=>r.action===currentFilter);
+        results.sort((a,b)=>{
+            if(a.action==='BUY'&&b.action!=='BUY')return -1;
+            if(a.action==='SELL'&&b.action!=='SELL')return -1;
+            return(b.confidence||0)-(a.confidence||0);
+        });
+
+        var tbody=document.getElementById('scanBody');
+        if(results.length>0){
+            var html='';
+            results.forEach(r=>{
+                var cls=r.action==='BUY'?'text-green':r.action==='SELL'?'text-red':'text-text3';
+                var badge=r.action==='BUY'?'<span class="px-2 py-0.5 bg-green/10 text-green text-[10px] font-bold rounded border border-green/30">BUY</span>'
+                    :r.action==='SELL'?'<span class="px-2 py-0.5 bg-red/10 text-red text-[10px] font-bold rounded border border-red/30">SELL</span>'
+                    :'<span class="px-2 py-0.5 bg-surface4 text-text3 text-[10px] font-bold rounded">NEUTRAL</span>';
+                var conf=r.confidence||0;
+                var confColor=conf>0.7?'bg-green':conf>0.5?'bg-yellow-500':'bg-text3';
+                var rsiColor=(r.rsi||50)<30?'text-green':(r.rsi||50)>70?'text-red':'text-text3';
+
+                html+='<tr class="hover:bg-white/5 transition-colors"><td class="px-4 py-3 font-mono text-sm flex items-center gap-2"><div class="w-7 h-7 rounded-full bg-surface4 flex items-center justify-center text-[11px] font-bold">'+r.symbol.charAt(0)+'</div>'+r.symbol+'</td><td class="px-4 py-3">'+badge+'</td><td class="px-4 py-3"><div class="w-20 bg-surface4 h-1.5 rounded-full overflow-hidden"><div class="'+confColor+' h-full" style="width:'+conf*100+'%"></div></div><span class="font-mono text-[11px] mt-1 block">'+(conf*100).toFixed(0)+'%</span></td><td class="px-4 py-3 font-mono text-sm text-right">$'+(r.price||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:4})+'</td><td class="px-4 py-3 font-mono text-sm text-right '+rsiColor+'">'+(r.rsi||0).toFixed(1)+'</td><td class="px-4 py-3 font-mono text-sm text-right text-text3">'+(r.volume_ratio||0).toFixed(1)+'x</td></tr>';
+            });
+            tbody.innerHTML=html;
+        }else{
+            tbody.innerHTML='<tr><td colspan="6" class="px-4 py-12 text-center text-text3 italic">Tarama bekleniyor...</td></tr>';
         }
 
-        function stopBot() {
-            fetch('/api/stop', {method: 'POST'})
-                .then(function(r) { return r.json(); })
-                .then(function(d) {
-                    toast('Bot stopped', 'info');
-                    setTimeout(updateStatus, 1000);
-                });
+        // Recent signals
+        var sigs=d.last_signals||{};
+        var sigKeys=Object.keys(sigs);
+        document.getElementById('signalCount').textContent=sigKeys.length+' sinyal';
+        var sigList=document.getElementById('signalsList');
+        if(sigKeys.length>0){
+            var html='';
+            sigKeys.slice(-8).reverse().forEach(coin=>{
+                var s=sigs[coin];
+                var color=s.action==='BUY'?'green':'red';
+                var border=s.action==='BUY'?'border-green':'border-red';
+                html+='<div class="glass rounded-lg p-3 border-l-4 '+border+' hover:translate-x-1 transition-transform cursor-pointer"><div class="flex justify-between items-start"><div><div class="font-bold text-'+color+'">'+coin+' - '+s.action+'</div><div class="text-xs text-text3 font-mono">$'+(s.price||0).toFixed(4)+' | Guven: '+(s.confidence*100).toFixed(0)+'%</div></div></div>'+(s.reason?'<div class="text-[10px] text-text3 mt-1 italic">'+s.reason.substring(0,60)+'</div>':'')+'</div>';
+            });
+            sigList.innerHTML=html;
         }
 
-        function pauseBot() {
-            fetch('/api/pause', {method: 'POST'})
-                .then(function(r) { return r.json(); })
-                .then(function(d) {
-                    toast(d.paused ? 'Paused' : 'Resumed', 'info');
-                    setTimeout(updateStatus, 1000);
-                });
-        }
+        document.getElementById('scanStatus').textContent=d.running?(d.paused?'DURAKLATILDI':'Tarama aktif - '+d.symbols_count+' coin'):clearInterval&&'Durdu';
+    }).catch(e=>console.log('Status error:',e));
+}
 
-        function updateStatus() {
-            fetch('/api/status')
-                .then(function(r) { return r.json(); })
-                .then(function(d) {
-                    var dot = document.getElementById('statusDot');
-                    var txt = document.getElementById('statusText');
-
-                    if(d.running && !d.paused) {
-                        dot.className = 'status-dot dot-running';
-                        txt.textContent = 'RUNNING';
-                        txt.style.color = '#00c853';
-                        document.getElementById('statStatus').textContent = 'RUNNING';
-                        document.getElementById('statStatus').style.color = '#00c853';
-                    } else if(d.paused) {
-                        dot.className = 'status-dot dot-paused';
-                        txt.textContent = 'PAUSED';
-                        txt.style.color = '#ffc107';
-                        document.getElementById('statStatus').textContent = 'PAUSED';
-                        document.getElementById('statStatus').style.color = '#ffc107';
-                    } else {
-                        dot.className = 'status-dot dot-stopped';
-                        txt.textContent = 'STOPPED';
-                        txt.style.color = '#ff1744';
-                        document.getElementById('statStatus').textContent = 'STOPPED';
-                        document.getElementById('statStatus').style.color = '#ff1744';
-                    }
-
-                    document.getElementById('statScans').textContent = d.total_scans;
-                    document.getElementById('statSignals').textContent = d.signals_sent;
-                    document.getElementById('statCoins').textContent = d.symbols_count;
-                    document.getElementById('statLastScan').textContent = d.last_scan_time || '--:--';
-
-                    // Fear & Greed
-                    if(d.fear_greed) {
-                        var fg = d.fear_greed;
-                        var fgVal = parseInt(fg.value || 50);
-                        var fgText = fg.value_classification || 'Neutral';
-                        var fgColor = fgVal < 25 ? '#ff1744' : fgVal < 45 ? '#ff9800' : fgVal < 55 ? '#ffc107' : fgVal < 75 ? '#8bc34a' : '#00c853';
-                        document.getElementById('statFG').textContent = fgVal + ' ' + fgText;
-                        document.getElementById('statFG').style.color = fgColor;
-                    }
-
-                    var signalsHtml = '';
-                    if(d.last_signals && Object.keys(d.last_signals).length > 0) {
-                        for(var coin in d.last_signals) {
-                            var sig = d.last_signals[coin];
-                            var color = sig.action === 'BUY' ? '#00c853' : '#ff1744';
-                            signalsHtml += '<div class="signal-item">' +
-                                '<div class="signal-coin" style="color:' + color + '">' + coin + ' - ' + sig.action + '</div>' +
-                                '<div style="color:#888;font-size:12px;">$' + (sig.price||0).toFixed(4) + ' | ' + ((sig.confidence||0)*100).toFixed(0) + '%</div>' +
-                                '</div>';
-                        }
-                    } else {
-                        signalsHtml = '<div class="no-data">No signals yet</div>';
-                    }
-                    document.getElementById('signalsBody').innerHTML = signalsHtml;
-
-                    // Scan results table
-                    var scanBody = document.getElementById('scanBody');
-                    if(d.scan_results && d.scan_results.length > 0) {
-                        var sorted = d.scan_results.filter(function(r){ return r.action !== 'HOLD'; });
-                        sorted.sort(function(a,b){ return (b.confidence||0) - (a.confidence||0); });
-                        if(sorted.length === 0) sorted = d.scan_results;
-                        var rows = '';
-                        sorted.forEach(function(r) {
-                            var cls = r.action === 'BUY' ? 'buy' : r.action === 'SELL' ? 'sell' : 'hold';
-                            rows += '<tr><td><b>' + r.symbol + '</b></td>' +
-                                '<td class="' + cls + '">' + r.action + '</td>' +
-                                '<td>' + ((r.confidence||0)*100).toFixed(0) + '%</td>' +
-                                '<td>$' + (r.price||0).toFixed(4) + '</td>' +
-                                '<td>' + (r.rsi||0).toFixed(1) + '</td></tr>';
-                        });
-                        scanBody.innerHTML = rows;
-                    }
-
-                    if(d.logs && d.logs.length > 0) {
-                        var logHtml = '';
-                        d.logs.reverse().forEach(function(l) {
-                            logHtml += '<div class="log-entry">' + l + '</div>';
-                        });
-                        document.getElementById('logBox').innerHTML = logHtml;
-                    }
-                })
-                .catch(function(e) {
-                    console.log('Status error:', e);
-                });
-        }
-
-        updateStatus();
-        setInterval(updateStatus, 3000);
-    </script>
+refresh();
+setInterval(refresh,3000);
+</script>
 </body>
-</html>
-"""
+</html>"""
 
 
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    return render_template_string(HTML)
 
 
 @app.route('/api/status')
 def api_status():
     global bot
     from src.coingecko import coingecko
-    status = {
-        "running": bot.running if bot else False,
-        "paused": bot.paused if bot else False,
-        "total_scans": bot.total_scans if bot else 0,
-        "signals_sent": bot.signals_sent if bot else 0,
-        "last_scan_time": bot.last_scan_time if bot else None,
-        "symbols_count": len(settings.symbols),
-        "scan_results": bot.scan_results if bot else [],
-        "last_signals": {},
-        "logs": log_messages[-30:],
-        "fear_greed": coingecko.get_fear_greed()
-    }
-    if bot and bot.last_signals:
-        for k, v in bot.last_signals.items():
-            status["last_signals"][k] = {
-                "action": v.action,
-                "confidence": v.confidence,
-                "price": v.price
-            }
+    status = get_status()
+    try:
+        status["fear_greed"] = coingecko.get_fear_greed()
+    except:
+        status["fear_greed"] = {"value": "50", "value_classification": "Neutral"}
+    status["logs"] = log_messages[-30:]
     return jsonify(status)
 
 
@@ -315,27 +290,26 @@ def api_start():
     global bot, bot_thread
     try:
         if bot and bot.running:
-            return jsonify({"success": False, "message": "Bot already running"})
+            return jsonify({"success": False, "message": "Bot zaten calisiyor"})
 
-        log("Starting bot...")
+        log("Bot baslatiliyor...")
         bot = CryptoBot()
 
         if not bot.check_connection():
-            log("Failed to connect to Alpaca API")
-            return jsonify({"success": False, "message": "Failed to connect to Alpaca API. Check your API keys."})
+            log("Alpaca baglantisi basarisiz")
+            return jsonify({"success": False, "message": "Alpaca baglantisi basarisiz"})
 
         bot_thread = threading.Thread(target=bot.run, daemon=True)
         bot_thread.start()
 
         time.sleep(2)
         if bot.running:
-            log("Bot started successfully!")
-            return jsonify({"success": True, "message": "Bot started"})
+            log("Bot basarili!")
+            return jsonify({"success": True, "message": "Bot baslatildi - " + str(len(settings.symbols)) + " coin taraniyor"})
         else:
-            log("Bot failed to start")
-            return jsonify({"success": False, "message": "Failed to start bot"})
+            return jsonify({"success": False, "message": "Bot baslatilamadi"})
     except Exception as e:
-        log(f"Error: {e}")
+        log(f"Hata: {e}")
         return jsonify({"success": False, "message": str(e)})
 
 
@@ -345,11 +319,11 @@ def api_stop():
     try:
         if bot:
             bot.running = False
-            log("Bot stopped")
+            log("Bot durduruldu")
             return jsonify({"success": True})
-        return jsonify({"success": False, "message": "No bot running"})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
+        return jsonify({"success": False})
+    except:
+        return jsonify({"success": False})
 
 
 @app.route('/api/pause', methods=['POST'])
@@ -358,18 +332,18 @@ def api_pause():
     try:
         if bot:
             bot.paused = not bot.paused
-            state = "paused" if bot.paused else "resumed"
+            state = "duraklatildi" if bot.paused else "devam ediyor"
             log(f"Bot {state}")
             return jsonify({"success": True, "paused": bot.paused})
         return jsonify({"success": False})
-    except Exception as e:
+    except:
         return jsonify({"success": False})
 
 
 if __name__ == '__main__':
     import os
     port = int(os.environ.get('PORT', 5000))
-    log("Panel started")
-    log(f"Tracking {len(settings.symbols)} coins")
+    log("Panel baslatildi")
+    log(f"{len(settings.symbols)} coin taraniyor")
     print(f"[PANEL] http://0.0.0.0:{port}")
     app.run(host='0.0.0.0', port=port, debug=False)

@@ -40,12 +40,12 @@ class CryptoBot:
         try:
             df = self.client.get_bars(symbol=sym, limit=50)
             if df.empty:
-                result["reason"] = "No data"
+                result["reason"] = "Veri yok"
                 return result
 
             sig = self.strategy.analyze(df)
             if not sig:
-                result["reason"] = "Insufficient data"
+                result["reason"] = "Yetersiz veri"
                 return result
 
             result = {
@@ -59,12 +59,10 @@ class CryptoBot:
                 "reason": sig.reason
             }
 
-            # Print to console
-            action_label = {"BUY": "[BUY]", "SELL": "[SELL]"}.get(sig.action, "")
+            action_label = {"BUY": "[ALIS]", "SELL": "[SATIS]"}.get(sig.action, "")
             if action_label:
                 print(f"  {action_label} {sym:12s} ${sig.price:,.4f} RSI:{sig.rsi:.1f} ({sig.confidence:.0%})")
 
-            # Queue notification (don't block)
             if sig.action != "HOLD" and sig.confidence >= 0.4:
                 prev = self.last_signals.get(sym)
                 if prev is None or sig.action != prev.action or sig.confidence > 0.7:
@@ -72,7 +70,6 @@ class CryptoBot:
                     self.last_signals[sym] = sig
                     self.signals_sent += 1
 
-            # Execute trades
             position = self.client.get_position(sym)
             has_position = position is not None
 
@@ -82,7 +79,7 @@ class CryptoBot:
                 self.execute_sell(sym, sig)
 
         except Exception as e:
-            result["reason"] = f"Error: {e}"
+            result["reason"] = f"Hata: {e}"
 
         return result
 
@@ -93,7 +90,7 @@ class CryptoBot:
         self.last_scan_time = datetime.now().strftime('%H:%M:%S')
 
         print(f"\n{'='*60}")
-        print(f"[*] Scan #{self.total_scans} at {self.last_scan_time} | {len(settings.symbols)} symbols")
+        print(f"[*] Tarama #{self.total_scans} | {self.last_scan_time} | {len(settings.symbols)} coin")
 
         for i, sym in enumerate(settings.symbols, 1):
             if not self.running:
@@ -101,7 +98,6 @@ class CryptoBot:
             result = self.scan_symbol(sym)
             self.scan_results.append(result)
 
-        # Send notifications after scan completes
         for sym, sig in self.pending_notifications:
             try:
                 pos = self.client.get_position(sym)
@@ -111,16 +107,16 @@ class CryptoBot:
                 pass
 
         actionable = [r for r in self.scan_results if r["action"] != "HOLD"]
-        print(f"[*] Done | Actionable: {len(actionable)} | Signals: {self.signals_sent}")
+        print(f"[*] Tamamlandi | Sinyal: {len(actionable)} | Toplam: {self.signals_sent}")
 
     def execute_buy(self, sym: str, sig: Signal):
-        print(f"  [BUY] {sym} at ${sig.price:,.4f}")
+        print(f"  [ALIS] {sym} ${sig.price:,.4f}")
         try:
             price = self.client.get_latest_price(sym)
             qty = self.client.calculate_qty(settings.position_size_usd, price)
 
             order = self.client.place_market_order(OrderSide.BUY, qty, sym)
-            print(f"  [OK] Buy: {qty} {sym} @ ${price:,.4f}")
+            print(f"  [OK] Alis: {qty} {sym} @ ${price:,.4f}")
 
             stop_price = price * (1 - settings.stop_loss_pct)
             self.client.place_stop_loss(qty, stop_price, sym)
@@ -128,40 +124,40 @@ class CryptoBot:
             tp_price = price * (1 + settings.take_profit_pct)
             self.client.place_limit_order(OrderSide.SELL, qty, tp_price, sym)
 
-            self.telegram.send_order(order, "PLACED")
+            self.telegram.send_order(order, "YERLESTIRILDI")
 
         except Exception as e:
-            print(f"  [ERROR] Buy failed: {e}")
-            self.telegram.send_error(f"{sym} buy failed: {e}")
+            print(f"  [HATA] Alis basarisiz: {e}")
+            self.telegram.send_error(f"{sym} alis basarisiz: {e}")
 
     def execute_sell(self, sym: str, sig: Signal):
-        print(f"  [SELL] {sym} at ${sig.price:,.4f}")
+        print(f"  [SATIS] {sym} ${sig.price:,.4f}")
         try:
             position = self.client.get_position(sym)
             qty = position["qty"]
             self.client.cancel_all_orders()
             order = self.client.place_market_order(OrderSide.SELL, qty, sym)
-            print(f"  [OK] Sell: {qty} {sym}")
-            self.telegram.send_order(order, "PLACED")
+            print(f"  [OK] Satis: {qty} {sym}")
+            self.telegram.send_order(order, "YERLESTIRILDI")
         except Exception as e:
-            print(f"  [ERROR] Sell failed: {e}")
-            self.telegram.send_error(f"{sym} sell failed: {e}")
+            print(f"  [HATA] Satis basarisiz: {e}")
+            self.telegram.send_error(f"{sym} satis basarisiz: {e}")
 
     def run(self):
-        print("[START] Crypto Scanner Bot")
-        print(f"[*] {len(settings.symbols)} coins | ${settings.position_size_usd}/trade | Every {settings.check_interval}s")
+        print("[BASLAT] Crypto Scanner Bot")
+        print(f"[*] {len(settings.symbols)} coin | ${settings.position_size_usd}/islem | {settings.check_interval}s aralikla")
 
         self.running = True
-        self.telegram.send_status(f"Bot started - {len(settings.symbols)} coins")
+        self.telegram.send_status(f"Bot baslatildi - {len(settings.symbols)} coin taraniyor")
 
         while self.running:
             try:
                 if not self.paused:
                     self.run_iteration()
                 else:
-                    print("[PAUSED] Waiting...")
+                    print("[DURAKLATILDI] Bekleniyor...")
             except Exception as e:
-                print(f"[ERROR] {e}")
+                print(f"[HATA] {e}")
                 self.telegram.send_error(str(e))
 
             if self.running:
@@ -170,11 +166,12 @@ class CryptoBot:
                         break
                     time.sleep(1)
 
-        self.telegram.send_status("Bot stopped")
-        print("[DONE] Bot stopped")
+        self.telegram.send_status("Bot durduruldu")
+        print("[DURDU] Bot durduruldu")
 
 
 bot = CryptoBot()
+telegram_bot_handler = None
 
 
 def start_bot():
@@ -210,10 +207,25 @@ def get_status():
         "signals_sent": bot.signals_sent,
         "last_scan_time": bot.last_scan_time,
         "symbols_count": len(settings.symbols),
-        "scan_results": bot.scan_results[-20:],
-        "last_signals": {k: {"action": v.action, "confidence": v.confidence, "price": v.price} for k, v in bot.last_signals.items()}
+        "scan_results": bot.scan_results,
+        "last_signals": {k: {"action": v.action, "confidence": v.confidence, "price": v.price, "reason": v.reason} for k, v in bot.last_signals.items()}
     }
 
 
+def poll_telegram():
+    global telegram_bot_handler, bot
+    from src.telegram_bot import TelegramBot
+    telegram_bot_handler = TelegramBot(settings.telegram_bot_token, settings.telegram_chat_id)
+    telegram_bot_handler.send_message("Bot hazir! Komutlar icin /help yazin.")
+    while True:
+        try:
+            telegram_bot_handler.poll_commands(bot)
+        except Exception as e:
+            print(f"[TELEGRAM HATA] {e}")
+        time.sleep(2)
+
+
 if __name__ == "__main__":
+    tg_thread = threading.Thread(target=poll_telegram, daemon=True)
+    tg_thread.start()
     bot.run()
