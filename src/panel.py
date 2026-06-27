@@ -80,14 +80,6 @@ body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hi
 </header>
 <!-- MAIN -->
 <div class="flex flex-1 overflow-hidden">
-<!-- SIDEBAR -->
-<aside class="bg-surface2 border-r border-border/30 w-16 flex flex-col items-center py-4 gap-6 shrink-0">
-<div class="p-2 bg-accent/20 rounded-lg text-accent cursor-pointer"><span class="material-symbols-outlined">list_alt</span></div>
-<div class="p-2 text-text3 hover:text-text hover:bg-surface4 rounded-lg cursor-pointer transition-all"><span class="material-symbols-outlined">show_chart</span></div>
-<div class="p-2 text-text3 hover:text-text hover:bg-surface4 rounded-lg cursor-pointer transition-all"><span class="material-symbols-outlined">notifications</span></div>
-<div class="p-2 text-text3 hover:text-text hover:bg-surface4 rounded-lg cursor-pointer transition-all"><span class="material-symbols-outlined">smart_toy</span></div>
-<div class="mt-auto p-2 text-text3 hover:text-text hover:bg-surface4 rounded-lg cursor-pointer transition-all"><span class="material-symbols-outlined">settings</span></div>
-</aside>
 <!-- CONTENT -->
 <main class="flex-1 overflow-y-auto p-6 scrollbar">
 <!-- STATS -->
