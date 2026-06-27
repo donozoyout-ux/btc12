@@ -69,12 +69,28 @@ class CryptoBot:
                     self.pending_notifications.append((sym, sig))
                     self.last_signals[sym] = sig
 
-            position = self.client.get_position(sym)
-
         except Exception as e:
             result["reason"] = f"Hata: {e}"
 
         return result
+
+    def check_position_for_sell(self, sym, sig):
+        from src.telegram_bot import telegram_handler
+        if not telegram_handler:
+            return
+
+        pos = self.client.get_position(sym)
+        if not pos:
+            return
+
+        qty = float(pos.get("qty", 0))
+        if qty <= 0:
+            return
+
+        pl = float(pos.get("unrealized_pl", 0))
+        entry = float(pos.get("avg_entry_price", 0))
+
+        telegram_handler.send_sell_signal(sym, sig, pos)
 
     def run_iteration(self):
         self.total_scans += 1
@@ -94,13 +110,25 @@ class CryptoBot:
         for sym, sig in self.pending_notifications:
             try:
                 from src.telegram_bot import telegram_handler
-                pos = self.client.get_position(sym)
-                info = pos if pos else {"symbol": sym}
-                if telegram_handler:
-                    telegram_handler.send_trade_signal(sym, sig, info)
-                    self.signals_sent += 1
-                else:
-                    self.telegram.send_signal(sig, info)
+
+                if sig.action == "BUY":
+                    pos = self.client.get_position(sym)
+                    info = pos if pos else {"symbol": sym}
+                    if telegram_handler:
+                        telegram_handler.send_buy_signal(sym, sig, info)
+                        self.signals_sent += 1
+                    else:
+                        self.telegram.send_signal(sig, info)
+
+                elif sig.action == "SELL":
+                    pos = self.client.get_position(sym)
+                    if pos:
+                        if telegram_handler:
+                            telegram_handler.send_sell_signal(sym, sig, pos)
+                            self.signals_sent += 1
+                        else:
+                            self.telegram.send_signal(sig, pos)
+
             except Exception as e:
                 print(f"[TG HATA] {e}")
 
