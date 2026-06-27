@@ -17,10 +17,30 @@ class TelegramBot:
         self.pending_trades = {}
         self.pending_sells = {}
         self.last_trade_id = 0
+        self._sent_ids = set()
+        self._lock = threading.Lock()
 
-    def send_message(self, text, parse_mode="HTML"):
+    def send_message(self, text, parse_mode="HTML", silent=False):
         url = f"{self.base_url}/sendMessage"
         payload = {"chat_id": self.chat_id, "text": text, "parse_mode": parse_mode}
+        if silent:
+            payload["disable_notification"] = True
+        try:
+            resp = requests.post(url, json=payload, timeout=10)
+            return resp.status_code == 200
+        except:
+            return False
+
+    def delete_message(self, msg_id):
+        url = f"{self.base_url}/deleteMessage"
+        try:
+            requests.post(url, json={"chat_id": self.chat_id, "message_id": msg_id}, timeout=5)
+        except:
+            pass
+
+    def edit_message(self, msg_id, text, parse_mode="HTML"):
+        url = f"{self.base_url}/editMessageText"
+        payload = {"chat_id": self.chat_id, "message_id": msg_id, "text": text, "parse_mode": parse_mode}
         try:
             resp = requests.post(url, json=payload, timeout=10)
             return resp.status_code == 200
@@ -42,108 +62,129 @@ class TelegramBot:
         if str(chat_id) != str(self.chat_id):
             return
 
-        text = text.strip().lower()
+        text = text.strip()
 
-        # Satis onay
-        if text in ["satis", "satis1", "satacak"]:
+        if text.lower() in ["satis", "satacak"]:
             self.handle_sell_approval("yes")
             return
-        if text in ["sakla", "sakla1", "tut"]:
+        if text.lower() in ["sakla", "tut"]:
             self.handle_sell_approval("no")
             return
 
-        if text.startswith("satis ") and len(text.split()) > 1 and text.split()[1].isdigit():
-            self.handle_sell_approval("yes", int(text.split()[1]))
-            return
-        if text.startswith("sakla ") and len(text.split()) > 1 and text.split()[1].isdigit():
-            self.handle_sell_approval("no", int(text.split()[1]))
-            return
+        parts = text.lower().split()
+        if len(parts) == 2:
+            cmd, arg = parts
+            if cmd == "satis" and arg.isdigit():
+                self.handle_sell_approval("yes", int(arg))
+                return
+            if cmd == "sakla" and arg.isdigit():
+                self.handle_sell_approval("no", int(arg))
+                return
+            if cmd == "yap" and arg.isdigit():
+                self.handle_approval("yes", int(arg))
+                return
+            if cmd == "sellt" and arg.isdigit():
+                self.handle_sell_approval("yes", int(arg))
+                return
 
-        # Alis onay
-        if text in ["yap", "yap1", "evet", "onay", "1"]:
+        low = text.lower()
+        if low in ["yap", "evet", "onay", "1"]:
             self.handle_approval("yes")
             return
-        if text in ["yapma", "hayir", "iptal", "0", "2"]:
+        if low in ["yapma", "hayir", "iptal", "0", "2"]:
             self.handle_approval("no")
             return
-
-        if text.startswith("yap ") and len(text.split()) > 1 and text.split()[1].isdigit():
-            self.handle_approval("yes", int(text.split()[1]))
+        if low in ["sellall", "sell all", "hepsini sat", "tumu"]:
+            self.cmd_sell_all()
             return
 
-        # Komutlar
-        if text in ["/start", "start"]:
+        if low.startswith("/"):
+            self.route_command(low)
+
+    def route_command(self, text):
+        cmd = text.split()[0] if text else ""
+        arg = text.split()[1] if len(text.split()) > 1 else ""
+
+        if cmd in ["/start", "start"]:
             self.cmd_start()
-        elif text in ["/stop", "stop"]:
+        elif cmd in ["/stop", "stop"]:
             self.cmd_stop()
-        elif text in ["/status", "status"]:
+        elif cmd in ["/status", "status"]:
             self.cmd_status()
-        elif text in ["/signals", "signals"]:
-            self.cmd_signals()
-        elif text in ["/positions", "positions", "/pozisyon", "pozisyon", "pos"]:
+        elif cmd in ["/positions", "positions", "/pozisyon", "pozisyon", "pos"]:
             self.cmd_positions()
-        elif text in ["/scan", "scan"]:
+        elif cmd in ["/signals", "signals"]:
+            self.cmd_signals()
+        elif cmd in ["/scan", "scan"]:
             self.cmd_scan()
-        elif text in ["/onaylar", "onaylar"]:
+        elif cmd in ["/onaylar", "onaylar"]:
             self.cmd_pending()
-        elif text in ["/satislar", "satislar"]:
+        elif cmd in ["/satislar", "satislar"]:
             self.cmd_pending_sells()
-        elif text in ["/help", "help", "/yardim"]:
+        elif cmd in ["/sellall", "sellall"]:
+            self.cmd_sell_all()
+        elif cmd in ["/sell", "sell"] and arg:
+            self.cmd_sell_coin(arg.upper())
+        elif cmd in ["/balance", "balance", "/bakiye", "bakiye"]:
+            self.cmd_balance()
+        elif cmd in ["/help", "help", "/yardim"]:
             self.cmd_help()
-        elif text.startswith("/"):
-            self.send_message(f"Bilinmeyen komut: {text}\nKomutlar icin /help")
+        elif cmd.startswith("/"):
+            self.send_message(f"Bilinmeyen: {cmd}\n/help")
 
     def handle_approval(self, answer, trade_id=None):
-        if not self.pending_trades:
-            self.send_message("Bekleyen alis islemi yok.")
-            return
+        with self._lock:
+            if not self.pending_trades:
+                self.send_message("Bekleyen alis yok.")
+                return
 
-        if trade_id:
-            if trade_id in self.pending_trades:
-                trade = self.pending_trades.pop(trade_id)
-                if answer == "yes":
-                    self.execute_buy(trade)
+            if trade_id:
+                if trade_id in self.pending_trades:
+                    trade = self.pending_trades.pop(trade_id)
+                    if answer == "yes":
+                        self.execute_buy(trade)
+                    else:
+                        self.send_message(f"<b>{trade['symbol']}</b> alis iptal edildi.")
                 else:
-                    self.send_message(f"<b>{trade['symbol']} - Alis iptal</b>")
+                    self.send_message(f"#{trade_id} bulunamadi.")
+                return
+
+            last_id = max(self.pending_trades.keys()) if self.pending_trades else None
+            if last_id is None:
+                return
+
+            trade = self.pending_trades.pop(last_id)
+            if answer == "yes":
+                self.execute_buy(trade)
             else:
-                self.send_message(f"#{trade_id} bulunamadi.")
-            return
-
-        last_id = max(self.pending_trades.keys()) if self.pending_trades else None
-        if last_id is None:
-            return
-
-        trade = self.pending_trades.pop(last_id)
-        if answer == "yes":
-            self.execute_buy(trade)
-        else:
-            self.send_message(f"<b>{trade['symbol']} - Alis iptal</b>")
+                self.send_message(f"<b>{trade['symbol']}</b> alis iptal edildi.")
 
     def handle_sell_approval(self, answer, sell_id=None):
-        if not self.pending_sells:
-            self.send_message("Bekleyen satis islemi yok.")
-            return
+        with self._lock:
+            if not self.pending_sells:
+                self.send_message("Bekleyen satis yok.")
+                return
 
-        if sell_id:
-            if sell_id in self.pending_sells:
-                sell = self.pending_sells.pop(sell_id)
-                if answer == "yes":
-                    self.execute_sell(sell)
+            if sell_id:
+                if sell_id in self.pending_sells:
+                    sell = self.pending_sells.pop(sell_id)
+                    if answer == "yes":
+                        self.execute_sell(sell)
+                    else:
+                        self.send_message(f"<b>{sell['symbol']}</b> tutuluyor.")
                 else:
-                    self.send_message(f"<b>{sell['symbol']} - Satis iptal, tutuluyor</b>")
+                    self.send_message(f"#{sell_id} bulunamadi.")
+                return
+
+            last_id = max(self.pending_sells.keys()) if self.pending_sells else None
+            if last_id is None:
+                return
+
+            sell = self.pending_sells.pop(last_id)
+            if answer == "yes":
+                self.execute_sell(sell)
             else:
-                self.send_message(f"#{sell_id} bulunamadi.")
-            return
-
-        last_id = max(self.pending_sells.keys()) if self.pending_sells else None
-        if last_id is None:
-            return
-
-        sell = self.pending_sells.pop(last_id)
-        if answer == "yes":
-            self.execute_sell(sell)
-        else:
-            self.send_message(f"<b>{sell['symbol']} - Satis iptal, tutuluyor</b>")
+                self.send_message(f"<b>{sell['symbol']}</b> tutuluyor.")
 
     def execute_buy(self, trade):
         from src.main import bot
@@ -153,8 +194,7 @@ class TelegramBot:
 
         symbol = trade["symbol"]
         price = trade["price"]
-
-        self.send_message(f"<b>{symbol} - Alis baslatiliyor...</b>")
+        self.send_message(f"<b>{symbol}</b> alis baslatiliyor...")
 
         try:
             from alpaca.trading.enums import OrderSide
@@ -166,18 +206,17 @@ class TelegramBot:
             bot.client.place_stop_loss(qty, stop_price, symbol)
             bot.client.place_limit_order(OrderSide.SELL, qty, tp_price, symbol)
 
-            self.send_message(
-                f"<b>{symbol} - ALIS TAMAM</b>\n\n"
-                f"Miktar: {qty:.6f}\n"
-                f"Fiyat: ${price:.4f}\n"
-                f"Stop Loss: ${stop_price:.4f}\n"
-                f"Take Profit: ${tp_price:.4f}\n\n"
-                f"Pozisyon icin /pozisyon yazin"
+            msg = (
+                f"<b>ALIS TAMAM</b>  <code>{symbol}</code>\n"
+                f"Miktar: <code>{qty:.6f}</code>\n"
+                f"Fiyat: <code>${price:,.4f}</code>\n"
+                f"SL: <code>${stop_price:,.4f}</code>  TP: <code>${tp_price:,.4f}</code>"
             )
+            self.send_message(msg)
             bot.signals_sent += 1
 
         except Exception as e:
-            self.send_message(f"<b>{symbol} - HATA</b>\n\n{str(e)}")
+            self.send_message(f"<b>{symbol}</b> hata:\n<code>{str(e)[:200]}</code>")
 
     def execute_sell(self, sell):
         from src.main import bot
@@ -186,8 +225,7 @@ class TelegramBot:
             return
 
         symbol = sell["symbol"]
-
-        self.send_message(f"<b>{symbol} - Satis baslatiliyor...</b>")
+        self.send_message(f"<b>{symbol}</b> satis baslatiliyor...")
 
         try:
             from alpaca.trading.enums import OrderSide
@@ -197,95 +235,162 @@ class TelegramBot:
                 bot.client.cancel_all_orders()
                 order = bot.client.place_market_order(OrderSide.SELL, qty, symbol)
                 pl = sell.get("unrealized_pl", 0)
-                self.send_message(
-                    f"<b>{symbol} - SATIS TAMAM</b>\n\n"
-                    f"Miktar: {qty:.6f}\n"
-                    f"Fiyat: ${sell['price']:.4f}\n"
-                    f"K/Z: ${pl:+,.4f}\n\n"
-                    f"Pozisyon icin /pozisyon yazin"
+                msg = (
+                    f"<b>SATIS TAMAM</b>  <code>{symbol}</code>\n"
+                    f"Miktar: <code>{qty:.6f}</code>\n"
+                    f"Fiyat: <code>${sell['price']:,.4f}</code>\n"
+                    f"K/Z: <code>${pl:+,.4f}</code>"
                 )
+                self.send_message(msg)
                 bot.signals_sent += 1
             else:
-                self.send_message(f"{symbol} - Pozisyon bulunamadi!")
+                self.send_message(f"<b>{symbol}</b> pozisyon bulunamadi.")
         except Exception as e:
-            self.send_message(f"<b>{symbol} - HATA</b>\n\n{str(e)}")
+            self.send_message(f"<b>{symbol}</b> hata:\n<code>{str(e)[:200]}</code>")
 
     def send_buy_signal(self, symbol, signal, position_info=None):
-        self.last_trade_id += 1
-        trade_id = self.last_trade_id
+        with self._lock:
+            sig_key = f"BUY_{symbol}"
+            if sig_key in self._sent_ids:
+                return None
+            self._sent_ids.add(sig_key)
+            if len(self._sent_ids) > 200:
+                self._sent_ids.clear()
 
-        self.pending_trades[trade_id] = {
-            "id": trade_id,
-            "symbol": symbol,
-            "action": signal.action,
-            "price": signal.price,
-            "confidence": signal.confidence,
-            "reason": signal.reason,
-            "time": datetime.now().strftime('%H:%M:%S')
-        }
+            self.last_trade_id += 1
+            trade_id = self.last_trade_id
 
-        text = (
-            f"<b>[BUY] {symbol} - ALIS ONAYI</b>\n\n"
-            f"Fiyat: <b>${signal.price:,.4f}</b>\n"
+            self.pending_trades[trade_id] = {
+                "id": trade_id, "symbol": symbol, "action": signal.action,
+                "price": signal.price, "confidence": signal.confidence,
+                "reason": signal.reason, "time": datetime.now().strftime('%H:%M:%S')
+            }
+
+        msg = (
+            f"<b>ALIS ONAY</b>  <code>{symbol}</code>\n\n"
+            f"Fiyat: <code>${signal.price:,.4f}</code>\n"
             f"Guven: <b>{signal.confidence:.0%}</b>\n"
-            f"RSI: {signal.rsi:.1f}\n"
-            f"Hacim: {signal.volume_ratio:.1f}x\n"
-            f"Degisim: {signal.price_change_pct*100:+.2f}%\n\n"
+            f"RSI: {signal.rsi:.1f}  Hacim: {signal.volume_ratio:.1f}x\n\n"
             f"<i>{signal.reason}</i>\n\n"
-            f"<b>Onay:\n"
-            f"  yap - Al\n"
-            f"  yapma - Alma</b>\n\n"
-            f"#{trade_id}"
+            f"<code>yap</code> - al  |  <code>yapma</code> - alma"
         )
 
         if position_info and position_info.get("qty", 0) > 0:
-            text += (
-                f"\nMevcut: {position_info.get('qty', 0):.6f} @ "
-                f"${position_info.get('avg_entry_price', 0):,.4f}"
-            )
+            msg += f"\nPozisyon: {position_info['qty']:.6f} @ ${position_info.get('avg_entry_price', 0):,.4f}"
 
-        self.send_message(text)
+        self.send_message(msg)
         return trade_id
 
     def send_sell_signal(self, symbol, signal, position_info):
-        self.last_trade_id += 1
-        sell_id = self.last_trade_id
+        with self._lock:
+            sig_key = f"SELL_{symbol}"
+            if sig_key in self._sent_ids:
+                return None
+            self._sent_ids.add(sig_key)
+            if len(self._sent_ids) > 200:
+                self._sent_ids.clear()
 
-        pl = position_info.get("unrealized_pl", 0) if position_info else 0
-        entry = position_info.get("avg_entry_price", 0) if position_info else 0
-        qty = position_info.get("qty", 0) if position_info else 0
+            self.last_trade_id += 1
+            sell_id = self.last_trade_id
 
-        self.pending_sells[sell_id] = {
-            "id": sell_id,
-            "symbol": symbol,
-            "action": "SELL",
-            "price": signal.price,
-            "confidence": signal.confidence,
-            "reason": signal.reason,
-            "unrealized_pl": pl,
-            "time": datetime.now().strftime('%H:%M:%S')
-        }
+            pl = position_info.get("unrealized_pl", 0) if position_info else 0
+            entry = position_info.get("avg_entry_price", 0) if position_info else 0
 
-        kar_zarar = "KAR" if pl > 0 else "ZARAR"
+            self.pending_sells[sell_id] = {
+                "id": sell_id, "symbol": symbol, "action": "SELL",
+                "price": signal.price, "confidence": signal.confidence,
+                "reason": signal.reason, "unrealized_pl": pl,
+                "time": datetime.now().strftime('%H:%M:%S')
+            }
+
         yuzde = ((signal.price - entry) / entry * 100) if entry > 0 else 0
+        kar_zarar = "KAR" if pl > 0 else "ZARAR"
 
-        text = (
-            f"<b>[SELL] {symbol} - SATIS ONAYI</b>\n\n"
-            f"Giris: <b>${entry:,.4f}</b>\n"
-            f"Simdi: <b>${signal.price:,.4f}</b>\n"
-            f"Degisim: <b>{yuzde:+.2f}%</b>\n"
-            f"K/Z: <b>${pl:+,.4f}</b> ({kar_zarar})\n\n"
-            f"Guven: <b>{signal.confidence:.0%}</b>\n"
+        msg = (
+            f"<b>SATIS ONAY</b>  <code>{symbol}</code>\n\n"
+            f"Giris: <code>${entry:,.4f}</code>  Simdi: <code>${signal.price:,.4f}</code>\n"
+            f"Degisim: <b>{yuzde:+.2f}%</b>  K/Z: <b>${pl:+,.4f}</b> ({kar_zarar})\n\n"
             f"RSI: {signal.rsi:.1f}\n"
-            f"Sebep: <i>{signal.reason}</i>\n\n"
-            f"<b>Onay:\n"
-            f"  satis - SAT\n"
-            f"  sakla - TUT</b>\n\n"
-            f"#{sell_id}"
+            f"<i>{signal.reason}</i>\n\n"
+            f"<code>satis</code> - sat  |  <code>sakla</code> - tut"
         )
 
-        self.send_message(text)
+        self.send_message(msg)
         return sell_id
+
+    def cmd_sell_all(self):
+        from src.main import bot
+        if not bot:
+            self.send_message("Bot calismiyor.")
+            return
+
+        positions = bot.client.get_positions()
+        if not positions:
+            self.send_message("Pozisyon yok.")
+            return
+
+        self.send_message(f"<b>HEPSINI SAT</b>  ({len(positions)} pozisyon)")
+
+        for p in positions:
+            try:
+                from alpaca.trading.enums import OrderSide
+                symbol = p["symbol"]
+                qty = p["qty"]
+                bot.client.cancel_all_orders()
+                bot.client.place_market_order(OrderSide.SELL, qty, symbol)
+                pl = p.get("unrealized_pl", 0)
+                self.send_message(f"<b>{symbol}</b> satildi  K/Z: ${pl:+,.4f}")
+            except Exception as e:
+                self.send_message(f"<b>{p['symbol']}</b> hata: {str(e)[:100]}")
+
+    def cmd_sell_coin(self, coin):
+        from src.main import bot
+        if not bot:
+            self.send_message("Bot calismiyor.")
+            return
+
+        if not coin.endswith("/USD"):
+            coin = coin + "/USD"
+
+        position = bot.client.get_position(coin)
+        if not position:
+            self.send_message(f"<code>{coin}</code> pozisyon yok.")
+            return
+
+        try:
+            from alpaca.trading.enums import OrderSide
+            symbol = position["symbol"]
+            qty = position["qty"]
+            pl = position.get("unrealized_pl", 0)
+            bot.client.cancel_all_orders()
+            bot.client.place_market_order(OrderSide.SELL, qty, symbol)
+            self.send_message(f"<b>{symbol}</b> satildi  K/Z: ${pl:+,.4f}")
+        except Exception as e:
+            self.send_message(f"<b>{coin}</b> hata: {str(e)[:100]}")
+
+    def cmd_balance(self):
+        from src.main import bot
+        if not bot:
+            self.send_message("Bot calismiyor.")
+            return
+
+        try:
+            acc = bot.client.get_account()
+            positions = bot.client.get_positions()
+            toplam_kz = sum(p.get("unrealized_pl", 0) for p in positions)
+            toplam_deger = sum(p.get("market_value", 0) for p in positions)
+
+            msg = (
+                f"<b>BAKIYE</b>\n\n"
+                f"Portfoy: <code>${float(acc.portfolio_value):,.2f}</code>\n"
+                f"Nakit: <code>${float(acc.cash):,.2f}</code>\n"
+                f"Pozisyon: <code>${toplam_deger:,.2f}</code>\n"
+                f"Acik K/Z: <code>${toplam_kz:+,.4f}</code>\n"
+                f"Pozisyon sayisi: <b>{len(positions)}</b>"
+            )
+            self.send_message(msg)
+        except Exception as e:
+            self.send_message(f"Hata: {str(e)[:100]}")
 
     def cmd_positions(self):
         from src.main import bot
@@ -293,43 +398,35 @@ class TelegramBot:
             self.send_message("Bot calismiyor.")
             return
 
-        try:
-            positions = bot.client.get_positions()
-            if not positions:
-                self.send_message(
-                    "<b>POZISYONLAR</b>\n\n"
-                    "Acik pozisyon yok.\n\n"
-                    "Yeni islem icin /scan yapin"
-                )
-                return
+        positions = bot.client.get_positions()
+        if not positions:
+            self.send_message(
+                "<b>POZISYONLAR</b>\n\n"
+                "Acik pozisyon yok.\n\n"
+                "Tarama icin /scan"
+            )
+            return
 
-            text = "<b>POZISYONLAR</b>\n\n"
-            toplam = 0
-            for p in positions:
-                sym = p["symbol"]
-                qty = p["qty"]
-                entry = p["avg_entry_price"]
-                mv = p["market_value"]
-                pl = p["unrealized_pl"]
-                toplam += pl
+        msg = "<b>POZISYONLAR</b>\n\n"
+        toplam = 0
+        for p in positions:
+            sym = p["symbol"]
+            entry = p["avg_entry_price"]
+            mv = p["market_value"]
+            pl = p["unrealized_pl"]
+            toplam += pl
+            yuzde = ((mv - entry * p["qty"]) / (entry * p["qty"]) * 100) if entry > 0 else 0
 
-                durum = "KAR" if pl > 0 else "ZARAR"
-                emoji = "+" if pl > 0 else ""
-                yuzde = ((mv - entry * qty) / (entry * qty) * 100) if entry > 0 and qty > 0 else 0
+            msg += (
+                f"<code>{sym}</code>\n"
+                f"  {p['qty']:.6f} @ ${entry:,.4f}\n"
+                f"  Deger: ${mv:,.2f}\n"
+                f"  K/Z: ${pl:+,.4f} ({yuzde:+.1f}%)\n\n"
+            )
 
-                text += (
-                    f"<b>{sym}</b>\n"
-                    f"  Miktar: {qty:.6f}\n"
-                    f"  Giris: ${entry:,.4f}\n"
-                    f"  Deger: ${mv:,.2f}\n"
-                    f"  K/Z: ${emoji}{pl:,.4f} ({durum} {yuzde:+.1f}%)\n\n"
-                )
-
-            text += f"<b>Toplam K/Z: ${toplam:+,.4f}</b>"
-            self.send_message(text)
-
-        except Exception as e:
-            self.send_message(f"<b>HATA</b>\n\n{str(e)}")
+        msg += f"Toplam K/Z: <b>${toplam:+,.4f}</b>\n\n"
+        msg += "Sat: <code>sell BTC</code>  Hep: <code>sellall</code>"
+        self.send_message(msg)
 
     def cmd_start(self):
         from src.main import start_bot, bot
@@ -339,16 +436,16 @@ class TelegramBot:
         success = start_bot()
         if success:
             self.send_message(
-                "<b>Bot baslatildi!</b>\n\n"
-                f"Coin: {len(settings.symbols)} (7 secili)\n"
-                f"Islem: ${settings.position_size_usd}/islem\n"
-                f"Hedef: Gunluk %5 kar\n"
-                f"Max Pozisyon: {settings.max_positions}\n\n"
-                "Sinyal geldiginde onay istenecek.\n"
-                "/help icin yardim"
+                f"<b>BOT BASLATILDI</b>\n\n"
+                f"Coin: 7  |  Islem: ${settings.position_size_usd}\n"
+                f"Hedef: Gunluk %5\n"
+                f"SL: %{settings.stop_loss_pct*100:.1f}  TP: %{settings.take_profit_pct*100:.1f}\n\n"
+                f"Pozisyonlar: /pos\n"
+                f"Bakiye: /balance\n"
+                f"Komutlar: /help"
             )
         else:
-            self.send_message("Basarisiz! API kontrol edin.")
+            self.send_message("Basarisiz!")
 
     def cmd_stop(self):
         from src.main import stop_bot, bot
@@ -356,7 +453,7 @@ class TelegramBot:
             self.send_message("Bot zaten durdu!")
             return
         stop_bot()
-        self.send_message("<b>Bot durduruldu!</b>")
+        self.send_message("<b>BOT DURDURULDU</b>")
 
     def cmd_status(self):
         from src.main import bot
@@ -364,28 +461,21 @@ class TelegramBot:
             self.send_message("Bot calismiyor. /start ile baslatin.")
             return
 
-        durum = "CALISIYOR"
-        if bot.paused:
-            durum = "DURAKLATILDI"
-
-        text = (
+        durum = "DURAKLATILDI" if bot.paused else "AKTIF"
+        msg = (
             f"<b>DURUM</b>\n\n"
             f"Durum: <b>{durum}</b>\n"
-            f"Tarama: <b>{bot.total_scans}</b>\n"
-            f"Sinyal: <b>{bot.signals_sent}</b>\n"
-            f"Coin: <b>{len(settings.symbols)} (7 secili)</b>\n"
-            f"Islem: <b>${settings.position_size_usd}</b>\n"
-            f"Hedef: <b>Gunluk %5</b>\n"
-            f"Max Pozisyon: <b>{settings.max_positions}</b>\n"
-            f"Son: <b>{bot.last_scan_time or '-'}</b>\n"
+            f"Tarama: {bot.total_scans}  |  Sinyal: {bot.signals_sent}\n"
+            f"Coin: {len(settings.symbols)}\n"
+            f"Son: {bot.last_scan_time or '-'}\n"
         )
 
         if self.pending_trades:
-            text += f"\n<b>Bekleyen alis: {len(self.pending_trades)}</b>\n"
+            msg += f"\nBekleyen alis: {len(self.pending_trades)}"
         if self.pending_sells:
-            text += f"<b>Bekleyen satis: {len(self.pending_sells)}</b>\n"
+            msg += f"\nBekleyen satis: {len(self.pending_sells)}"
 
-        self.send_message(text)
+        self.send_message(msg)
 
     def cmd_signals(self):
         from src.main import bot
@@ -393,11 +483,11 @@ class TelegramBot:
             self.send_message("Sinyal yok.")
             return
 
-        text = "<b>SON SINYALLER</b>\n\n"
+        msg = "<b>SON SINYALLER</b>\n\n"
         for coin, sig in list(bot.last_signals.items())[-10:]:
             islem = "ALIS" if sig.action == "BUY" else "SATIS"
-            text += f"<b>{coin}</b> - {islem} (${sig.price:.4f}) {sig.confidence:.0%}\n"
-        self.send_message(text)
+            msg += f"<code>{coin:12s}</code> {islem}  ${sig.price:,.4f}  {sig.confidence:.0%}\n"
+        self.send_message(msg)
 
     def cmd_scan(self):
         from src.main import bot
@@ -413,50 +503,49 @@ class TelegramBot:
             self.send_message("Bekleyen alis yok.")
             return
 
-        text = "<b>BEKLEYEN ALISLAR</b>\n\n"
+        msg = "<b>BEKLEYEN ALISLAR</b>\n\n"
         for tid, trade in self.pending_trades.items():
-            text += (
-                f"#{tid} <b>{trade['symbol']}</b>\n"
-                f"  Fiyat: ${trade['price']:.4f}\n"
-                f"  Guven: {trade['confidence']:.0%}\n"
-                f"  {trade['time']}\n\n"
+            msg += (
+                f"#{tid} <code>{trade['symbol']}</code>\n"
+                f"  ${trade['price']:,.4f}  Guven: {trade['confidence']:.0%}\n"
             )
-        text += "Onay: yap 1, yap 2\nIptal: yapma"
-        self.send_message(text)
+        msg += "\nOnay: <code>yap</code> | Iptal: <code>yapma</code>"
+        self.send_message(msg)
 
     def cmd_pending_sells(self):
         if not self.pending_sells:
             self.send_message("Bekleyen satis yok.")
             return
 
-        text = "<b>BEKLEYEN SATISLAR</b>\n\n"
+        msg = "<b>BEKLEYEN SATISLAR</b>\n\n"
         for sid, sell in self.pending_sells.items():
-            text += (
-                f"#{sid} <b>{sell['symbol']}</b>\n"
-                f"  Fiyat: ${sell['price']:.4f}\n"
-                f"  Guven: {sell['confidence']:.0%}\n"
-                f"  K/Z: ${sell.get('unrealized_pl', 0):+,.4f}\n"
-                f"  {sell['time']}\n\n"
+            msg += (
+                f"#{sid} <code>{sell['symbol']}</code>\n"
+                f"  ${sell['price']:,.4f}  K/Z: ${sell.get('unrealized_pl', 0):+,.4f}\n"
             )
-        text += "Satis: satis 1\nSakla: sakla 1"
-        self.send_message(text)
+        msg += "\nOnay: <code>satis</code> | Iptal: <code>sakla</code>"
+        self.send_message(msg)
 
     def cmd_help(self):
         self.send_message(
             "<b>KOMUTLAR</b>\n\n"
-            "/start - Baslat\n"
-            "/stop - Durdur\n"
-            "/status - Durum\n"
-            "/positions - Pozisyonlar\n"
-            "/signals - Sinyaller\n"
-            "/scan - Hemen tara\n"
-            "/onaylar - Bekleyen alislar\n"
-            "/satislar - Bekleyen satislar\n"
-            "/help - Yardim\n\n"
-            "<b>ISLEM ONAY</b>\n"
-            "Alis: yap / yapma\n"
-            "Satis: satis / sakla\n"
-            "Sirali: yap 1, satis 2"
+            "<code>/start</code>  Baslat\n"
+            "<code>/stop</code>   Durdur\n"
+            "<code>/status</code> Durum\n"
+            "<code>/pos</code>    Pozisyonlar\n"
+            "<code>/balance</code> Bakiye\n"
+            "<code>/scan</code>   Hemen tara\n"
+            "<code>/signals</code> Sinyaller\n"
+            "<code>/onaylar</code> Bekleyen alislar\n\n"
+            "<b>ISLEM</b>\n"
+            "<code>yap</code>  Alis onay\n"
+            "<code>yapma</code>  Alis iptal\n"
+            "<code>satis</code>  Satis onay\n"
+            "<code>sakla</code>  Tut\n\n"
+            "<b>SATIS</b>\n"
+            "<code>sell BTC</code>  Tekil sat\n"
+            "<code>sellall</code>  Hepini sat\n"
+            "<code>/pos</code>  Pozisyon listesi"
         )
 
     def poll(self):
@@ -491,10 +580,9 @@ def init_telegram():
     telegram_handler = TelegramBot(settings.telegram_bot_token, settings.telegram_chat_id)
     telegram_handler.start_polling()
     telegram_handler.send_message(
-        "<b>Bot hazir!</b>\n\n"
-        "Alis onayi: yap / yapma\n"
-        "Satis onayi: satis / sakla\n"
-        "Pozisyonlar: /positions\n\n"
-        "Komutlar icin /help"
+        f"<b>SISTEM HAZIR</b>\n\n"
+        f"Coin: 7  |  Hedef: Gunluk %5\n\n"
+        f"Basla: <code>/start</code>\n"
+        f"Komutlar: <code>/help</code>"
     )
     return telegram_handler
