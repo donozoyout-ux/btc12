@@ -21,6 +21,7 @@ class CryptoBot:
         self.paused = False
         self.last_signals = {}
         self.scan_results = []
+        self.pending_notifications = []
         self.last_scan_time = None
         self.total_scans = 0
         self.signals_sent = 0
@@ -37,7 +38,7 @@ class CryptoBot:
     def scan_symbol(self, sym: str) -> dict:
         result = {"symbol": sym, "action": "HOLD", "confidence": 0, "price": 0, "reason": ""}
         try:
-            df = self.client.get_bars(symbol=sym, limit=100)
+            df = self.client.get_bars(symbol=sym, limit=50)
             if df.empty:
                 result["reason"] = "No data"
                 return result
@@ -61,15 +62,13 @@ class CryptoBot:
             # Print to console
             action_label = {"BUY": "[BUY]", "SELL": "[SELL]"}.get(sig.action, "")
             if action_label:
-                print(f"  {action_label} {sym:12s} ${sig.price:,.4f} RSI:{sig.rsi:.1f} Vol:{sig.volume_ratio:.1f}x ({sig.confidence:.0%})")
+                print(f"  {action_label} {sym:12s} ${sig.price:,.4f} RSI:{sig.rsi:.1f} ({sig.confidence:.0%})")
 
-            # Notify if actionable
+            # Queue notification (don't block)
             if sig.action != "HOLD" and sig.confidence >= 0.4:
                 prev = self.last_signals.get(sym)
                 if prev is None or sig.action != prev.action or sig.confidence > 0.7:
-                    pos = self.client.get_position(sym)
-                    info = pos if pos else {"symbol": sym}
-                    self.telegram.send_signal(sig, info)
+                    self.pending_notifications.append((sym, sig))
                     self.last_signals[sym] = sig
                     self.signals_sent += 1
 
@@ -90,6 +89,7 @@ class CryptoBot:
     def run_iteration(self):
         self.total_scans += 1
         self.scan_results = []
+        self.pending_notifications = []
         self.last_scan_time = datetime.now().strftime('%H:%M:%S')
 
         print(f"\n{'='*60}")
@@ -100,10 +100,18 @@ class CryptoBot:
                 break
             result = self.scan_symbol(sym)
             self.scan_results.append(result)
-            time.sleep(0.3)
+
+        # Send notifications after scan completes
+        for sym, sig in self.pending_notifications:
+            try:
+                pos = self.client.get_position(sym)
+                info = pos if pos else {"symbol": sym}
+                self.telegram.send_signal(sig, info)
+            except:
+                pass
 
         actionable = [r for r in self.scan_results if r["action"] != "HOLD"]
-        print(f"[*] Done | Actionable: {len(actionable)} | Signals sent: {self.signals_sent}")
+        print(f"[*] Done | Actionable: {len(actionable)} | Signals: {self.signals_sent}")
 
     def execute_buy(self, sym: str, sig: Signal):
         print(f"  [BUY] {sym} at ${sig.price:,.4f}")
