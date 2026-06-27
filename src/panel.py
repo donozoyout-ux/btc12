@@ -117,10 +117,19 @@ HTML_TEMPLATE = """
                 </div>
             </div>
             <div class="section">
-                <div class="section-header"><h2>Logs</h2></div>
-                <div class="section-body">
-                    <div class="log-box" id="logBox"></div>
+                <div class="section-header"><h2>All Scan Results</h2></div>
+                <div class="section-body" style="max-height:300px;">
+                    <table>
+                        <thead><tr><th>Coin</th><th>Action</th><th>Conf</th><th>Price</th><th>RSI</th></tr></thead>
+                        <tbody id="scanBody"><tr><td colspan="5" class="no-data">Waiting for scan...</td></tr></tbody>
+                    </table>
                 </div>
+            </div>
+        </div>
+        <div class="section" style="margin-top:15px;">
+            <div class="section-header"><h2>Logs</h2></div>
+            <div class="section-body">
+                <div class="log-box" id="logBox"></div>
             </div>
         </div>
     </div>
@@ -220,6 +229,24 @@ HTML_TEMPLATE = """
                     }
                     document.getElementById('signalsBody').innerHTML = signalsHtml;
 
+                    // Scan results table
+                    var scanBody = document.getElementById('scanBody');
+                    if(d.scan_results && d.scan_results.length > 0) {
+                        var sorted = d.scan_results.filter(function(r){ return r.action !== 'HOLD'; });
+                        sorted.sort(function(a,b){ return (b.confidence||0) - (a.confidence||0); });
+                        if(sorted.length === 0) sorted = d.scan_results;
+                        var rows = '';
+                        sorted.forEach(function(r) {
+                            var cls = r.action === 'BUY' ? 'buy' : r.action === 'SELL' ? 'sell' : 'hold';
+                            rows += '<tr><td><b>' + r.symbol + '</b></td>' +
+                                '<td class="' + cls + '">' + r.action + '</td>' +
+                                '<td>' + ((r.confidence||0)*100).toFixed(0) + '%</td>' +
+                                '<td>$' + (r.price||0).toFixed(4) + '</td>' +
+                                '<td>' + (r.rsi||0).toFixed(1) + '</td></tr>';
+                        });
+                        scanBody.innerHTML = rows;
+                    }
+
                     if(d.logs && d.logs.length > 0) {
                         var logHtml = '';
                         d.logs.reverse().forEach(function(l) {
@@ -256,6 +283,7 @@ def api_status():
         "signals_sent": bot.signals_sent if bot else 0,
         "last_scan_time": bot.last_scan_time if bot else None,
         "symbols_count": len(settings.symbols),
+        "scan_results": bot.scan_results if bot else [],
         "last_signals": {},
         "logs": log_messages[-30:]
     }
