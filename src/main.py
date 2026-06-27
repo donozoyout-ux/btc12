@@ -170,11 +170,17 @@ class CryptoBot:
             self.telegram.send_error(f"{sym} satis basarisiz: {e}")
 
     def run(self):
-        print("[BASLAT] Crypto Scanner Bot")
-        print(f"[*] {len(settings.symbols)} coin | ${settings.position_size_usd}/islem | {settings.check_interval}s aralikla")
+        print("[BASLAT] Crypto Scanner Bot - 7 Coin Modu")
+        print(f"[*] {len(settings.symbols)} coin | ${settings.position_size_usd}/islem | Hedef: Gunluk %5")
+        print(f"[*] SL: %{settings.stop_loss_pct*100:.1f} | TP: %{settings.take_profit_pct*100:.1f} | Max Poz: {settings.max_positions}")
 
         self.running = True
-        self.telegram.send_status(f"Bot baslatildi - {len(settings.symbols)} coin taraniyor")
+        self.telegram.send_status(
+            f"Bot baslatildi!\n\n"
+            f"7 coin: {', '.join([s.replace('/USD','') for s in settings.symbols])}\n"
+            f"Islem: ${settings.position_size_usd}\n"
+            f"Hedef: Gunluk %5"
+        )
 
         while self.running:
             try:

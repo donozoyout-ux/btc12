@@ -18,12 +18,12 @@ class Settings:
 
     # Trading
     symbols: list = None
-    timeframe: str = os.getenv("TIMEFRAME", "5Min")
-    check_interval: int = int(os.getenv("CHECK_INTERVAL", "300"))
+    timeframe: str = os.getenv("TIMEFRAME", "1Min")
+    check_interval: int = int(os.getenv("CHECK_INTERVAL", "120"))
 
     def __post_init__(self):
         if self.symbols is None:
-            default = "BTC/USD,ETH/USD,SOL/USD,XRP/USD,DOGE/USD,ADA/USD,AVAX/USD,LINK/USD,DOT/USD,SUI/USD,PEPE/USD,SHIB/USD,BONK/USD,WIF/USD,ARB/USD,OP/USD,APT/USD,FIL/USD,UNI/USD,AAVE/USD,LTC/USD,BCH/USD,CRV/USD,LDO/USD,GRT/USD,RENDER/USD,SUSHI/USD,ONDO/USD,HYPE/USD,ATOM/USD,NEAR/USD,SEI/USD,INJ/USD,TIA/USD,JUP/USD,PYTH/USD,WLD/USD,FTM/USD,ALGO/USD,VET/USD,HBAR/USD,MNT/USD,FLOKI/USD,PENDLE/USD,TAO/USD,AR/USD,CRO/USD,TRX/USD,SKY/USD,XTZ/USD,YFI/USD,POL/USD,USDC/USD,USDT/USD,NOT/USD,TURBO/USD,SAND/USD,MANA/USD,AXS/USD,GALA/USD,BAT/USD,ICP/USD,TRUMP/USD,W/USD,JTO/USD,DYDX/USD,USDG/USD,BLUR/USD,EOS/USD,XLM/USD,XMR/USD,ETC/USD,THETA/USD,ENS/USD,IMX/USD,ZRX/USD,COMP/USD,MKR/USD,SNX/USD,CURVE/USD,PAXG/USD,1INCH/USD,CHZ/USD,FIL/USD,MINA/USD,RPL/USD,CELO/USD,OCEAN/USD,NMR/USD"
+            default = "BTC/USD,ETH/USD,SOL/USD,XRP/USD,DOGE/USD,ADA/USD,AVAX/USD"
             symbols_str = os.getenv("SYMBOLS", default)
             seen = set()
             result = []
@@ -34,19 +34,19 @@ class Settings:
                     result.append(s)
             self.symbols = result
 
-    # Strategy
+    # Strategy - 5% gunluk hedef icin daha agresif
     rsi_period: int = int(os.getenv("RSI_PERIOD", "14"))
-    rsi_overbought: int = int(os.getenv("RSI_OVERBOUGHT", "70"))
-    rsi_oversold: int = int(os.getenv("RSI_OVERSOLD", "30"))
+    rsi_overbought: int = int(os.getenv("RSI_OVERBOUGHT", "65"))
+    rsi_oversold: int = int(os.getenv("RSI_OVERSOLD", "35"))
     bb_period: int = int(os.getenv("BB_PERIOD", "20"))
     bb_std: float = float(os.getenv("BB_STD", "2.0"))
-    volume_spike_multiplier: float = float(os.getenv("VOLUME_SPIKE_MULTIPLIER", "2.0"))
-    price_change_threshold: float = float(os.getenv("PRICE_CHANGE_THRESHOLD", "0.02"))
+    volume_spike_multiplier: float = float(os.getenv("VOLUME_SPIKE_MULTIPLIER", "1.5"))
+    price_change_threshold: float = float(os.getenv("PRICE_CHANGE_THRESHOLD", "0.015"))
 
-    # Risk
-    position_size_usd: float = float(os.getenv("POSITION_SIZE_USD", "100"))
-    max_positions: int = int(os.getenv("MAX_POSITIONS", "1"))
-    stop_loss_pct: float = float(os.getenv("STOP_LOSS_PCT", "0.02"))
+    # Risk - 5% gunluk hedef icin
+    position_size_usd: float = float(os.getenv("POSITION_SIZE_USD", "200"))
+    max_positions: int = int(os.getenv("MAX_POSITIONS", "3"))
+    stop_loss_pct: float = float(os.getenv("STOP_LOSS_PCT", "0.015"))
     take_profit_pct: float = float(os.getenv("TAKE_PROFIT_PCT", "0.04"))
 
     def validate(self) -> list[str]:

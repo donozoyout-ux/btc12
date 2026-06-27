@@ -340,8 +340,10 @@ class TelegramBot:
         if success:
             self.send_message(
                 "<b>Bot baslatildi!</b>\n\n"
-                f"Coin: {len(settings.symbols)}\n"
-                f"Islem: ${settings.position_size_usd}\n\n"
+                f"Coin: {len(settings.symbols)} (7 secili)\n"
+                f"Islem: ${settings.position_size_usd}/islem\n"
+                f"Hedef: Gunluk %5 kar\n"
+                f"Max Pozisyon: {settings.max_positions}\n\n"
                 "Sinyal geldiginde onay istenecek.\n"
                 "/help icin yardim"
             )
@@ -371,7 +373,10 @@ class TelegramBot:
             f"Durum: <b>{durum}</b>\n"
             f"Tarama: <b>{bot.total_scans}</b>\n"
             f"Sinyal: <b>{bot.signals_sent}</b>\n"
-            f"Coin: <b>{len(settings.symbols)}</b>\n"
+            f"Coin: <b>{len(settings.symbols)} (7 secili)</b>\n"
+            f"Islem: <b>${settings.position_size_usd}</b>\n"
+            f"Hedef: <b>Gunluk %5</b>\n"
+            f"Max Pozisyon: <b>{settings.max_positions}</b>\n"
             f"Son: <b>{bot.last_scan_time or '-'}</b>\n"
         )
 

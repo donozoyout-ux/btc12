@@ -218,7 +218,7 @@ class Strategy:
         buy_score = min(buy_score, 1.0)
         sell_score = min(sell_score, 1.0)
 
-        if buy_score > 0.5 and buy_score > sell_score:
+        if buy_score > 0.4 and buy_score > sell_score:
             return Signal(
                 action="BUY",
                 reason="; ".join(reasons) if reasons else "Alis sinyali",
@@ -231,7 +231,7 @@ class Strategy:
                 volume_ratio=volume_ratio,
                 price_change_pct=price_change
             )
-        elif sell_score > 0.5 and sell_score > buy_score:
+        elif sell_score > 0.4 and sell_score > buy_score:
             return Signal(
                 action="SELL",
                 reason="; ".join(reasons) if reasons else "Satis sinyali",
