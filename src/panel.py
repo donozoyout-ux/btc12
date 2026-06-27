@@ -102,11 +102,12 @@ HTML_TEMPLATE = """
         </div>
 
         <div class="stats">
-            <div class="stat-card"><h3>Status</h3><div class="value" id="statStatus">-</div></div>
-            <div class="stat-card"><h3>Scans</h3><div class="value" id="statScans">0</div></div>
-            <div class="stat-card"><h3>Signals</h3><div class="value" id="statSignals">0</div></div>
-            <div class="stat-card"><h3>Coins</h3><div class="value" id="statCoins">0</div></div>
-            <div class="stat-card"><h3>Last Scan</h3><div class="value" id="statLastScan">--:--</div></div>
+            <div class="stat-card"><h3>Durum</h3><div class="value" id="statStatus">-</div></div>
+            <div class="stat-card"><h3>Tarama</h3><div class="value" id="statScans">0</div></div>
+            <div class="stat-card"><h3>Sinyal</h3><div class="value" id="statSignals">0</div></div>
+            <div class="stat-card"><h3>Coin</h3><div class="value" id="statCoins">0</div></div>
+            <div class="stat-card"><h3>Son Tarama</h3><div class="value" id="statLastScan">--:--</div></div>
+            <div class="stat-card"><h3>Fear & Greed</h3><div class="value" id="statFG">-</div></div>
         </div>
 
         <div class="grid">
@@ -214,6 +215,16 @@ HTML_TEMPLATE = """
                     document.getElementById('statCoins').textContent = d.symbols_count;
                     document.getElementById('statLastScan').textContent = d.last_scan_time || '--:--';
 
+                    // Fear & Greed
+                    if(d.fear_greed) {
+                        var fg = d.fear_greed;
+                        var fgVal = parseInt(fg.value || 50);
+                        var fgText = fg.value_classification || 'Neutral';
+                        var fgColor = fgVal < 25 ? '#ff1744' : fgVal < 45 ? '#ff9800' : fgVal < 55 ? '#ffc107' : fgVal < 75 ? '#8bc34a' : '#00c853';
+                        document.getElementById('statFG').textContent = fgVal + ' ' + fgText;
+                        document.getElementById('statFG').style.color = fgColor;
+                    }
+
                     var signalsHtml = '';
                     if(d.last_signals && Object.keys(d.last_signals).length > 0) {
                         for(var coin in d.last_signals) {
@@ -276,6 +287,7 @@ def index():
 @app.route('/api/status')
 def api_status():
     global bot
+    from src.coingecko import coingecko
     status = {
         "running": bot.running if bot else False,
         "paused": bot.paused if bot else False,
@@ -285,7 +297,8 @@ def api_status():
         "symbols_count": len(settings.symbols),
         "scan_results": bot.scan_results if bot else [],
         "last_signals": {},
-        "logs": log_messages[-30:]
+        "logs": log_messages[-30:],
+        "fear_greed": coingecko.get_fear_greed()
     }
     if bot and bot.last_signals:
         for k, v in bot.last_signals.items():

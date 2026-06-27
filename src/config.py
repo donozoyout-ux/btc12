@@ -23,9 +23,16 @@ class Settings:
 
     def __post_init__(self):
         if self.symbols is None:
-            default = "BTC/USD,ETH/USD,SOL/USD,XRP/USD,DOGE/USD,ADA/USD,AVAX/USD,LINK/USD,DOT/USD,SUI/USD,PEPE/USD,SHIB/USD,BONK/USD,WIF/USD,TRUMP/USD,ARB/USD,OP/USD,APT/USD,POL/USD,FIL/USD,UNI/USD,AAVE/USD,LTC/USD,BCH/USD,CRV/USD,LDO/USD,GRT/USD,RENDER/USD,SUSHI/USD,BAT/USD,ONDO/USD,PAXG/USD,HYPE/USD,SKY/USD,XTZ/USD,YFI/USD,USDC/USD,USDT/USD,ATOM/USD,ICP/USD,NEAR/USD,SEI/USD,INJ/USD,TIA/USD,JUP/USD,PYTH/USD,WLD/USD,FTM/USD,SAND/USD,MANA/USD,AXS/USD,GALA/USD,NOT/USD,TURBO/USD"
+            default = "BTC/USD,ETH/USD,SOL/USD,XRP/USD,DOGE/USD,ADA/USD,AVAX/USD,LINK/USD,DOT/USD,SUI/USD,PEPE/USD,SHIB/USD,BONK/USD,WIF/USD,ARB/USD,OP/USD,APT/USD,FIL/USD,UNI/USD,AAVE/USD,LTC/USD,BCH/USD,CRV/USD,LDO/USD,GRT/USD,RENDER/USD,SUSHI/USD,ONDO/USD,HYPE/USD,ATOM/USD,NEAR/USD,SEI/USD,INJ/USD,TIA/USD,JUP/USD,PYTH/USD,WLD/USD,FTM/USD,ALGO/USD,VET/USD,HBAR/USD,MNT/USD,FLOKI/USD,PENDLE/USD,TAO/USD,AR/USD,CRO/USD,TRX/USD,SKY/USD,XTZ/USD,YFI/USD,POL/USD,USDC/USD,USDT/USD,NOT/USD,TURBO/USD,SAND/USD,MANA/USD,AXS/USD,GALA/USD,BAT/USD,ICP/USD,TRUMP/USD,W/USD,JTO/USD,DYDX/USD"
             symbols_str = os.getenv("SYMBOLS", default)
-            self.symbols = [s.strip() for s in symbols_str.split(",")]
+            seen = set()
+            result = []
+            for s in symbols_str.split(","):
+                s = s.strip()
+                if s and s not in seen:
+                    seen.add(s)
+                    result.append(s)
+            self.symbols = result
 
     # Strategy
     rsi_period: int = int(os.getenv("RSI_PERIOD", "14"))
