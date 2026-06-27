@@ -337,5 +337,10 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     log("Panel baslatildi")
     log(f"{len(settings.symbols)} coin taraniyor")
+
+    from src.telegram_bot import init_telegram
+    init_telegram()
+    log("Telegram polling baslatildi")
+
     print(f"[PANEL] http://0.0.0.0:{port}")
     app.run(host='0.0.0.0', port=port, debug=False)

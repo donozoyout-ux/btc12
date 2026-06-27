@@ -253,4 +253,10 @@ def poll_telegram():
 if __name__ == "__main__":
     tg_thread = threading.Thread(target=poll_telegram, daemon=True)
     tg_thread.start()
-    bot.run()
+    print("[INFO] Telegram dinleniyor... Botu /start ile baslatin")
+    print("[INFO] Durmak icin CTRL+C")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\n[INFO] Kapatildi")
