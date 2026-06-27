@@ -68,15 +68,8 @@ class CryptoBot:
                 if prev is None or sig.action != prev.action or sig.confidence > 0.7:
                     self.pending_notifications.append((sym, sig))
                     self.last_signals[sym] = sig
-                    self.signals_sent += 1
 
             position = self.client.get_position(sym)
-            has_position = position is not None
-
-            if sig.action == "BUY" and not has_position and sig.confidence >= 0.6:
-                self.execute_buy(sym, sig)
-            elif sig.action == "SELL" and has_position and sig.confidence >= 0.6:
-                self.execute_sell(sym, sig)
 
         except Exception as e:
             result["reason"] = f"Hata: {e}"
@@ -100,11 +93,16 @@ class CryptoBot:
 
         for sym, sig in self.pending_notifications:
             try:
+                from src.telegram_bot import telegram_handler
                 pos = self.client.get_position(sym)
                 info = pos if pos else {"symbol": sym}
-                self.telegram.send_signal(sig, info)
-            except:
-                pass
+                if telegram_handler:
+                    telegram_handler.send_trade_signal(sym, sig, info)
+                    self.signals_sent += 1
+                else:
+                    self.telegram.send_signal(sig, info)
+            except Exception as e:
+                print(f"[TG HATA] {e}")
 
         actionable = [r for r in self.scan_results if r["action"] != "HOLD"]
         print(f"[*] Tamamlandi | Sinyal: {len(actionable)} | Toplam: {self.signals_sent}")
