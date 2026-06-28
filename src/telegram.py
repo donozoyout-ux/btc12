@@ -345,13 +345,21 @@ class TelegramBot:
         if self._on_memory:
             data = self._on_memory()
             stats = data.get("stats", {})
+            ai = data.get("ai", {})
             recent = data.get("recent", [])
             msg = (
                 f"<b>AI OGRENME</b>\n\n"
+                f"<b>Strateji:</b>\n"
                 f"Basari: <b>%{stats.get('win_rate', 0)}</b>\n"
                 f"Toplam: {stats.get('total', 0)} islem\n"
                 f"Kazanan: {stats.get('wins', 0)}  Kaybeden: {stats.get('losses', 0)}\n"
                 f"Toplam K/Z: <code>${stats.get('total_pnl', 0):+,.4f}</code>\n\n"
+            )
+            model_durum = "HAZIR" if ai.get("model_ready") else f"Ogreniyor ({ai.get('model_samples', 0)} ornek)"
+            msg += (
+                f"<b>ML Model:</b>\n"
+                f"Durum: {model_durum}\n"
+                f"Ornek: {ai.get('model_samples', 0)}\n\n"
             )
             if recent:
                 msg += "<b>SON ISLEMLER</b>\n"

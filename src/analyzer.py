@@ -146,6 +146,8 @@ class Analyzer:
         if not ind:
             return None, 0, ""
 
+        from src.ai_engine import ai_engine
+
         buy_score = 0.0
         sell_score = 0.0
         reasons = []
@@ -237,6 +239,17 @@ class Analyzer:
                 buy_score *= 0.5
                 sell_score *= 1.2
                 reasons.append(f"AI: {symbol} basari orani dusuk (%{stats['win_rate']})")
+
+        ai_pred = ai_engine.predict(ind)
+        if ai_pred and ai_pred["model_samples"] >= 10:
+            ai_win = ai_pred["win_probability"]
+            ai_conf = ai_pred["confidence"]
+            if ai_win > 0.6:
+                buy_score += 0.15 * ai_conf
+                reasons.append(f"AI model: %{ai_win*100:.0f} kazanma ({', '.join(ai_pred['top_factors'][:2])})")
+            elif ai_win < 0.4:
+                sell_score += 0.15 * ai_conf
+                reasons.append(f"AI model: %{(1-ai_win)*100:.0f} kaybetme ({', '.join(ai_pred['top_factors'][:2])})")
 
         if buy_score > 0.45 and buy_score > sell_score:
             return "BUY", buy_score, "; ".join(reasons)

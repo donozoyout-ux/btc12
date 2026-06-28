@@ -5,3 +5,5 @@ ta
 python-dotenv
 requests
 flask
+scikit-learn
+joblib

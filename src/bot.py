@@ -5,6 +5,7 @@ from src.config import settings
 from src.trader import trader
 from src.analyzer import analyzer, Memory
 from src.telegram import tg
+from src.ai_engine import ai_engine
 
 
 class Bot:
@@ -20,6 +21,7 @@ class Bot:
         self._lock = threading.Lock()
         self._pending_buys = {}
         self._buy_counter = 0
+        self._last_indicators = {}
 
     def start(self):
         if self.running:
@@ -27,6 +29,7 @@ class Bot:
         self.running = True
         self.paused = False
         threading.Thread(target=self._loop, daemon=True).start()
+        threading.Thread(target=self._check_trades_loop, daemon=True).start()
         return True
 
     def stop(self):
@@ -42,6 +45,46 @@ class Bot:
             if not self.paused:
                 self.scan()
             time.sleep(settings.check_interval)
+
+    def _check_trades_loop(self):
+        while self.running:
+            time.sleep(60)
+            if self.paused:
+                continue
+            self._check_trade_outcomes()
+
+    def _check_trade_outcomes(self):
+        try:
+            positions = {p["symbol"]: p for p in trader.get_positions()}
+            for trade_id, trade in list(self._pending_buys.items()):
+                sym = trade["symbol"]
+                if sym not in positions and trade.get("recorded"):
+                    continue
+                if sym not in positions and not trade.get("recorded"):
+                    entry_price = trade.get("price", 0)
+                    indicators = trade.get("indicators", {})
+                    ai_engine.record_outcome(
+                        sym, trade["action"], trade["confidence"],
+                        entry_price, indicators, "BREAKEVEN", 0
+                    )
+                    trade["recorded"] = True
+        except:
+            pass
+
+    def record_trade_result(self, symbol, entry_price, exit_price, indicators):
+        pnl_pct = (exit_price - entry_price) / entry_price if entry_price > 0 else 0
+        outcome = "WIN" if pnl_pct > 0 else "LOSS" if pnl_pct < 0 else "BREAKEVEN"
+        pnl_usd = pnl_pct * settings.position_size_usd
+
+        ai_engine.record_outcome(
+            symbol, "BUY", 0, entry_price, indicators, outcome, pnl_usd
+        )
+        self.memory.record_signal(
+            symbol, "BUY", 0, entry_price, indicators, f"Sonuc: {outcome}"
+        )
+        self.memory.close_trade(len(self.memory.trades), pnl_usd)
+
+        return outcome, pnl_usd
 
     def scan(self):
         self.total_scans += 1
@@ -68,6 +111,7 @@ class Bot:
                     })
                     continue
 
+                self._last_indicators[sym] = ind
                 action, confidence, reason = analyzer.score(ind, self.memory, sym)
 
                 self.scan_results.append({
@@ -107,7 +151,7 @@ class Bot:
                 "symbol": symbol, "action": action,
                 "confidence": confidence, "price": price,
                 "reason": reason, "indicators": indicators,
-                "time": datetime.now().isoformat()
+                "time": datetime.now().isoformat(), "recorded": False
             }
             trade_id = self._buy_counter
 
@@ -124,8 +168,14 @@ class Bot:
                     "symbol": symbol, "action": action,
                     "confidence": confidence, "price": price,
                     "reason": reason, "indicators": indicators,
-                    "time": datetime.now().isoformat()
+                    "time": datetime.now().isoformat(), "recorded": False
                 }
+
+                if entry > 0:
+                    outcome, pnl_usd = self.record_trade_result(symbol, entry, price, indicators)
+                    tg.send_ai_alert(symbol, "down" if outcome == "LOSS" else "up",
+                                     f"Islem kapatildi: {outcome} (${pnl_usd:+,.2f})")
+
                 tg.send_sell_signal(symbol, confidence, price, reason, trade_id, entry, pnl)
 
     def _check_ai_alerts(self):
@@ -164,9 +214,12 @@ class Bot:
             }
 
     def get_memory_data(self):
+        memory_stats = self.memory.get_win_rate()
+        ai_stats = ai_engine.get_stats()
         return {
-            "stats": self.memory.get_win_rate(),
-            "recent": self.memory.get_recent(10)
+            "stats": memory_stats,
+            "recent": self.memory.get_recent(10),
+            "ai": ai_stats
         }
 
 
