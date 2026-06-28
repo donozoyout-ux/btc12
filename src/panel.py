@@ -6,6 +6,7 @@ from datetime import datetime
 from src.bot import bot, setup_telegram
 from src.trader import trader
 from src.config import settings
+from src.telegram import tg
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'crypto-bot-2024'
