@@ -1,10 +1,10 @@
 services:
-  - type: web
-    name: crypto-bot
+  - type: worker
+    name: btc-eth-bot
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python src/panel.py
+    startCommand: python bot.py
     envVars:
       - key: ALPACA_API_KEY
         sync: false
@@ -14,27 +14,5 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
-      - key: SYMBOLS
-        value: BTC/USD,ETH/USD,SOL/USD,XRP/USD,DOGE/USD,ADA/USD,AVAX/USD
-      - key: TIMEFRAME
-        value: 1Min
-      - key: CHECK_INTERVAL
-        value: "120"
-      - key: POSITION_SIZE_USD
-        value: "200"
-      - key: MAX_POSITIONS
-        value: "3"
-      - key: STOP_LOSS_PCT
-        value: "0.015"
-      - key: TAKE_PROFIT_PCT
-        value: "0.04"
-      - key: RSI_OVERBOUGHT
-        value: "65"
-      - key: RSI_OVERSOLD
-        value: "35"
-      - key: VOLUME_SPIKE_MULTIPLIER
-        value: "1.5"
-      - key: PRICE_CHANGE_THRESHOLD
-        value: "0.015"
       - key: PYTHON_VERSION
         value: 3.12.0
