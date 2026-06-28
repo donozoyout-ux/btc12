@@ -1,5 +1,6 @@
 import time
 import threading
+import requests
 from datetime import datetime
 from src.config import settings
 from src.trader import trader
@@ -28,8 +29,8 @@ class Bot:
             return False
         self.running = True
         self.paused = False
-        threading.Thread(target=self._loop, daemon=True).start()
-        threading.Thread(target=self._check_trades_loop, daemon=True).start()
+        threading.Thread(target=self._main_loop, daemon=True).start()
+        threading.Thread(target=self._keep_alive, daemon=True).start()
         return True
 
     def stop(self):
@@ -40,56 +41,30 @@ class Bot:
         self.paused = not self.paused
         return self.paused
 
-    def _loop(self):
+    def _main_loop(self):
+        tg.send("<b>TARAMA BASLATILDI</b>\n\nBTC ve ETH taraniyor...")
+        time.sleep(2)
+        self.scan()
         while self.running:
             if not self.paused:
                 self.scan()
             time.sleep(settings.check_interval)
 
-    def _check_trades_loop(self):
+    def _keep_alive(self):
         while self.running:
-            time.sleep(60)
-            if self.paused:
-                continue
-            self._check_trade_outcomes()
-
-    def _check_trade_outcomes(self):
-        try:
-            positions = {p["symbol"]: p for p in trader.get_positions()}
-            for trade_id, trade in list(self._pending_buys.items()):
-                sym = trade["symbol"]
-                if sym not in positions and trade.get("recorded"):
-                    continue
-                if sym not in positions and not trade.get("recorded"):
-                    entry_price = trade.get("price", 0)
-                    indicators = trade.get("indicators", {})
-                    ai_engine.record_outcome(
-                        sym, trade["action"], trade["confidence"],
-                        entry_price, indicators, "BREAKEVEN", 0
-                    )
-                    trade["recorded"] = True
-        except:
-            pass
-
-    def record_trade_result(self, symbol, entry_price, exit_price, indicators):
-        pnl_pct = (exit_price - entry_price) / entry_price if entry_price > 0 else 0
-        outcome = "WIN" if pnl_pct > 0 else "LOSS" if pnl_pct < 0 else "BREAKEVEN"
-        pnl_usd = pnl_pct * settings.position_size_usd
-
-        ai_engine.record_outcome(
-            symbol, "BUY", 0, entry_price, indicators, outcome, pnl_usd
-        )
-        self.memory.record_signal(
-            symbol, "BUY", 0, entry_price, indicators, f"Sonuc: {outcome}"
-        )
-        self.memory.close_trade(len(self.memory.trades), pnl_usd)
-
-        return outcome, pnl_usd
+            time.sleep(600)
+            try:
+                port = 10000
+                requests.get(f"http://127.0.0.1:{port}/", timeout=5)
+            except:
+                pass
 
     def scan(self):
         self.total_scans += 1
         self.last_scan = datetime.now().strftime('%H:%M:%S')
         self.scan_results = []
+
+        print(f"\n[SCAN #{self.total_scans}] {self.last_scan}")
 
         for sym in settings.symbols:
             if not self.running:
@@ -97,6 +72,7 @@ class Bot:
             try:
                 df = trader.get_bars(sym, 60)
                 if df.empty:
+                    print(f"  [{sym}] Veri yok")
                     self.scan_results.append({
                         "symbol": sym, "action": "HOLD", "confidence": 0,
                         "price": 0, "rsi": 0, "volume_ratio": 0, "reason": "Veri yok"
@@ -105,6 +81,7 @@ class Bot:
 
                 ind = analyzer.analyze(df)
                 if not ind:
+                    print(f"  [{sym}] Yetersiz veri")
                     self.scan_results.append({
                         "symbol": sym, "action": "HOLD", "confidence": 0,
                         "price": 0, "rsi": 0, "volume_ratio": 0, "reason": "Yetersiz veri"
@@ -113,6 +90,8 @@ class Bot:
 
                 self._last_indicators[sym] = ind
                 action, confidence, reason = analyzer.score(ind, self.memory, sym)
+
+                print(f"  [{sym}] ${ind['price']:,.2f} RSI:{ind['rsi']:.1f} -> {action} ({confidence:.0%}) {reason[:40]}")
 
                 self.scan_results.append({
                     "symbol": sym, "action": action, "confidence": confidence,
@@ -131,12 +110,25 @@ class Bot:
                         self._send_signal(sym, action, confidence, ind["price"], reason, ind)
 
             except Exception as e:
+                print(f"  [{sym}] HATA: {e}")
                 self.scan_results.append({
                     "symbol": sym, "action": "HOLD", "confidence": 0,
                     "price": 0, "rsi": 0, "volume_ratio": 0, "reason": str(e)[:50]
                 })
 
+        if self.total_scans == 1 or self.total_scans % 5 == 0:
+            self._send_scan_summary()
+
         self._check_ai_alerts()
+
+    def _send_scan_summary(self):
+        if not self.scan_results:
+            return
+        msg = f"<b>TARAMA #{self.total_scans}</b>  {self.last_scan}\n\n"
+        for r in self.scan_results:
+            emoji = "BUY" if r["action"] == "BUY" else "SELL" if r["action"] == "SELL" else "---"
+            msg += f"<code>{r['symbol']:8s}</code> ${r['price']:>10,.2f}  RSI:{r['rsi']:5.1f}  <b>{emoji}</b>\n"
+        tg.send(msg, silent=True)
 
     def _send_signal(self, symbol, action, confidence, price, reason, indicators):
         self.signals_sent += 1
@@ -177,6 +169,21 @@ class Bot:
                                      f"Islem kapatildi: {outcome} (${pnl_usd:+,.2f})")
 
                 tg.send_sell_signal(symbol, confidence, price, reason, trade_id, entry, pnl)
+
+    def record_trade_result(self, symbol, entry_price, exit_price, indicators):
+        pnl_pct = (exit_price - entry_price) / entry_price if entry_price > 0 else 0
+        outcome = "WIN" if pnl_pct > 0 else "LOSS" if pnl_pct < 0 else "BREAKEVEN"
+        pnl_usd = pnl_pct * settings.position_size_usd
+
+        ai_engine.record_outcome(
+            symbol, "BUY", 0, entry_price, indicators, outcome, pnl_usd
+        )
+        self.memory.record_signal(
+            symbol, "BUY", 0, entry_price, indicators, f"Sonuc: {outcome}"
+        )
+        self.memory.close_trade(len(self.memory.trades), pnl_usd)
+
+        return outcome, pnl_usd
 
     def _check_ai_alerts(self):
         for sym in settings.symbols:

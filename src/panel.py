@@ -504,6 +504,11 @@ def api_memory():
     return jsonify(bot.get_memory_data())
 
 
+@app.route('/api/keepalive')
+def api_keepalive():
+    return jsonify({"status": "ok", "running": bot.running, "scans": bot.total_scans})
+
+
 if __name__ == '__main__':
     import os
 
