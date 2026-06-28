@@ -96,6 +96,7 @@ body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hi
 <div class="flex items-center gap-6 mb-3 border-b border-border/20 pb-2">
 <button onclick="switchTab('scan')" id="tabScan" class="text-xs font-bold text-white border-b-2 border-accent pb-1 cursor-pointer">TARAMA</button>
 <button onclick="switchTab('positions')" id="tabPos" class="text-xs font-bold text-text3 border-b-2 border-transparent pb-1 cursor-pointer">POZISYONLAR</button>
+<button onclick="switchTab('agents')" id="tabAgents" class="text-xs font-bold text-text3 border-b-2 border-transparent pb-1 cursor-pointer">AI AGENTS</button>
 <button onclick="switchTab('ai')" id="tabAi" class="text-xs font-bold text-text3 border-b-2 border-transparent pb-1 cursor-pointer">AI HAFIZA</button>
 </div>
 
@@ -124,6 +125,18 @@ body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hi
 <tr><td colspan="6" class="px-4 py-12 text-center text-text3 italic">Tarama bekleniyor...</td></tr>
 </tbody>
 </table>
+</div>
+</div>
+
+<div id="agentsPanel" class="flex flex-col flex-1 hidden">
+<div class="flex items-center justify-between mb-3">
+<h2 class="text-sm font-bold text-white flex items-center gap-2">
+<span class="material-symbols-outlined text-accent">smart_toy</span> AI AGENTS - Tahmin Motoru
+</h2>
+<button onclick="refresh()" class="btn px-3 py-1 bg-accent hover:bg-accent/80 text-white text-[10px] font-bold rounded">YENILE</button>
+</div>
+<div id="agentsContainer" class="flex flex-col gap-4 overflow-y-auto flex-1 scrollbar pr-1">
+<div class="glass rounded-lg p-6 text-center text-text3">Agent sonuclari bekleniyor...</div>
 </div>
 </div>
 
@@ -221,13 +234,15 @@ setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocal
 
 function switchTab(t){
     currentTab=t;
-    ['scan','positions','ai'].forEach(x=>{
-        var el=document.getElementById('tab'+x.charAt(0).toUpperCase()+x.slice(1));
+    var tabMap={scan:'Scan',positions:'Pos',agents:'Agents',ai:'Ai'};
+    var panelMap={scan:'scanPanel',positions:'posPanel',agents:'agentsPanel',ai:'aiPanel'};
+    Object.keys(tabMap).forEach(x=>{
+        var el=document.getElementById('tab'+tabMap[x]);
         if(el){
             el.className=x===t?'text-xs font-bold text-white border-b-2 border-accent pb-1 cursor-pointer'
                           :'text-xs font-bold text-text3 border-b-2 border-transparent pb-1 cursor-pointer';
         }
-        var panel=document.getElementById(x+'Panel');
+        var panel=document.getElementById(panelMap[x]);
         if(panel){
             panel.className=x===t?'flex flex-col flex-1':'flex flex-col flex-1 hidden';
         }
@@ -400,6 +415,52 @@ function updateStatus(){
             aiBody.innerHTML=html;
         }
     }).catch(e=>console.log('Memory error:',e));
+
+    fetch('/api/status').then(r=>r.json()).then(d=>{
+        var agentResults=d.agent_results||{};
+        var container=document.getElementById('agentsContainer');
+        var keys=Object.keys(agentResults);
+        if(keys.length===0){
+            container.innerHTML='<div class="glass rounded-lg p-6 text-center text-text3">Agent sonuclari bekleniyor... Tarama baslatmak icin /start</div>';
+            return;
+        }
+        var html='';
+        keys.forEach(sym=>{
+            var r=agentResults[sym];
+            var dir=r.direction||'NEUTRAL';
+            var dirColor=dir==='BUY'?'text-green':dir==='SELL'?'text-red':'text-yellow-500';
+            var dirBg=dir==='BUY'?'bg-green/10 border-green/30':dir==='SELL'?'bg-red/10 border-red/30':'bg-yellow-500/10 border-yellow-500/30';
+            html+='<div class="glass rounded-lg p-4 border-l-4 '+(dir==='BUY'?'border-green':dir==='SELL'?'border-red':'border-yellow-500')+'">';
+            html+='<div class="flex items-center justify-between mb-3">';
+            html+='<div class="text-lg font-bold text-white">'+sym+'</div>';
+            html+='<div class="px-3 py-1 rounded text-sm font-bold '+dirColor+' '+dirBg+'">'+dir+' ('+(r.confidence*100).toFixed(0)+'%)</div>';
+            html+='</div>';
+            html+='<div class="grid grid-cols-5 gap-2 mb-3">';
+            var agents=r.agents||{};
+            var agentKeys=Object.keys(agents);
+            agentKeys.forEach(ak=>{
+                var a=agents[ak];
+                var aDir=a.direction||'?';
+                var aColor=aDir==='BUY'?'text-green':aDir==='SELL'?'text-red':'text-text3';
+                var aBg=aDir==='BUY'?'bg-green/10':aDir==='SELL'?'bg-red/10':'bg-surface4';
+                html+='<div class="'+aBg+' rounded p-2 text-center">';
+                html+='<div class="text-[10px] font-bold tracking-widest text-text3 mb-1">'+ak.toUpperCase()+'</div>';
+                html+='<div class="text-sm font-bold '+aColor+'">'+aDir+'</div>';
+                html+='<div class="text-[10px] text-text3 font-mono">'+(a.confidence*100).toFixed(0)+'%</div>';
+                html+='</div>';
+            });
+            html+='</div>';
+            if(r.reasons&&r.reasons.length>0){
+                html+='<div class="text-[11px] text-text3">';
+                r.reasons.forEach(reason=>{
+                    html+='<div class="mb-0.5">• '+reason+'</div>';
+                });
+                html+='</div>';
+            }
+            html+='</div>';
+        });
+        container.innerHTML=html;
+    }).catch(e=>console.log('Agents error:',e));
 }
 
 refresh();
