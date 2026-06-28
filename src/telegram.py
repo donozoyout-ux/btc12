@@ -201,6 +201,12 @@ class TelegramBot:
             self.send(f"<b>{coin}</b> hata: {str(e)[:100]}")
 
     def send_buy_signal(self, symbol, confidence, price, reason, trade_id):
+        with self._lock:
+            self.pending[trade_id] = {
+                "id": trade_id, "symbol": symbol, "action": "BUY",
+                "confidence": confidence, "price": price, "reason": reason
+            }
+
         msg = (
             f"<b>ALIS ONAY</b>  <code>{symbol}</code>\n\n"
             f"Fiyat: <code>${price:,.2f}</code>\n"
@@ -212,6 +218,13 @@ class TelegramBot:
         self.send(msg)
 
     def send_sell_signal(self, symbol, confidence, price, reason, trade_id, entry=0, pnl=0):
+        with self._lock:
+            self.pending_sell[trade_id] = {
+                "id": trade_id, "symbol": symbol, "action": "SELL",
+                "confidence": confidence, "price": price, "reason": reason,
+                "pnl": pnl, "entry": entry
+            }
+
         yuzde = ((price - entry) / entry * 100) if entry > 0 else 0
         kar_zarar = "KAR" if pnl > 0 else "ZARAR"
         msg = (
