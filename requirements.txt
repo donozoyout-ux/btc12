@@ -3,9 +3,5 @@ pandas
 numpy
 ta
 python-dotenv
-pytz
 requests
 flask
-flask-socketio
-gevent
-gevent-websocket

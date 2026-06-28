@@ -1,1 +1,1 @@
-web: python src/panel.py
+web: python app.py

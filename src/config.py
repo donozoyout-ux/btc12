@@ -1,55 +1,29 @@
 import os
-from dataclasses import dataclass
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-@dataclass
 class Settings:
-    # Alpaca
-    alpaca_api_key: str = os.getenv("ALPACA_API_KEY", "")
-    alpaca_secret_key: str = os.getenv("ALPACA_SECRET_KEY", "")
-    alpaca_base_url: str = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+    alpaca_api_key = os.getenv("ALPACA_API_KEY", "")
+    alpaca_secret_key = os.getenv("ALPACA_SECRET_KEY", "")
+    alpaca_base_url = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
 
-    # Telegram
-    telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
+    telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
 
-    # Trading
-    symbols: list = None
-    timeframe: str = os.getenv("TIMEFRAME", "1Min")
-    check_interval: int = int(os.getenv("CHECK_INTERVAL", "120"))
+    symbols = ["BTC/USD", "ETH/USD"]
 
-    def __post_init__(self):
-        if self.symbols is None:
-            default = "BTC/USD,ETH/USD,SOL/USD,XRP/USD,DOGE/USD,ADA/USD,AVAX/USD"
-            symbols_str = os.getenv("SYMBOLS", default)
-            seen = set()
-            result = []
-            for s in symbols_str.split(","):
-                s = s.strip()
-                if s and s not in seen and s.endswith("/USD"):
-                    seen.add(s)
-                    result.append(s)
-            self.symbols = result
+    check_interval = int(os.getenv("CHECK_INTERVAL", "120"))
+    position_size_usd = float(os.getenv("POSITION_SIZE_USD", "100"))
+    stop_loss_pct = float(os.getenv("STOP_LOSS_PCT", "0.012"))
+    take_profit_pct = float(os.getenv("TAKE_PROFIT_PCT", "0.025"))
+    min_confidence = float(os.getenv("MIN_CONFIDENCE", "0.55"))
 
-    # Strategy - 5% gunluk hedef icin daha agresif
-    rsi_period: int = int(os.getenv("RSI_PERIOD", "14"))
-    rsi_overbought: int = int(os.getenv("RSI_OVERBOUGHT", "65"))
-    rsi_oversold: int = int(os.getenv("RSI_OVERSOLD", "35"))
-    bb_period: int = int(os.getenv("BB_PERIOD", "20"))
-    bb_std: float = float(os.getenv("BB_STD", "2.0"))
-    volume_spike_multiplier: float = float(os.getenv("VOLUME_SPIKE_MULTIPLIER", "1.5"))
-    price_change_threshold: float = float(os.getenv("PRICE_CHANGE_THRESHOLD", "0.015"))
+    memory_file = os.getenv("MEMORY_FILE", "trades.json")
+    activity_log_file = os.getenv("ACTIVITY_LOG", "activity.json")
 
-    # Risk - 5% gunluk hedef icin
-    position_size_usd: float = float(os.getenv("POSITION_SIZE_USD", "200"))
-    max_positions: int = int(os.getenv("MAX_POSITIONS", "3"))
-    stop_loss_pct: float = float(os.getenv("STOP_LOSS_PCT", "0.015"))
-    take_profit_pct: float = float(os.getenv("TAKE_PROFIT_PCT", "0.04"))
-
-    def validate(self) -> list[str]:
+    def validate(self):
         errors = []
         if not self.alpaca_api_key:
             errors.append("ALPACA_API_KEY not set")
