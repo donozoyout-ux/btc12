@@ -42,12 +42,24 @@ class Bot:
         return self.paused
 
     def _main_loop(self):
-        tg.send("<b>TARAMA BASLATILDI</b>\n\nBTC ve ETH taraniyor...")
+        tg.send(
+            f"<b>TARAMA BASLATILDI</b>\n\n"
+            f"Coin: BTC, ETH\n"
+            f"Miktar: ${settings.position_size_usd:.0f}\n"
+            f"Her {settings.check_interval} saniyede bir tarayacak..."
+        )
         time.sleep(2)
-        self.scan()
+        try:
+            self.scan()
+        except Exception as e:
+            print(f"[SCAN HATA] {e}")
+            tg.send(f"<b>TARAMA HATASI</b>\n\n<code>{str(e)[:200]}</code>")
         while self.running:
             if not self.paused:
-                self.scan()
+                try:
+                    self.scan()
+                except Exception as e:
+                    print(f"[SCAN HATA] {e}")
             time.sleep(settings.check_interval)
 
     def _keep_alive(self):
@@ -126,8 +138,16 @@ class Bot:
             return
         msg = f"<b>TARAMA #{self.total_scans}</b>  {self.last_scan}\n\n"
         for r in self.scan_results:
-            emoji = "BUY" if r["action"] == "BUY" else "SELL" if r["action"] == "SELL" else "---"
-            msg += f"<code>{r['symbol']:8s}</code> ${r['price']:>10,.2f}  RSI:{r['rsi']:5.1f}  <b>{emoji}</b>\n"
+            if r["action"] == "BUY":
+                emoji = "ALIS"
+            elif r["action"] == "SELL":
+                emoji = "SATIS"
+            else:
+                emoji = "BEKLE"
+            if r["price"] > 0:
+                msg += f"<code>{r['symbol']:8s}</code> ${r['price']:>10,.2f}  RSI:{r['rsi']:5.1f}  <b>{emoji}</b> ({r['confidence']:.0%})\n"
+            else:
+                msg += f"<code>{r['symbol']:8s}</code>  <b>{emoji}</b>  {r['reason'][:30]}\n"
         tg.send(msg, silent=True)
 
     def _send_signal(self, symbol, action, confidence, price, reason, indicators):

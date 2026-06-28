@@ -108,6 +108,12 @@ class TelegramBot:
             self._sell_all()
         elif base in ["/sell", "sell"] and arg:
             self._sell_one(arg.upper())
+        elif base in ["/artir", "artir"]:
+            self._cmd_artir(arg)
+        elif base in ["/azalt", "azalt"]:
+            self._cmd_azalt(arg)
+        elif base in ["/ miktar", "miktar"]:
+            self._cmd_miktar()
         elif base in ["/help", "/yardim"]:
             self._cmd_help()
         else:
@@ -252,9 +258,10 @@ class TelegramBot:
         self.send(
             f"<b>BOT BASLATILDI</b>\n\n"
             f"Coin: BTC, ETH\n"
-            f"Islem: ${settings.position_size_usd}\n"
+            f"Miktar: ${settings.position_size_usd:.0f}\n"
             f"SL: %{settings.stop_loss_pct*100:.1f}  TP: %{settings.take_profit_pct*100:.1f}\n\n"
-            f"/status - durum\n/pos - pozisyonlar\n/help - komutlar")
+            f"Tarama basliyor...\n\n"
+            f"/status - durum\n/pos - pozisyonlar\n/miktar - islem miktari\n/help - komutlar")
 
     def _cmd_stop(self):
         if self._on_stop:
@@ -408,6 +415,10 @@ class TelegramBot:
             "<code>/signals</code> Sinyaller\n"
             "<code>/memory</code> AI ogrenme durumu\n"
             "<code>/onaylar</code> Bekleyen alislar\n\n"
+            "<b>ISLEM MIKTARI</b>\n"
+            "<code>/artir 50</code>  +$50 artir\n"
+            "<code>/azalt 50</code>  -$50 azalt\n"
+            "<code>/miktar</code>  Guncel miktar\n\n"
             "<b>ISLEM</b>\n"
             "<code>yap</code>  Alis onay\n"
             "<code>yapma</code>  Alis iptal\n"
@@ -416,6 +427,33 @@ class TelegramBot:
             "<b>SATIS</b>\n"
             "<code>sell BTC</code>  Tekil sat\n"
             "<code>sellall</code>  Hepini sat"
+        )
+
+    def _cmd_artir(self, arg):
+        if not arg or not arg.isdigit():
+            self.send("Kullanim: <code>/artir 50</code>")
+            return
+        amount = float(arg)
+        settings.position_size_usd += amount
+        self.send(f"<b>MIKTAR ARTTIRILDI</b>\n\nYeni: <code>${settings.position_size_usd:.0f}</code>")
+
+    def _cmd_azalt(self, arg):
+        if not arg or not arg.isdigit():
+            self.send("Kullanim: <code>/azalt 50</code>")
+            return
+        amount = float(arg)
+        if settings.position_size_usd - amount < 10:
+            self.send("Minimum miktar: $10")
+            return
+        settings.position_size_usd -= amount
+        self.send(f"<b>MIKTAR AZALTILDI</b>\n\nYeni: <code>${settings.position_size_usd:.0f}</code>")
+
+    def _cmd_miktar(self):
+        self.send(
+            f"<b>ISLEM MIKTARI</b>\n\n"
+            f"Guncel: <code>${settings.position_size_usd:.0f}</code>\n"
+            f"Artir: <code>/artir 50</code>\n"
+            f"Azalt: <code>/azalt 50</code>"
         )
 
     def poll(self):
