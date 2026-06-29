@@ -1,141 +1,67 @@
-import json
-import os
-from datetime import datetime
 import pandas as pd
+import numpy as np
 import ta
-from src.config import settings
-
-
-class Memory:
-    def __init__(self):
-        self.file = settings.memory_file
-        self.trades = self._load()
-
-    def _load(self):
-        if os.path.exists(self.file):
-            try:
-                with open(self.file, "r") as f:
-                    return json.load(f)
-            except:
-                return []
-        return []
-
-    def _save(self):
-        with open(self.file, "w") as f:
-            json.dump(self.trades, f, indent=2, default=str)
-
-    def record_signal(self, symbol, action, confidence, price, indicators, reason):
-        entry = {
-            "id": len(self.trades) + 1,
-            "time": datetime.now().isoformat(),
-            "symbol": symbol,
-            "action": action,
-            "confidence": round(confidence, 3),
-            "price": price,
-            "indicators": indicators,
-            "reason": reason,
-            "outcome": None,
-            "pnl": 0,
-            "closed_at": None
-        }
-        self.trades.append(entry)
-        self._save()
-        return entry["id"]
-
-    def record_prediction(self, symbol, action, confidence, price, indicators, reason, consensus):
-        entry = {
-            "id": len(self.trades) + 1,
-            "time": datetime.now().isoformat(),
-            "symbol": symbol,
-            "action": action,
-            "confidence": round(confidence, 3),
-            "price": price,
-            "indicators": indicators,
-            "reason": reason,
-            "consensus": consensus,
-            "type": "prediction",
-            "outcome": None,
-            "pnl": 0,
-            "closed_at": None
-        }
-        self.trades.append(entry)
-        self._save()
-        return entry["id"]
-
-    def close_trade(self, trade_id, pnl, closed_at=None):
-        for t in self.trades:
-            if t["id"] == trade_id:
-                t["outcome"] = "WIN" if pnl > 0 else "LOSS" if pnl < 0 else "BREAKEVEN"
-                t["pnl"] = round(pnl, 4)
-                t["closed_at"] = closed_at or datetime.now().isoformat()
-                self._save()
-                return True
-        return False
-
-    def get_win_rate(self, lookback=50):
-        recent = [t for t in self.trades[-lookback:] if t["outcome"]]
-        if not recent:
-            return {"win_rate": 0, "total": 0, "wins": 0, "losses": 0, "avg_pnl": 0}
-        wins = sum(1 for t in recent if t["outcome"] == "WIN")
-        losses = sum(1 for t in recent if t["outcome"] == "LOSS")
-        total_pnl = sum(t["pnl"] for t in recent)
-        return {
-            "win_rate": round(wins / len(recent) * 100, 1),
-            "total": len(recent),
-            "wins": wins,
-            "losses": losses,
-            "avg_pnl": round(total_pnl / len(recent), 4),
-            "total_pnl": round(total_pnl, 4)
-        }
-
-    def get_symbol_stats(self, symbol):
-        symbol_trades = [t for t in self.trades if t["symbol"] == symbol and t["outcome"]]
-        if not symbol_trades:
-            return {"trades": 0, "win_rate": 0}
-        wins = sum(1 for t in symbol_trades if t["outcome"] == "WIN")
-        return {
-            "trades": len(symbol_trades),
-            "win_rate": round(wins / len(symbol_trades) * 100, 1),
-            "total_pnl": round(sum(t["pnl"] for t in symbol_trades), 4)
-        }
-
-    def get_recent(self, n=10):
-        return self.trades[-n:]
-
-    def get_predictions(self, n=20):
-        predictions = [t for t in self.trades if t.get("type") == "prediction"]
-        return predictions[-n:]
-
-    def should_avoid(self, symbol):
-        recent = [t for t in self.trades[-10:] if t["symbol"] == symbol and t["outcome"]]
-        if len(recent) < 3:
-            return False, ""
-        losses = sum(1 for t in recent if t["outcome"] == "LOSS")
-        if losses >= 3:
-            return True, f"AI: {symbol} son {len(recent)} islemde {losses} kez zarar"
-        return False, ""
 
 
 class Analyzer:
     def analyze(self, df):
-        if len(df) < 30:
+        if len(df) < 50:
             return None
 
-        from src.agents.coordinator import coordinator
-        result = coordinator.analyze_all(df)
+        close = df["close"]
+        high = df["high"]
+        low = df["low"]
+        volume = df["volume"]
+        price = close.iloc[-1]
+
+        rsi = ta.momentum.RSIIndicator(close, window=14).rsi().iloc[-1]
+        rsi_prev = ta.momentum.RSIIndicator(close, window=14).rsi().iloc[-2]
+
+        ema9 = ta.trend.EMAIndicator(close, window=9).ema_indicator().iloc[-1]
+        ema21 = ta.trend.EMAIndicator(close, window=21).ema_indicator().iloc[-1]
+        ema_cross = "bullish" if ema9 > ema21 else "bearish"
+
+        macd = ta.trend.MACD(close, window_slow=26, window_fast=12, window_sign=9)
+        macd_line = macd.macd().iloc[-1]
+        signal_line = macd.macd_signal().iloc[-1]
+        macd_hist = macd.macd_diff().iloc[-1]
+        macd_hist_prev = macd.macd_diff().iloc[-2]
+
+        bb = ta.volatility.BollingerBands(close, window=20, window_dev=2)
+        bb_upper = bb.bollinger_hband().iloc[-1]
+        bb_lower = bb.bollinger_lband().iloc[-1]
+        bb_pct = bb.bollinger_pband().iloc[-1]
+
+        atr = ta.volatility.AverageTrueRange(high, low, close, window=14).average_true_range().iloc[-1]
+
+        vol_sma20 = volume.rolling(20).mean().iloc[-1]
+        vol_ratio = volume.iloc[-1] / vol_sma20 if vol_sma20 > 0 else 1
+
+        price_change_5 = (close.iloc[-1] - close.iloc[-5]) / close.iloc[-5] * 100 if close.iloc[-5] > 0 else 0
+
+        support = close.rolling(20).min().iloc[-1]
+        resistance = close.rolling(20).max().iloc[-1]
 
         return {
-            "direction": result["direction"],
-            "confidence": result["confidence"],
-            "buy_score": result["buy_score"],
-            "sell_score": result["sell_score"],
-            "consensus": result["consensus"],
-            "agents": result["agents"],
-            "reasons": result["reasons"],
-            "summary": result["summary"],
-            "price": df["close"].iloc[-1],
-            "rsi": ta.momentum.RSIIndicator(df["close"], window=14).rsi().iloc[-1],
-            "volume_ratio": df["volume"].iloc[-1] / df["volume"].rolling(20).mean().iloc[-1] if df["volume"].rolling(20).mean().iloc[-1] > 0 else 1
+            "price": round(price, 2),
+            "rsi": round(rsi, 1),
+            "rsi_prev": round(rsi_prev, 1),
+            "ema9": round(ema9, 2),
+            "ema21": round(ema21, 2),
+            "ema_cross": ema_cross,
+            "macd_line": round(macd_line, 2),
+            "signal_line": round(signal_line, 2),
+            "macd_hist": round(macd_hist, 2),
+            "macd_hist_prev": round(macd_hist_prev, 2),
+            "bb_pct": round(bb_pct, 3),
+            "bb_upper": round(bb_upper, 2),
+            "bb_lower": round(bb_lower, 2),
+            "atr": round(atr, 2),
+            "atr_pct": round(atr / price * 100, 2) if price > 0 else 0,
+            "vol_ratio": round(vol_ratio, 2),
+            "price_change_5": round(price_change_5, 2),
+            "support": round(support, 2),
+            "resistance": round(resistance, 2),
         }
 
 

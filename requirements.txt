@@ -6,6 +6,6 @@ pandas-ta>=0.3
 python-dotenv
 requests
 flask
-scikit-learn
-joblib
 alpaca-py
+vaderSentiment
+feedparser

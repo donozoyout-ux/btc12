@@ -1,28 +1,24 @@
 import sys
 sys.path.insert(0, '.')
-from flask import Flask, render_template_string, jsonify, request
+from flask import Flask, render_template_string, jsonify
 import threading
 from datetime import datetime
 from src.bot import bot, setup_telegram
 from src.trader import trader
 from src.config import settings
 from src.telegram import tg
+from src.quant_agent import quant_agent
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'crypto-bot-2024'
 
 HTML = """<!DOCTYPE html>
 <html lang="tr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CRYPTO AI BOT</title>
+<title>BTC AI BOT</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
-<script>
-tailwind.config={darkMode:"class",theme:{extend:{colors:{bg:"#0a0e17",surface:"#131314",surface2:"#1c2127",surface3:"#201f20",surface4:"#2a2a2b",surface5:"#353435",border:"#45464b",text:"#e5e2e2",text3:"#909096",green:"#10b981",red:"#f43f5e",accent:"#3b82f6"},fontFamily:{body:["Inter"],mono:["JetBrains Mono"]}}}}
-</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hidden;height:100vh}
@@ -33,463 +29,115 @@ body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hi
 @keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:0.4}}
 .pulse-dot{animation:pulse-dot 1.5s infinite}
 .btn{transition:all .15s}.btn:hover{transform:scale(1.03)}.btn:active{transform:scale(0.97)}
-.sell-cb{width:16px;height:16px;accent-color:#f43f5e;cursor:pointer}
 </style>
 </head>
 <body class="flex flex-col h-screen">
-<header class="bg-surface border-b border-border/30 flex items-center justify-between px-6 h-14 shrink-0">
+<header class="bg-[#131314] border-b border-[#45464b]/30 flex items-center justify-between px-6 h-14 shrink-0">
 <div class="flex items-center gap-4">
-<h1 class="text-lg font-bold tracking-tight text-white">CRYPTO AI BOT</h1>
+<h1 class="text-lg font-bold tracking-tight text-white">BTC AI BOT</h1>
 <div id="statusBadge" class="flex items-center gap-2 px-3 py-1 bg-red/10 border border-red/20 rounded text-xs font-bold text-red">
-<span class="w-2 h-2 rounded-full bg-red"></span>
-<span>STOPPED</span>
-</div>
-<div id="aiBadge" class="flex items-center gap-1 px-2 py-0.5 bg-accent/10 border border-accent/20 rounded text-[10px] font-bold text-accent">
-<span class="material-symbols-outlined text-xs">psychology</span>
-<span>AI ACTIVE</span>
+<span class="w-2 h-2 rounded-full bg-red"></span><span>STOPPED</span>
 </div>
 </div>
 <div class="flex items-center gap-3">
-<button onclick="startBot()" class="btn px-4 py-1.5 bg-green hover:bg-green/80 text-black text-xs font-bold rounded flex items-center gap-1">
-<span class="material-symbols-outlined text-sm">play_arrow</span> START
-</button>
-<button onclick="stopBot()" class="btn px-4 py-1.5 bg-red hover:bg-red/80 text-white text-xs font-bold rounded flex items-center gap-1">
-<span class="material-symbols-outlined text-sm">stop</span> STOP
-</button>
-<button onclick="pauseBot()" class="btn px-4 py-1.5 bg-surface4 hover:bg-surface5 text-text text-xs font-bold rounded flex items-center gap-1">
-<span class="material-symbols-outlined text-sm">pause</span> PAUSE
-</button>
-<button onclick="scanNow()" class="btn px-4 py-1.5 bg-accent hover:bg-accent/80 text-white text-xs font-bold rounded flex items-center gap-1">
-<span class="material-symbols-outlined text-sm">radar</span> SCAN
-</button>
-<div class="w-px h-6 bg-border/30 mx-1"></div>
+<button onclick="startBot()" class="btn px-4 py-1.5 bg-green hover:bg-green/80 text-black text-xs font-bold rounded">START</button>
+<button onclick="stopBot()" class="btn px-4 py-1.5 bg-red hover:bg-red/80 text-white text-xs font-bold rounded">STOP</button>
+<button onclick="scanNow()" class="btn px-4 py-1.5 bg-blue-500 hover:bg-blue-500/80 text-white text-xs font-bold rounded">SCAN</button>
 <span class="text-text3 text-xs font-mono" id="clock"></span>
 </div>
 </header>
-<div class="flex flex-1 overflow-hidden">
-<main class="flex-1 overflow-y-auto p-6 scrollbar">
-<div class="grid grid-cols-2 lg:grid-cols-7 gap-3 mb-6">
+<div class="flex-1 overflow-y-auto p-6 scrollbar">
+<div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
 <div class="glass rounded-lg p-4 text-center">
-<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">PORTFOY</div>
+<div class="text-[#909096] text-[10px] font-bold tracking-widest mb-1">PORTFOY</div>
 <div class="text-2xl font-mono font-bold text-white" id="sPortfolio">$0</div>
 </div>
 <div class="glass rounded-lg p-4 text-center">
-<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">NAKIT</div>
+<div class="text-[#909096] text-[10px] font-bold tracking-widest mb-1">NAKIT</div>
 <div class="text-2xl font-mono font-bold text-white" id="sCash">$0</div>
 </div>
 <div class="glass rounded-lg p-4 text-center">
-<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">ACIK K/Z</div>
+<div class="text-[#909096] text-[10px] font-bold tracking-widest mb-1">K/Z</div>
 <div class="text-2xl font-mono font-bold" id="sPnl">$0</div>
 </div>
 <div class="glass rounded-lg p-4 text-center">
-<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">ISLEM</div>
-<div class="text-2xl font-mono font-bold text-white" id="sExecutorMode">DRY-RUN</div>
+<div class="text-[#909096] text-[10px] font-bold tracking-widest mb-1">ISLEM</div>
+<div class="text-2xl font-mono font-bold text-white" id="sMode">ONAYLI</div>
 </div>
 <div class="glass rounded-lg p-4 text-center">
-<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">STOP-LOSS</div>
-<div class="text-2xl font-mono font-bold text-red" id="sStopLoss">%3</div>
-</div>
-<div class="glass rounded-lg p-4 text-center">
-<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">TARAMA</div>
-<div class="text-2xl font-mono font-bold text-white" id="sTotalScans">0</div>
-</div>
-<div class="glass rounded-lg p-4 text-center">
-<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">AI BASARI</div>
-<div class="text-2xl font-mono font-bold text-accent" id="sWinRate">%0</div>
+<div class="text-[#909096] text-[10px] font-bold tracking-widest mb-1">TARAMA</div>
+<div class="text-2xl font-mono font-bold text-white" id="sScans">0</div>
 </div>
 </div>
 
 <div class="grid grid-cols-12 gap-4" style="height:calc(100vh - 200px)">
 <div class="col-span-12 lg:col-span-8 flex flex-col">
-<div class="flex items-center gap-6 mb-3 border-b border-border/20 pb-2">
-<button onclick="switchTab('scan')" id="tabScan" class="text-xs font-bold text-white border-b-2 border-accent pb-1 cursor-pointer">SCAN</button>
-<button onclick="switchTab('positions')" id="tabPos" class="text-xs font-bold text-text3 border-b-2 border-transparent pb-1 cursor-pointer">POZISYON</button>
-<button onclick="switchTab('ai')" id="tabAi" class="text-xs font-bold text-text3 border-b-2 border-transparent pb-1 cursor-pointer">AI KARAR</button>
-</div>
-
-<div id="scanPanel" class="flex flex-col flex-1">
 <div class="flex items-center justify-between mb-3">
-<h2 class="text-sm font-bold text-white">BTC Scan Sonucu</h2>
-<div class="flex gap-2">
-<button onclick="filterAction('all')" class="px-2 py-0.5 text-[10px] font-bold border border-border/30 rounded text-text3 hover:text-white">ALL</button>
-<button onclick="filterAction('BUY')" class="px-2 py-0.5 text-[10px] font-bold border border-green/30 rounded text-green hover:bg-green/10">BUY</button>
-<button onclick="filterAction('SELL')" class="px-2 py-0.5 text-[10px] font-bold border border-red/30 rounded text-red hover:bg-red/10">SELL</button>
+<h2 class="text-sm font-bold text-white">Canli Durum</h2>
+</div>
+<div class="glass rounded-lg overflow-hidden flex-1 p-6" id="statusPanel">
+<div class="text-center text-[#909096]">Baslatmak icin START'a tiklayin</div>
 </div>
 </div>
-<div class="glass rounded-lg overflow-hidden flex-1">
-<table class="w-full text-left">
-<thead class="bg-surface3/50 border-b border-border/20">
-<tr>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3">DURUM</th>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3">GUVEN</th>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">FIYAT</th>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">RSI</th>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">ACIKLAMA</th>
-</tr>
-</thead>
-<tbody id="scanBody" class="divide-y divide-border/10">
-<tr><td colspan="5" class="px-4 py-12 text-center text-text3 italic">Bekleniyor...</td></tr>
-</tbody>
-</table>
-</div>
-</div>
-
-<div id="agentsPanel" class="flex flex-col flex-1 hidden">
-<div class="flex items-center justify-between mb-3">
-<h2 class="text-sm font-bold text-white flex items-center gap-2">
-<span class="material-symbols-outlined text-accent">smart_toy</span> AI KARAR - DeepSeek Flash
-</h2>
-<button onclick="refresh()" class="btn px-3 py-1 bg-accent hover:bg-accent/80 text-white text-[10px] font-bold rounded">YENILE</button>
-</div>
-<div id="agentsContainer" class="flex flex-col gap-4 overflow-y-auto flex-1 scrollbar pr-1">
-<div class="glass rounded-lg p-6 text-center text-text3">AI karari bekleniyor...</div>
-</div>
-</div>
-
-<div id="posPanel" class="flex flex-col flex-1 hidden">
-<div class="flex items-center justify-between mb-3">
-<div class="flex items-center gap-3">
-<h2 class="text-sm font-bold text-white">BTC Pozisyon</h2>
-<span class="text-text3 text-xs" id="posCount">-</span>
-</div>
-<div class="flex gap-2">
-<button onclick="sellAll()" class="btn px-3 py-1 bg-red hover:bg-red/80 text-white text-[10px] font-bold rounded">SAT</button>
-</div>
-</div>
-<div class="glass rounded-lg overflow-hidden flex-1">
-<table class="w-full text-left">
-<thead class="bg-surface3/50 border-b border-border/20">
-<tr>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">MIKTAR</th>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">GIRIS</th>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">DEGER</th>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">K/Z</th>
-</tr>
-</thead>
-<tbody id="posBody" class="divide-y divide-border/10">
-<tr><td colspan="4" class="px-4 py-12 text-center text-text3 italic">Pozisyon yok</td></tr>
-</tbody>
-</table>
-</div>
-</div>
-
-<div id="aiPanel" class="flex flex-col flex-1 hidden">
-<div class="flex items-center justify-between mb-3">
-<h2 class="text-sm font-bold text-white flex items-center gap-2">
-<span class="material-symbols-outlined text-accent">psychology</span> AI Tahmin Gecmisi
-</h2>
-<button onclick="refresh()" class="btn px-3 py-1 bg-accent hover:bg-accent/80 text-white text-[10px] font-bold rounded">YENILE</button>
-</div>
-<div class="grid grid-cols-3 gap-3 mb-4">
-<div class="glass rounded-lg p-4 text-center">
-<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">BASARI ORANI</div>
-<div class="text-3xl font-mono font-bold text-accent" id="aiWinRate">%0</div>
-</div>
-<div class="glass rounded-lg p-4 text-center">
-<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">TOPLAM ISLEM</div>
-<div class="text-3xl font-mono font-bold text-white" id="aiTotal">0</div>
-</div>
-<div class="glass rounded-lg p-4 text-center">
-<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">TOPLAM K/Z</div>
-<div class="text-3xl font-mono font-bold" id="aiPnl">$0</div>
-</div>
-</div>
-<div class="glass rounded-lg overflow-hidden flex-1">
-<table class="w-full text-left">
-<thead class="bg-surface3/50 border-b border-border/20">
-<tr>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3">COIN</th>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3">ISLEM</th>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">FIYAT</th>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">GUVEN</th>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">SONUC</th>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">OY</th>
-</tr>
-</thead>
-<tbody id="aiBody" class="divide-y divide-border/10">
-<tr><td colspan="6" class="px-4 py-12 text-center text-text3 italic">Islem gecmisi yok</td></tr>
-</tbody>
-</table>
-</div>
-</div>
-</div>
-
 <div class="col-span-12 lg:col-span-4 flex flex-col">
 <div class="flex items-center justify-between mb-3">
-<h2 class="text-sm font-bold text-white">Sinyaller</h2>
-<span class="text-text3 text-xs" id="signalCount">0</span>
+<h2 class="text-sm font-bold text-white">Islem Gecmisi</h2>
+<span class="text-[#909096] text-xs" id="tradeCount">0</span>
 </div>
-<div class="flex flex-col gap-2 overflow-y-auto flex-1 scrollbar pr-1" id="signalsList">
-<div class="glass rounded-lg p-4 text-center text-text3 text-sm">Sinyal yok</div>
-</div>
-<div class="glass rounded-lg p-3 mt-3 text-center border-dashed border-border/30">
-<div class="text-[10px] font-bold tracking-widest text-text3" id="scanStatus">Durdu</div>
-<div class="flex gap-2 mt-2 justify-center">
-<button onclick="setMode(true)" class="btn px-3 py-1 text-[10px] font-bold rounded bg-accent hover:bg-accent/80 text-white" id="otoBtn">OTO</button>
-<button onclick="setMode(false)" class="btn px-3 py-1 text-[10px] font-bold rounded bg-surface4 hover:bg-surface5 text-text3" id="manBtn">ONAYLI</button>
+<div class="flex flex-col gap-2 overflow-y-auto flex-1 scrollbar pr-1" id="tradeList">
+<div class="glass rounded-lg p-4 text-center text-[#909096] text-sm">Islem yok</div>
 </div>
 </div>
 </div>
-</div>
-</main>
 </div>
 <script>
-var currentFilter='all';
-var currentTab='scan';
 setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleTimeString('tr-TR')},1000);
 
-function switchTab(t){
-    currentTab=t;
-    var tabMap={scan:'Scan',positions:'Pos',agents:'Agents',ai:'Ai'};
-    var panelMap={scan:'scanPanel',positions:'posPanel',agents:'agentsPanel',ai:'aiPanel'};
-    Object.keys(tabMap).forEach(x=>{
-        var el=document.getElementById('tab'+tabMap[x]);
-        if(el){
-            el.className=x===t?'text-xs font-bold text-white border-b-2 border-accent pb-1 cursor-pointer'
-                          :'text-xs font-bold text-text3 border-b-2 border-transparent pb-1 cursor-pointer';
-        }
-        var panel=document.getElementById(panelMap[x]);
-        if(panel){
-            panel.className=x===t?'flex flex-col flex-1':'flex flex-col flex-1 hidden';
-        }
-    });
-}
-
-function startBot(){fetch('/api/start',{method:'POST'}).then(r=>r.json()).then(d=>{toast(d.message,d.success?'success':'error');setTimeout(refresh,2000)})}
-function stopBot(){fetch('/api/stop',{method:'POST'}).then(r=>r.json()).then(d=>{toast('Durdu','info');setTimeout(refresh,1000)})}
-function pauseBot(){fetch('/api/pause',{method:'POST'}).then(r=>r.json()).then(d=>{toast(d.paused?'Duraklatildi':'Devam','info');setTimeout(refresh,1000)})}
-function scanNow(){fetch('/api/scan',{method:'POST'}).then(r=>r.json()).then(d=>{toast('Tarama baslatildi','success');setTimeout(refresh,5000)})}
-function refresh(){updateStatus()}
-
-function filterAction(f){currentFilter=f;updateStatus()}
-
-function sellCoin(sym){
-    if(!confirm(sym+' satilsin mi?'))return;
-    fetch('/api/sell',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym})})
-    .then(r=>r.json()).then(d=>{toast(d.message,d.success?'success':'error');setTimeout(refresh,2000)});
-}
-
-function sellSelected(){
-    var cbs=document.querySelectorAll('.pos-cb:checked');
-    var syms=[];cbs.forEach(cb=>syms.push(cb.dataset.sym));
-    if(syms.length===0){toast('Coin secin','error');return;}
-    if(!confirm(syms.length+' coin satilsin mi?'))return;
-    fetch('/api/sell-multi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbols:syms})})
-    .then(r=>r.json()).then(d=>{toast(d.message,d.success?'success':'error');setTimeout(refresh,2000)});
-}
-
-function sellAll(){
-    if(!confirm('TUM POZISYONLAR SATILSIN MI?'))return;
-    fetch('/api/sell-all',{method:'POST'}).then(r=>r.json()).then(d=>{toast(d.message,d.success?'success':'error');setTimeout(refresh,2000)});
-}
-
-function setMode(auto){
-    fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({auto:auto})})
-    .then(r=>r.json()).then(d=>{toast(d.message,'success');setTimeout(refresh,500)});
-}
-
-function toggleAll(el){document.querySelectorAll('.pos-cb').forEach(cb=>cb.checked=el.checked)}
-
-function toast(msg,type){
-    var t=document.createElement('div');
-    t.className='fixed top-20 right-6 px-4 py-2 rounded text-sm font-bold z-50 transition-all';
-    if(type==='success')t.className+=' bg-green text-black';
-    else if(type==='error')t.className+=' bg-red text-white';
-    else t.className+=' bg-surface4 text-white';
-    t.textContent=msg;document.body.appendChild(t);
-    setTimeout(()=>t.remove(),3000);
-}
+function startBot(){fetch('/api/start',{method:'POST'}).then(r=>r.json()).then(d=>{setTimeout(updateStatus,2000)})}
+function stopBot(){fetch('/api/stop',{method:'POST'}).then(r=>r.json()).then(d=>{setTimeout(updateStatus,1000)})}
+function scanNow(){fetch('/api/scan',{method:'POST'}).then(r=>r.json()).then(d=>{setTimeout(updateStatus,3000)})}
 
 function updateStatus(){
-    fetch('/api/status').then(r=>r.json()).then(d=>{
-        var badge=document.getElementById('statusBadge');
-        if(d.running&&!d.paused){badge.innerHTML='<span class="w-2 h-2 rounded-full bg-green pulse-dot"></span><span>SCANNING</span>';badge.className='flex items-center gap-2 px-3 py-1 bg-green/10 border border-green/20 rounded text-xs font-bold text-green'}
-        else if(d.paused){badge.innerHTML='<span class="w-2 h-2 rounded-full bg-yellow-500 pulse-dot"></span><span>PAUSED</span>';badge.className='flex items-center gap-2 px-3 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded text-xs font-bold text-yellow-500'}
-        else{badge.innerHTML='<span class="w-2 h-2 rounded-full bg-red"></span><span>STOPPED</span>';badge.className='flex items-center gap-2 px-3 py-1 bg-red/10 border border-red/20 rounded text-xs font-bold text-red'}
+fetch('/api/status').then(r=>r.json()).then(d=>{
+var badge=document.getElementById('statusBadge');
+if(d.running&&!d.paused){badge.innerHTML='<span class="w-2 h-2 rounded-full bg-green pulse-dot"></span><span>SCANNING</span>';badge.className='flex items-center gap-2 px-3 py-1 bg-green/10 border border-green/20 rounded text-xs font-bold text-green'}
+else if(d.paused){badge.innerHTML='<span class="w-2 h-2 rounded-full bg-yellow-500 pulse-dot"></span><span>PAUSED</span>';badge.className='flex items-center gap-2 px-3 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded text-xs font-bold text-yellow-500'}
+else{badge.innerHTML='<span class="w-2 h-2 rounded-full bg-red"></span><span>STOPPED</span>';badge.className='flex items-center gap-2 px-3 py-1 bg-red/10 border border-red/20 rounded text-xs font-bold text-red'}
 
-        document.getElementById('sTotalScans').textContent=d.total_scans||0;
-        document.getElementById('sExecutorMode').textContent=(d.executor_mode||'dry_run').toUpperCase();
-        document.getElementById('sStopLoss').textContent='%'+(d.stop_loss_pct||3);
+document.getElementById('sPortfolio').textContent='$'+(d.portfolio_value||0).toLocaleString(undefined,{minimumFractionDigits:2});
+document.getElementById('sCash').textContent='$'+(d.cash||0).toLocaleString(undefined,{minimumFractionDigits:2});
+document.getElementById('sScans').textContent=d.total_scans||0;
+document.getElementById('sMode').textContent=d.auto_trade?'OTO':'ONAYLI';
 
-        if(d.balance){
-            var pv=parseFloat(d.balance.portfolio_value||0);
-            var cash=parseFloat(d.balance.cash||0);
-            document.getElementById('sPortfolio').textContent='$'+pv.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-            document.getElementById('sCash').textContent='$'+cash.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-            var pos=d.position||{};
-            var pl=pos.unrealized_pl||0;
-            var el=document.getElementById('sPnl');
-            el.textContent='$'+(pl>=0?'+':'')+pl.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-            el.className='text-2xl font-mono font-bold '+(pl>=0?'text-green':'text-red');
-        }
+var pl=d.kar_zarar||0;
+var plEl=document.getElementById('sPnl');
+plEl.textContent='$'+(pl>=0?'+':'')+pl.toFixed(2);
+plEl.className='text-2xl font-mono font-bold '+(pl>=0?'text-green-400':'text-red-400');
 
-        var results=d.scan_results||[];
-        if(currentFilter!=='all')results=results.filter(r=>r.action===currentFilter);
-        var tbody=document.getElementById('scanBody');
-        if(results.length>0){
-            var html='';
-            results.forEach(r=>{
-                var badge=r.action==='BUY'?'<span class="px-2 py-0.5 bg-green/10 text-green text-[10px] font-bold rounded border border-green/30">BUY</span>'
-                    :r.action==='SELL'?'<span class="px-2 py-0.5 bg-red/10 text-red text-[10px] font-bold rounded border border-red/30">SELL</span>'
-                    :'<span class="px-2 py-0.5 bg-surface4 text-text3 text-[10px] font-bold rounded">HOLD</span>';
-                var conf=r.confidence||0;
-                var confColor=conf>0.7?'bg-green':conf>0.5?'bg-yellow-500':'bg-text3';
-                var rsiColor=(r.rsi||50)<30?'text-green':(r.rsi||50)>70?'text-red':'text-text3';
-                html+='<tr class="hover:bg-white/5 transition-colors">';
-                html+='<td class="px-4 py-3">'+badge+'</td>';
-                html+='<td class="px-4 py-3"><div class="w-20 bg-surface4 h-1.5 rounded-full overflow-hidden"><div class="'+confColor+' h-full" style="width:'+conf*100+'%"></div></div><span class="font-mono text-[11px] mt-1 block">'+(conf*100).toFixed(0)+'%</span></td>';
-                html+='<td class="px-4 py-3 font-mono text-sm text-right">$'+(r.price||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
-                html+='<td class="px-4 py-3 font-mono text-sm text-right '+rsiColor+'">'+(r.rsi||0).toFixed(1)+'</td>';
-                html+='<td class="px-4 py-3 font-mono text-sm text-text3 max-w-[200px] truncate">'+(r.reason||'-')+'</td>';
-                html+='</tr>';
-            });
-            tbody.innerHTML=html;
-        }else{
-            tbody.innerHTML='<tr><td colspan="5" class="px-4 py-12 text-center text-text3 italic">Bekleniyor...</td></tr>';
-        }
+var panel=document.getElementById('statusPanel');
+panel.innerHTML='<div class="text-sm font-mono"><div class="mb-2"><span class="text-[#909096]">Son Karar:</span> <b>'+(d.son_karar||'-')+'</b></div><div class="mb-2"><span class="text-[#909096]">Pozisyon:</span> <b>'+(d.pozisyon_durumu||'-')+'</b></div><div class="mb-2"><span class="text-[#909096]">Son Tarama:</span> '+(d.last_scan||'-')+'</div><div class="mb-2"><span class="text-[#909096]">Toplam Islem:</span> '+(d.toplam_islem||0)+'</div><div class="mb-2"><span class="text-[#909096]">K/Z:</span> K:'+(d.kazanma||0)+' Z:'+(d.kaybetme||0)+'</div></div>';
 
-        var pos=d.position||{};
-        var posBody=document.getElementById('posBody');
-        if(pos.qty&&pos.qty>0){
-            var pl=pos.unrealized_pl||0;
-            var entry=pos.avg_entry_price||0;
-            var mv=pos.market_value||0;
-            var yuzde=entry>0?((mv-entry*pos.qty)/(entry*pos.qty)*100):0;
-            var plColor=pl>=0?'text-green':'text-red';
-            var html='<tr class="hover:bg-white/5 transition-colors">';
-            html+='<td class="px-4 py-3 font-mono text-sm text-right">'+pos.qty.toFixed(6)+'</td>';
-            html+='<td class="px-4 py-3 font-mono text-sm text-right">$'+entry.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
-            html+='<td class="px-4 py-3 font-mono text-sm text-right">$'+mv.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
-            html+='<td class="px-4 py-3 font-mono text-sm text-right '+plColor+'">$'+pl.toFixed(2)+' ('+yuzde.toFixed(1)+'%)</td>';
-            html+='</tr>';
-            posBody.innerHTML=html;
-            document.getElementById('posCount').textContent='AKTIF';
-        }else{
-            posBody.innerHTML='<tr><td colspan="4" class="px-4 py-12 text-center text-text3 italic">Pozisyon yok</td></tr>';
-            document.getElementById('posCount').textContent='-';
-        }
-
-        var sigs=d.last_signals||{};
-        var sigKeys=Object.keys(sigs);
-        document.getElementById('signalCount').textContent=sigKeys.length+' sinyal';
-        var sigList=document.getElementById('signalsList');
-        if(sigKeys.length>0){
-            var html='';
-            sigKeys.forEach(sym=>{
-                var s=sigs[sym];
-                var color=s.action==='BUY'?'green':'red';
-                var border=s.action==='BUY'?'border-green':'border-red';
-                html+='<div class="glass rounded-lg p-3 border-l-4 '+border+'"><div class="font-bold text-'+color+'">'+sym+' - '+s.action+'</div><div class="text-xs text-text3 font-mono">$'+(s.price||0).toFixed(2)+' | Guven: '+(s.confidence*100).toFixed(0)+'%</div>'+(s.reason?'<div class="text-[10px] text-text3 mt-1 italic">'+s.reason.substring(0,60)+'</div>':'')+'</div>';
-            });
-            sigList.innerHTML=html;
-        }
-
-        document.getElementById('scanStatus').textContent=d.running?(d.paused?'DURAKLATILDI':(d.auto_trade?'OTO MOD':'ONAYLI MOD')+ ' | ' + (d.executor_mode||'dry_run').toUpperCase()):'Durdu';
-
-        var otoBtn=document.getElementById('otoBtn');
-        var manBtn=document.getElementById('manBtn');
-        if(d.auto_trade){
-            otoBtn.className='btn px-3 py-1 text-[10px] font-bold rounded bg-accent hover:bg-accent/80 text-white';
-            manBtn.className='btn px-3 py-1 text-[10px] font-bold rounded bg-surface4 hover:bg-surface5 text-text3';
-        }else{
-            otoBtn.className='btn px-3 py-1 text-[10px] font-bold rounded bg-surface4 hover:bg-surface5 text-text3';
-            manBtn.className='btn px-3 py-1 text-[10px] font-bold rounded bg-accent hover:bg-accent/80 text-white';
-        }
-    }).catch(e=>console.log('Status error:',e));
-
-    fetch('/api/memory').then(r=>r.json()).then(d=>{
-        var stats=d.stats||{};
-        document.getElementById('sWinRate').textContent='%' + (stats.win_rate||0);
-        var wr=document.getElementById('sWinRate');
-        wr.className='text-2xl font-mono font-bold '+(stats.win_rate>=50?'text-green':stats.win_rate>=30?'text-yellow-500':'text-red');
-
-        document.getElementById('aiWinRate').textContent='%' + (stats.win_rate||0);
-        document.getElementById('aiTotal').textContent=stats.total||0;
-        var pnl=stats.total_pnl||0;
-        var pnlEl=document.getElementById('aiPnl');
-        pnlEl.textContent='$'+(pnl>=0?'+':'')+pnl.toFixed(4);
-        pnlEl.className='text-3xl font-mono font-bold '+(pnl>=0?'text-green':'text-red');
-
-        var predictions=d.predictions||[];
-        var recent=d.recent||[];
-        var allItems=[].concat(predictions.map(p=>({...p,_type:'prediction'})),recent.map(r=>({...r,_type:'trade'})));
-        allItems.sort((a,b)=>new Date(b.time)-new Date(a.time));
-        allItems=allItems.slice(0,20);
-
-        var aiBody=document.getElementById('aiBody');
-        if(allItems.length>0){
-            var html='';
-            allItems.forEach(t=>{
-                var isPrediction=t._type==='prediction';
-                var outcome=isPrediction?('<span class="px-2 py-0.5 bg-accent/10 text-accent text-[10px] font-bold rounded">TAHMIN</span>')
-                    :t.outcome==='WIN'?'<span class="text-green font-bold">KAZANDI</span>'
-                    :t.outcome==='LOSS'?'<span class="text-red font-bold">KAYBETTI</span>'
-                    :t.outcome==='BREAKEVEN'?'<span class="text-text3">BESLEME</span>'
-                    :'<span class="text-text3">---</span>';
-                var conf=t.confidence||0;
-                var consensus=t.consensus||'-';
-                html+='<tr class="hover:bg-white/5 transition-colors">';
-                html+='<td class="px-4 py-3 font-mono text-sm font-bold">'+(t.symbol||'BTC')+'</td>';
-                html+='<td class="px-4 py-3"><span class="px-2 py-0.5 text-[10px] font-bold rounded '+(t.action==='BUY'?'bg-green/10 text-green':'bg-red/10 text-red')+'">'+t.action+'</span></td>';
-                html+='<td class="px-4 py-3 font-mono text-sm text-right">$'+(t.price||0).toFixed(2)+'</td>';
-                html+='<td class="px-4 py-3 font-mono text-sm text-right">'+(conf*100).toFixed(0)+'%</td>';
-                html+='<td class="px-4 py-3 text-right">'+outcome+'</td>';
-                html+='<td class="px-4 py-3 font-mono text-sm text-right">'+consensus+'</td>';
-                html+='</tr>';
-            });
-            aiBody.innerHTML=html;
-        }
-    }).catch(e=>console.log('Memory error:',e));
-
-    fetch('/api/status').then(r=>r.json()).then(d=>{
-        var agentResults=d.agent_results||{};
-        var container=document.getElementById('agentsContainer');
-        var keys=Object.keys(agentResults);
-        if(keys.length===0){
-            container.innerHTML='<div class="glass rounded-lg p-6 text-center text-text3">Agent sonuclari bekleniyor... Tarama baslatmak icin /start</div>';
-            return;
-        }
-        var html='';
-        keys.forEach(sym=>{
-            var r=agentResults[sym];
-            var dir=r.direction||'NEUTRAL';
-            var dirColor=dir==='BUY'?'text-green':dir==='SELL'?'text-red':'text-yellow-500';
-            var dirBg=dir==='BUY'?'bg-green/10 border-green/30':dir==='SELL'?'bg-red/10 border-red/30':'bg-yellow-500/10 border-yellow-500/30';
-            html+='<div class="glass rounded-lg p-4 border-l-4 '+(dir==='BUY'?'border-green':dir==='SELL'?'border-red':'border-yellow-500')+'">';
-            html+='<div class="flex items-center justify-between mb-3">';
-            html+='<div class="text-lg font-bold text-white">'+sym+'</div>';
-            html+='<div class="px-3 py-1 rounded text-sm font-bold '+dirColor+' '+dirBg+'">'+dir+' ('+(r.confidence*100).toFixed(0)+'%)</div>';
-            html+='</div>';
-            html+='<div class="grid grid-cols-5 gap-2 mb-3">';
-            var agents=r.agents||{};
-            var agentKeys=Object.keys(agents);
-            agentKeys.forEach(ak=>{
-                var a=agents[ak];
-                var aDir=a.direction||'?';
-                var aColor=aDir==='BUY'?'text-green':aDir==='SELL'?'text-red':'text-text3';
-                var aBg=aDir==='BUY'?'bg-green/10':aDir==='SELL'?'bg-red/10':'bg-surface4';
-                html+='<div class="'+aBg+' rounded p-2 text-center">';
-                html+='<div class="text-[10px] font-bold tracking-widest text-text3 mb-1">'+ak.toUpperCase()+'</div>';
-                html+='<div class="text-sm font-bold '+aColor+'">'+aDir+'</div>';
-                html+='<div class="text-[10px] text-text3 font-mono">'+(a.confidence*100).toFixed(0)+'%</div>';
-                html+='</div>';
-            });
-            html+='</div>';
-            if(r.reasons&&r.reasons.length>0){
-                html+='<div class="text-[11px] text-text3">';
-                r.reasons.forEach(reason=>{
-                    html+='<div class="mb-0.5">• '+reason+'</div>';
-                });
-                html+='</div>';
-            }
-            html+='</div>';
-        });
-        container.innerHTML=html;
-    }).catch(e=>console.log('Agents error:',e));
+var trades=document.getElementById('tradeList');
+fetch('/api/memory').then(r=>r.json()).then(m=>{
+var state=m.state||{};
+document.getElementById('tradeCount').textContent=state.toplam_islem||0;
+var html='';
+var items=m.trades||[];
+if(items.length>0){
+items.slice(-10).reverse().forEach(function(t){
+var color=t.pnl>0?'text-green-400':'text-red-400';
+html+='<div class="glass rounded-lg p-2 text-xs font-mono"><span class="'+(t.action==='BUY'?'text-green-400':'text-red-400')+'">'+t.action+'</span> $'+t.price.toFixed(2)+' <span class="'+color+'">'+(t.pnl>0?'+':'')+t.pnl.toFixed(2)+'</span></div>';
+});
+trades.innerHTML=html;
+} else {
+trades.innerHTML='<div class="glass rounded-lg p-4 text-center text-[#909096] text-sm">Islem yok</div>';
+}
+}).catch(()=>{});
+}).catch(()=>{});
 }
 
-refresh();
-setInterval(refresh,3000);
+updateStatus();
+setInterval(updateStatus,5000);
 </script>
 </body>
 </html>"""
@@ -505,24 +153,31 @@ def api_status():
     return jsonify(bot.get_status())
 
 
+@app.route('/api/memory')
+def api_memory():
+    state = quant_agent.get_state()
+    trades = []
+    if state.get("toplam_islem", 0) > 0:
+        trades.append({
+            "action": "BUY" if state.get("son_islem_kar_zarar", 0) != 0 else "HOLD",
+            "price": 0,
+            "pnl": state.get("son_islem_kar_zarar", 0)
+        })
+    return jsonify({"state": state, "trades": trades})
+
+
 @app.route('/api/start', methods=['POST'])
 def api_start():
     if bot.running:
-        return jsonify({"success": False, "message": "Bot zaten calisiyor"})
+        return jsonify({"success": False, "message": "Zaten calisiyor"})
     bot.start()
-    return jsonify({"success": True, "message": "Bot baslatildi - BTC"})
+    return jsonify({"success": True, "message": "Baslatildi"})
 
 
 @app.route('/api/stop', methods=['POST'])
 def api_stop():
     bot.stop()
     return jsonify({"success": True})
-
-
-@app.route('/api/pause', methods=['POST'])
-def api_pause():
-    state = bot.toggle_pause()
-    return jsonify({"success": True, "paused": state})
 
 
 @app.route('/api/scan', methods=['POST'])
@@ -533,88 +188,19 @@ def api_scan():
 
 @app.route('/api/buy', methods=['POST'])
 def api_buy():
-    try:
-        from src.executor import executor
-        result = executor.buy()
-        return jsonify({
-            "success": True,
-            "message": f"BTC alindi - ${result['price']:,.2f} / {result['qty']:.6f}"
-        })
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)[:200]})
-
+    bot.alisi_onayla()
+    return jsonify({"success": True})
 
 
 @app.route('/api/sell', methods=['POST'])
 def api_sell():
-    try:
-        from src.executor import executor
-        result = executor.sell()
-        if result:
-            return jsonify({
-                "success": True,
-                "message": f"BTC satildi - K/Z: ${result['pl']:+,.2f}"
-            })
-        return jsonify({"success": False, "message": "Pozisyon yok"})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)[:200]})
-
-
-@app.route('/api/sell-all', methods=['POST'])
-def api_sell_all():
-    try:
-        from src.executor import executor
-        results = executor.sell_all()
-        return jsonify({"success": True, "message": f"{len(results)} coin satildi"})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)[:200]})
-
-
-@app.route('/api/memory')
-def api_memory():
-    return jsonify(bot.get_memory_data())
-
-
-@app.route('/api/mode', methods=['POST'])
-def api_mode():
-    try:
-        data = request.get_json()
-        auto = data.get("auto", False)
-        bot.auto_trade = auto
-        mod = "OTO" if auto else "ONAYLI"
-        return jsonify({"success": True, "message": f"Mod: {mod}"})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)[:200]})
-
-
-@app.route('/api/keepalive')
-def api_keepalive():
-    return jsonify({"status": "ok", "running": bot.running, "scans": bot.total_scans})
+    bot.satisi_onayla()
+    return jsonify({"success": True})
 
 
 if __name__ == '__main__':
     import os
-
-    errors = settings.validate()
-    if errors:
-        for e in errors:
-            print(f"[WARN] {e}")
-
-    print("[SYSTEM] Bot baslatiliyor...")
-    setup_telegram()
-    print("[SYSTEM] Telegram dinleniyor...")
-
     port = int(os.environ.get('PORT', 5000))
     print(f"[PANEL] http://0.0.0.0:{port}")
-    print(f"[BOT] BTC | Islem: ${settings.position_size_usd} | Hedef: ${settings.daily_profit_target}/gun")
-
-    tg.send(
-        f"<b>SISTEM HAZIR</b>\n\n"
-        f"Coin: BTC\n"
-        f"Islem: ${settings.position_size_usd}\n"
-        f"Hedef: ${settings.daily_profit_target}/gun\n\n"
-        f"Basla: <code>/start</code>\n"
-        f"Komutlar: <code>/help</code>"
-    )
-
+    setup_telegram()
     app.run(host='0.0.0.0', port=port, debug=False)
