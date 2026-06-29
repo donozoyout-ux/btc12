@@ -131,6 +131,28 @@ var plEl=document.getElementById('sPnl');
 plEl.textContent='$'+(pl>=0?'+':'')+pl.toFixed(2);
 plEl.className='text-2xl font-mono font-bold '+(pl>=0?'text-green-400':'text-red-400');
 
+var errorDiv=document.getElementById('errorDisplay');
+if(d.son_hata){
+if(!errorDiv){
+errorDiv=document.createElement('div');
+errorDiv.id='errorDisplay';
+errorDiv.className='col-span-5';
+document.querySelector('.grid-cols-5').after(errorDiv);
+}
+errorDiv.innerHTML='<div class="glass rounded-lg p-3 border border-red-400/30 text-red-400 text-xs font-mono">Hata: '+d.son_hata+'</div>';
+}else if(errorDiv){
+errorDiv.remove();
+}
+
+var lastScanDiv=document.getElementById('lastScanDisplay');
+if(!lastScanDiv){
+lastScanDiv=document.createElement('div');
+lastScanDiv.id='lastScanDisplay';
+lastScanDiv.className='col-span-5';
+document.querySelector('.grid-cols-5').after(errorDiv||document.querySelector('.grid-cols-5'));
+}
+lastScanDiv.innerHTML='<div class="glass rounded-lg p-2 text-center text-[#909096] text-xs font-mono">Son Tarama: '+(d.last_scan||'---')+' | Fiyat: $'+(d.son_fiyat||0).toFixed(0)+'</div>';
+
 var trades=document.getElementById('tradeList');
 fetch('/api/memory').then(r=>r.json()).then(m=>{
 var stats=m.stats||{};
@@ -155,6 +177,8 @@ sh+='<td class="px-3 py-2 font-bold '+actionColor+'">'+s.action+'</td>';
 sh+='<td class="px-3 py-2">'+(s.confidence*100).toFixed(0)+'%</td></tr>';
 });
 scanBody.innerHTML=sh;
+}else{
+scanBody.innerHTML='<tr><td colspan="7" class="px-3 py-8 text-center text-[#909096] italic">Ilk tarama bekleniyor...</td></tr>';
 }
 
 var html='';
@@ -229,9 +253,33 @@ def api_sell():
     return jsonify({"success": True})
 
 
+@app.route('/api/debug')
+def api_debug():
+    import os
+    db_exists = os.path.exists("trades.db")
+    db_size = os.path.getsize("trades.db") if db_exists else 0
+    env_keys = {k: v[:10] + "..." if v and k.endswith(("KEY", "TOKEN", "SECRET")) else v for k, v in os.environ.items() if k.startswith(("ALPACA", "TELEGRAM"))}
+    return jsonify({
+        "db_exists": db_exists,
+        "db_size": db_size,
+        "bot_running": bot.running,
+        "bot_paused": bot.paused,
+        "total_scans": bot.total_scans,
+        "last_scan": bot.last_scan,
+        "env": env_keys,
+        "executor_mode": settings.executor_mode,
+    })
+
+
 if __name__ == '__main__':
     import os
     port = int(os.environ.get('PORT', 5000))
     print(f"[PANEL] http://0.0.0.0:{port}")
+
+    from src.telegram import tg
     setup_telegram()
+    print("[SISTEM] Bot otomatik baslatiliyor...")
+    bot.start(mesaj_gonder=False)
+    print(f"[SISTEM] Bot calisiyor | Tarama araligi: {settings.check_interval}s")
+
     app.run(host='0.0.0.0', port=port, debug=False)

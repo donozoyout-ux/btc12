@@ -22,18 +22,28 @@ class Bot:
         self.last_notified_action = None
         self.bekleyen_alis = None
         self.bekleyen_satis = None
+        self.son_hata = None
 
-    def start(self):
+    def start(self, mesaj_gonder=True):
         if self.running:
             return
         self.running = True
         self.paused = False
-        tg.send(
-            f"<b>BTC BOT BASLATILDI</b>\n\n"
-            f"Her {settings.check_interval}s'de bir analiz\n"
-            f"Mod: ONAYLI\n"
-            f"Islem: {settings.executor_mode.upper()}"
-        )
+        if mesaj_gonder:
+            try:
+                tg.send(
+                    f"<b>BTC BOT BASLATILDI</b>\n\n"
+                    f"Her {settings.check_interval}s'de bir analiz\n"
+                    f"Mod: ONAYLI\n"
+                    f"Islem: {settings.executor_mode.upper()}"
+                )
+            except:
+                pass
+        print("[BOT] Baslatildi, ilk tarama yapiliyor...")
+        try:
+            self.scan()
+        except Exception as e:
+            print(f"[BOT] Ilk tarama hatasi: {e}")
         threading.Thread(target=self._main_loop, daemon=True).start()
 
     def stop(self):
@@ -86,14 +96,22 @@ class Bot:
         self.last_scan = datetime.now().strftime('%H:%M:%S')
         print(f"\n[SCAN #{self.total_scans}] {self.last_scan}")
 
-        df = trader.get_bars(100)
+        try:
+            df = trader.get_bars(100)
+        except Exception as e:
+            print(f"  Veri hatasi: {e}")
+            self.son_hata = f"Veri: {e}"
+            return
+
         if df.empty:
             print("  Veri yok")
+            self.son_hata = "Veri yok"
             return
 
         teknik = analyzer.analyze(df)
         if not teknik:
             print("  Analiz basarisiz")
+            self.son_hata = "Analiz basarisiz"
             return
 
         price = teknik["price"]
@@ -264,9 +282,11 @@ class Bot:
                 "toplam_islem": state.get("toplam_islem", 0),
                 "kazanma": state.get("kazanma", 0),
                 "kaybetme": state.get("kaybetme", 0),
+                "son_hata": self.son_hata,
+                "son_fiyat": trader.get_price() if self.running else 0,
             }
         except Exception as e:
-            return {"running": self.running, "error": str(e)}
+            return {"running": self.running, "error": str(e), "son_hata": self.son_hata}
 
 
 bot = Bot()
