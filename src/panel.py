@@ -68,7 +68,7 @@ body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hi
 </header>
 <div class="flex flex-1 overflow-hidden">
 <main class="flex-1 overflow-y-auto p-6 scrollbar">
-<div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+<div class="grid grid-cols-2 lg:grid-cols-7 gap-3 mb-6">
 <div class="glass rounded-lg p-4 text-center">
 <div class="text-text3 text-[10px] font-bold tracking-widest mb-1">PORTFOY</div>
 <div class="text-2xl font-mono font-bold text-white" id="sPortfolio">$0</div>
@@ -80,6 +80,14 @@ body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hi
 <div class="glass rounded-lg p-4 text-center">
 <div class="text-text3 text-[10px] font-bold tracking-widest mb-1">ACIK K/Z</div>
 <div class="text-2xl font-mono font-bold" id="sPnl">$0</div>
+</div>
+<div class="glass rounded-lg p-4 text-center">
+<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">ISLEM</div>
+<div class="text-2xl font-mono font-bold text-white" id="sExecutorMode">DRY-RUN</div>
+</div>
+<div class="glass rounded-lg p-4 text-center">
+<div class="text-text3 text-[10px] font-bold tracking-widest mb-1">STOP-LOSS</div>
+<div class="text-2xl font-mono font-bold text-red" id="sStopLoss">%3</div>
 </div>
 <div class="glass rounded-lg p-4 text-center">
 <div class="text-text3 text-[10px] font-bold tracking-widest mb-1">TARAMA</div>
@@ -94,15 +102,14 @@ body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hi
 <div class="grid grid-cols-12 gap-4" style="height:calc(100vh - 200px)">
 <div class="col-span-12 lg:col-span-8 flex flex-col">
 <div class="flex items-center gap-6 mb-3 border-b border-border/20 pb-2">
-<button onclick="switchTab('scan')" id="tabScan" class="text-xs font-bold text-white border-b-2 border-accent pb-1 cursor-pointer">TARAMA</button>
-<button onclick="switchTab('positions')" id="tabPos" class="text-xs font-bold text-text3 border-b-2 border-transparent pb-1 cursor-pointer">POZISYONLAR</button>
-<button onclick="switchTab('agents')" id="tabAgents" class="text-xs font-bold text-text3 border-b-2 border-transparent pb-1 cursor-pointer">AI AGENTS</button>
-<button onclick="switchTab('ai')" id="tabAi" class="text-xs font-bold text-text3 border-b-2 border-transparent pb-1 cursor-pointer">AI HAFIZA</button>
+<button onclick="switchTab('scan')" id="tabScan" class="text-xs font-bold text-white border-b-2 border-accent pb-1 cursor-pointer">SCAN</button>
+<button onclick="switchTab('positions')" id="tabPos" class="text-xs font-bold text-text3 border-b-2 border-transparent pb-1 cursor-pointer">POZISYON</button>
+<button onclick="switchTab('ai')" id="tabAi" class="text-xs font-bold text-text3 border-b-2 border-transparent pb-1 cursor-pointer">AI KARAR</button>
 </div>
 
 <div id="scanPanel" class="flex flex-col flex-1">
 <div class="flex items-center justify-between mb-3">
-<h2 class="text-sm font-bold text-white">Tarama Sonuclari</h2>
+<h2 class="text-sm font-bold text-white">BTC Scan Sonucu</h2>
 <div class="flex gap-2">
 <button onclick="filterAction('all')" class="px-2 py-0.5 text-[10px] font-bold border border-border/30 rounded text-text3 hover:text-white">ALL</button>
 <button onclick="filterAction('BUY')" class="px-2 py-0.5 text-[10px] font-bold border border-green/30 rounded text-green hover:bg-green/10">BUY</button>
@@ -113,16 +120,15 @@ body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hi
 <table class="w-full text-left">
 <thead class="bg-surface3/50 border-b border-border/20">
 <tr>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3">COIN</th>
 <th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3">DURUM</th>
 <th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3">GUVEN</th>
 <th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">FIYAT</th>
 <th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">RSI</th>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">HACIM</th>
+<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">ACIKLAMA</th>
 </tr>
 </thead>
 <tbody id="scanBody" class="divide-y divide-border/10">
-<tr><td colspan="6" class="px-4 py-12 text-center text-text3 italic">Tarama bekleniyor...</td></tr>
+<tr><td colspan="5" class="px-4 py-12 text-center text-text3 italic">Bekleniyor...</td></tr>
 </tbody>
 </table>
 </div>
@@ -131,41 +137,37 @@ body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hi
 <div id="agentsPanel" class="flex flex-col flex-1 hidden">
 <div class="flex items-center justify-between mb-3">
 <h2 class="text-sm font-bold text-white flex items-center gap-2">
-<span class="material-symbols-outlined text-accent">smart_toy</span> AI AGENTS - Tahmin Motoru
+<span class="material-symbols-outlined text-accent">smart_toy</span> AI KARAR - DeepSeek Flash
 </h2>
 <button onclick="refresh()" class="btn px-3 py-1 bg-accent hover:bg-accent/80 text-white text-[10px] font-bold rounded">YENILE</button>
 </div>
 <div id="agentsContainer" class="flex flex-col gap-4 overflow-y-auto flex-1 scrollbar pr-1">
-<div class="glass rounded-lg p-6 text-center text-text3">Agent sonuclari bekleniyor...</div>
+<div class="glass rounded-lg p-6 text-center text-text3">AI karari bekleniyor...</div>
 </div>
 </div>
 
 <div id="posPanel" class="flex flex-col flex-1 hidden">
 <div class="flex items-center justify-between mb-3">
 <div class="flex items-center gap-3">
-<h2 class="text-sm font-bold text-white">Pozisyonlar</h2>
-<span class="text-text3 text-xs" id="posCount">0</span>
+<h2 class="text-sm font-bold text-white">BTC Pozisyon</h2>
+<span class="text-text3 text-xs" id="posCount">-</span>
 </div>
 <div class="flex gap-2">
-<button onclick="sellSelected()" class="btn px-3 py-1 bg-red hover:bg-red/80 text-white text-[10px] font-bold rounded">SECILENLERI SAT</button>
-<button onclick="sellAll()" class="btn px-3 py-1 bg-red hover:bg-red/80 text-white text-[10px] font-bold rounded">HEPSINI SAT</button>
+<button onclick="sellAll()" class="btn px-3 py-1 bg-red hover:bg-red/80 text-white text-[10px] font-bold rounded">SAT</button>
 </div>
 </div>
 <div class="glass rounded-lg overflow-hidden flex-1">
 <table class="w-full text-left">
 <thead class="bg-surface3/50 border-b border-border/20">
 <tr>
-<th class="px-4 py-3 w-10"><input type="checkbox" class="sell-cb" onchange="toggleAll(this)"></th>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3">COIN</th>
 <th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">MIKTAR</th>
 <th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">GIRIS</th>
 <th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">DEGER</th>
 <th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">K/Z</th>
-<th class="px-4 py-3 w-16"></th>
 </tr>
 </thead>
 <tbody id="posBody" class="divide-y divide-border/10">
-<tr><td colspan="7" class="px-4 py-12 text-center text-text3 italic">Pozisyon yok</td></tr>
+<tr><td colspan="4" class="px-4 py-12 text-center text-text3 italic">Pozisyon yok</td></tr>
 </tbody>
 </table>
 </div>
@@ -174,7 +176,7 @@ body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hi
 <div id="aiPanel" class="flex flex-col flex-1 hidden">
 <div class="flex items-center justify-between mb-3">
 <h2 class="text-sm font-bold text-white flex items-center gap-2">
-<span class="material-symbols-outlined text-accent">psychology</span> AI HAFIZA
+<span class="material-symbols-outlined text-accent">psychology</span> AI Tahmin Gecmisi
 </h2>
 <button onclick="refresh()" class="btn px-3 py-1 bg-accent hover:bg-accent/80 text-white text-[10px] font-bold rounded">YENILE</button>
 </div>
@@ -306,22 +308,23 @@ function updateStatus(){
         else{badge.innerHTML='<span class="w-2 h-2 rounded-full bg-red"></span><span>STOPPED</span>';badge.className='flex items-center gap-2 px-3 py-1 bg-red/10 border border-red/20 rounded text-xs font-bold text-red'}
 
         document.getElementById('sTotalScans').textContent=d.total_scans||0;
+        document.getElementById('sExecutorMode').textContent=(d.executor_mode||'dry_run').toUpperCase();
+        document.getElementById('sStopLoss').textContent='%'+(d.stop_loss_pct||3);
 
         if(d.balance){
             var pv=parseFloat(d.balance.portfolio_value||0);
             var cash=parseFloat(d.balance.cash||0);
             document.getElementById('sPortfolio').textContent='$'+pv.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
             document.getElementById('sCash').textContent='$'+cash.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-            var positions=d.positions||[];
-            var totalPnl=0;positions.forEach(p=>totalPnl+=p.unrealized_pl||0);
+            var pos=d.position||{};
+            var pl=pos.unrealized_pl||0;
             var el=document.getElementById('sPnl');
-            el.textContent='$'+(totalPnl>=0?'+':'')+totalPnl.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-            el.className='text-2xl font-mono font-bold '+(totalPnl>=0?'text-green':'text-red');
+            el.textContent='$'+(pl>=0?'+':'')+pl.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+            el.className='text-2xl font-mono font-bold '+(pl>=0?'text-green':'text-red');
         }
 
         var results=d.scan_results||[];
         if(currentFilter!=='all')results=results.filter(r=>r.action===currentFilter);
-        results.sort((a,b)=>(b.confidence||0)-(a.confidence||0));
         var tbody=document.getElementById('scanBody');
         if(results.length>0){
             var html='';
@@ -333,43 +336,37 @@ function updateStatus(){
                 var confColor=conf>0.7?'bg-green':conf>0.5?'bg-yellow-500':'bg-text3';
                 var rsiColor=(r.rsi||50)<30?'text-green':(r.rsi||50)>70?'text-red':'text-text3';
                 html+='<tr class="hover:bg-white/5 transition-colors">';
-                html+='<td class="px-4 py-3 font-mono text-sm font-bold">'+r.symbol+'</td>';
                 html+='<td class="px-4 py-3">'+badge+'</td>';
                 html+='<td class="px-4 py-3"><div class="w-20 bg-surface4 h-1.5 rounded-full overflow-hidden"><div class="'+confColor+' h-full" style="width:'+conf*100+'%"></div></div><span class="font-mono text-[11px] mt-1 block">'+(conf*100).toFixed(0)+'%</span></td>';
                 html+='<td class="px-4 py-3 font-mono text-sm text-right">$'+(r.price||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
                 html+='<td class="px-4 py-3 font-mono text-sm text-right '+rsiColor+'">'+(r.rsi||0).toFixed(1)+'</td>';
-                html+='<td class="px-4 py-3 font-mono text-sm text-right text-text3">'+(r.volume_ratio||0).toFixed(1)+'x</td>';
+                html+='<td class="px-4 py-3 font-mono text-sm text-text3 max-w-[200px] truncate">'+(r.reason||'-')+'</td>';
                 html+='</tr>';
             });
             tbody.innerHTML=html;
         }else{
-            tbody.innerHTML='<tr><td colspan="6" class="px-4 py-12 text-center text-text3 italic">Tarama bekleniyor...</td></tr>';
+            tbody.innerHTML='<tr><td colspan="5" class="px-4 py-12 text-center text-text3 italic">Bekleniyor...</td></tr>';
         }
 
-        var positions=d.positions||[];
-        document.getElementById('posCount').textContent=positions.length+' coin';
+        var pos=d.position||{};
         var posBody=document.getElementById('posBody');
-        if(positions.length>0){
-            var html='';
-            positions.forEach(p=>{
-                var pl=p.unrealized_pl||0;
-                var entry=p.avg_entry_price||0;
-                var mv=p.market_value||0;
-                var yuzde=entry>0?((mv-entry*p.qty)/(entry*p.qty)*100):0;
-                var plColor=pl>=0?'text-green':'text-red';
-                html+='<tr class="hover:bg-white/5 transition-colors">';
-                html+='<td class="px-4 py-3"><input type="checkbox" class="sell-cb pos-cb" data-sym="'+p.symbol+'"></td>';
-                html+='<td class="px-4 py-3 font-mono text-sm font-bold">'+p.symbol+'</td>';
-                html+='<td class="px-4 py-3 font-mono text-sm text-right">'+p.qty.toFixed(6)+'</td>';
-                html+='<td class="px-4 py-3 font-mono text-sm text-right">$'+entry.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
-                html+='<td class="px-4 py-3 font-mono text-sm text-right">$'+mv.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
-                html+='<td class="px-4 py-3 font-mono text-sm text-right '+plColor+'">$'+pl.toFixed(2)+' ('+yuzde.toFixed(1)+'%)</td>';
-                html+='<td class="px-4 py-3 text-right"><button onclick="sellCoin(\\''+p.symbol+'\\')" class="btn px-3 py-1 bg-red/20 hover:bg-red text-red hover:text-white text-[10px] font-bold rounded">SAT</button></td>';
-                html+='</tr>';
-            });
+        if(pos.qty&&pos.qty>0){
+            var pl=pos.unrealized_pl||0;
+            var entry=pos.avg_entry_price||0;
+            var mv=pos.market_value||0;
+            var yuzde=entry>0?((mv-entry*pos.qty)/(entry*pos.qty)*100):0;
+            var plColor=pl>=0?'text-green':'text-red';
+            var html='<tr class="hover:bg-white/5 transition-colors">';
+            html+='<td class="px-4 py-3 font-mono text-sm text-right">'+pos.qty.toFixed(6)+'</td>';
+            html+='<td class="px-4 py-3 font-mono text-sm text-right">$'+entry.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
+            html+='<td class="px-4 py-3 font-mono text-sm text-right">$'+mv.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
+            html+='<td class="px-4 py-3 font-mono text-sm text-right '+plColor+'">$'+pl.toFixed(2)+' ('+yuzde.toFixed(1)+'%)</td>';
+            html+='</tr>';
             posBody.innerHTML=html;
+            document.getElementById('posCount').textContent='AKTIF';
         }else{
-            posBody.innerHTML='<tr><td colspan="7" class="px-4 py-12 text-center text-text3 italic">Pozisyon yok</td></tr>';
+            posBody.innerHTML='<tr><td colspan="4" class="px-4 py-12 text-center text-text3 italic">Pozisyon yok</td></tr>';
+            document.getElementById('posCount').textContent='-';
         }
 
         var sigs=d.last_signals||{};
@@ -378,16 +375,16 @@ function updateStatus(){
         var sigList=document.getElementById('signalsList');
         if(sigKeys.length>0){
             var html='';
-            sigKeys.forEach(coin=>{
-                var s=sigs[coin];
+            sigKeys.forEach(sym=>{
+                var s=sigs[sym];
                 var color=s.action==='BUY'?'green':'red';
                 var border=s.action==='BUY'?'border-green':'border-red';
-                html+='<div class="glass rounded-lg p-3 border-l-4 '+border+'"><div class="font-bold text-'+color+'">'+coin+' - '+s.action+'</div><div class="text-xs text-text3 font-mono">$'+(s.price||0).toFixed(2)+' | Guven: '+(s.confidence*100).toFixed(0)+'%</div>'+(s.reason?'<div class="text-[10px] text-text3 mt-1 italic">'+s.reason.substring(0,60)+'</div>':'')+'</div>';
+                html+='<div class="glass rounded-lg p-3 border-l-4 '+border+'"><div class="font-bold text-'+color+'">'+sym+' - '+s.action+'</div><div class="text-xs text-text3 font-mono">$'+(s.price||0).toFixed(2)+' | Guven: '+(s.confidence*100).toFixed(0)+'%</div>'+(s.reason?'<div class="text-[10px] text-text3 mt-1 italic">'+s.reason.substring(0,60)+'</div>':'')+'</div>';
             });
             sigList.innerHTML=html;
         }
 
-        document.getElementById('scanStatus').textContent=d.running?(d.paused?'DURAKLATILDI':(d.auto_trade?'OTO MOD - BTC, ETH':'ONAYLI MOD - BTC, ETH')):'Durdu';
+        document.getElementById('scanStatus').textContent=d.running?(d.paused?'DURAKLATILDI':(d.auto_trade?'OTO MOD':'ONAYLI MOD')+ ' | ' + (d.executor_mode||'dry_run').toUpperCase()):'Durdu';
 
         var otoBtn=document.getElementById('otoBtn');
         var manBtn=document.getElementById('manBtn');
@@ -432,7 +429,7 @@ function updateStatus(){
                 var conf=t.confidence||0;
                 var consensus=t.consensus||'-';
                 html+='<tr class="hover:bg-white/5 transition-colors">';
-                html+='<td class="px-4 py-3 font-mono text-sm font-bold">'+t.symbol+'</td>';
+                html+='<td class="px-4 py-3 font-mono text-sm font-bold">'+(t.symbol||'BTC')+'</td>';
                 html+='<td class="px-4 py-3"><span class="px-2 py-0.5 text-[10px] font-bold rounded '+(t.action==='BUY'?'bg-green/10 text-green':'bg-red/10 text-red')+'">'+t.action+'</span></td>';
                 html+='<td class="px-4 py-3 font-mono text-sm text-right">$'+(t.price||0).toFixed(2)+'</td>';
                 html+='<td class="px-4 py-3 font-mono text-sm text-right">'+(conf*100).toFixed(0)+'%</td>';
@@ -513,7 +510,7 @@ def api_start():
     if bot.running:
         return jsonify({"success": False, "message": "Bot zaten calisiyor"})
     bot.start()
-    return jsonify({"success": True, "message": "Bot baslatildi - BTC, ETH"})
+    return jsonify({"success": True, "message": "Bot baslatildi - BTC"})
 
 
 @app.route('/api/stop', methods=['POST'])
@@ -537,44 +534,28 @@ def api_scan():
 @app.route('/api/buy', methods=['POST'])
 def api_buy():
     try:
-        data = request.get_json()
-        sym = data.get("symbol", "BTC/USD")
-        result = trader.buy(sym)
+        from src.executor import executor
+        result = executor.buy()
         return jsonify({
             "success": True,
-            "message": f"{sym} alindi - ${result['price']:,.2f} / {result['qty']:.6f}"
+            "message": f"BTC alindi - ${result['price']:,.2f} / {result['qty']:.6f}"
         })
     except Exception as e:
         return jsonify({"success": False, "message": str(e)[:200]})
 
 
+
 @app.route('/api/sell', methods=['POST'])
 def api_sell():
     try:
-        data = request.get_json()
-        sym = data.get("symbol", "")
-        result = trader.sell(sym)
+        from src.executor import executor
+        result = executor.sell()
         if result:
             return jsonify({
                 "success": True,
-                "message": f"{sym} satildi - K/Z: ${result['pl']:+,.4f}"
+                "message": f"BTC satildi - K/Z: ${result['pl']:+,.2f}"
             })
-        return jsonify({"success": False, "message": f"{sym} pozisyon yok"})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)[:200]})
-
-
-@app.route('/api/sell-multi', methods=['POST'])
-def api_sell_multi():
-    try:
-        data = request.get_json()
-        symbols = data.get("symbols", [])
-        sold = []
-        for sym in symbols:
-            result = trader.sell(sym)
-            if result:
-                sold.append(sym)
-        return jsonify({"success": True, "message": f"{len(sold)} coin satildi"})
+        return jsonify({"success": False, "message": "Pozisyon yok"})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)[:200]})
 
@@ -582,7 +563,8 @@ def api_sell_multi():
 @app.route('/api/sell-all', methods=['POST'])
 def api_sell_all():
     try:
-        results = trader.sell_all()
+        from src.executor import executor
+        results = executor.sell_all()
         return jsonify({"success": True, "message": f"{len(results)} coin satildi"})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)[:200]})
@@ -624,13 +606,13 @@ if __name__ == '__main__':
 
     port = int(os.environ.get('PORT', 5000))
     print(f"[PANEL] http://0.0.0.0:{port}")
-    print(f"[COIN] BTC, ETH | Islem: ${settings.position_size_usd}")
-    print(f"[AI] SL: %{settings.stop_loss_pct*100:.1f}  TP: %{settings.take_profit_pct*100:.1f}")
+    print(f"[BOT] BTC | Islem: ${settings.position_size_usd} | Hedef: ${settings.daily_profit_target}/gun")
 
     tg.send(
         f"<b>SISTEM HAZIR</b>\n\n"
-        f"Coin: BTC, ETH\n"
-        f"Islem: ${settings.position_size_usd}\n\n"
+        f"Coin: BTC\n"
+        f"Islem: ${settings.position_size_usd}\n"
+        f"Hedef: ${settings.daily_profit_target}/gun\n\n"
         f"Basla: <code>/start</code>\n"
         f"Komutlar: <code>/help</code>"
     )

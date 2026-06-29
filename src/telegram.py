@@ -157,70 +157,68 @@ class TelegramBot:
                 self.send("Bekleyen islem yok.")
 
     def _exec_buy(self, trade):
-        from src.trader import trader
-        sym = trade["symbol"]
-        self.send(f"<b>{sym}</b> alis basliyor...")
+        from src.executor import executor
+        self.send("<b>BTC</b> alis basliyor...")
         try:
-            result = trader.buy(sym)
+            result = executor.buy()
+            prefix = "SIMULASYON " if settings.executor_mode == "dry_run" else ""
             self.send(
-                f"<b>ALIS TAMAM</b>  <code>{sym}</code>\n"
+                f"<b>{prefix}ALIS TAMAM</b>\n"
                 f"Miktar: <code>{result['qty']:.6f}</code>\n"
-                f"Giris: <code>${result['price']:,.2f}</code>\n"
-                f"SL: <code>${result['sl']:,.2f}</code>  TP: <code>${result['tp']:,.2f}</code>")
+                f"Giris: <code>${result['price']:,.2f}</code>"
+                f"{'  (dry-run)' if settings.executor_mode == 'dry_run' else ''}")
         except Exception as e:
-            self.send(f"<b>{sym}</b> hata:\n<code>{str(e)[:200]}</code>")
+            self.send(f"<b>HATA</b>\n<code>{str(e)[:200]}</code>")
 
     def _exec_sell(self, trade):
-        from src.trader import trader
-        sym = trade["symbol"]
-        self.send(f"<b>{sym}</b> satis basliyor...")
+        from src.executor import executor
+        self.send("<b>BTC</b> satis basliyor...")
         try:
-            result = trader.sell(sym)
+            result = executor.sell()
             if result:
+                prefix = "SIMULASYON " if settings.executor_mode == "dry_run" else ""
                 self.send(
-                    f"<b>SATIS TAMAM</b>  <code>{sym}</code>\n"
-                    f"Miktar: <code>{result['qty']:.6f}</code>\n"
-                    f"K/Z: <code>${result['pl']:+,.4f}</code>")
+                    f"<b>{prefix}SATIS TAMAM</b>\n"
+                    f"K/Z: <code>${result['pl']:+,.2f}</code>"
+                    f"{'  (dry-run)' if settings.executor_mode == 'dry_run' else ''}")
             else:
-                self.send(f"<b>{sym}</b> pozisyon bulunamadi.")
+                self.send("Pozisyon yok.")
         except Exception as e:
-            self.send(f"<b>{sym}</b> hata:\n<code>{str(e)[:200]}</code>")
+            self.send(f"<b>HATA</b>\n<code>{str(e)[:200]}</code>")
 
     def _sell_all(self):
-        from src.trader import trader
-        positions = trader.get_positions()
-        if not positions:
+        from src.executor import executor
+        pos = executor.get_position()
+        if not pos:
             self.send("Pozisyon yok.")
             return
-        self.send(f"<b>HEPSINI SAT</b> ({len(positions)} coin)")
-        results = trader.sell_all()
+        self.send("<b>BTC SATILIYOR</b>")
+        results = executor.sell_all()
         for r in results:
-            self.send(f"<b>{r['symbol']}</b> satildi  K/Z: ${r['pl']:+,.4f}")
+            self.send(f"<b>SATILDI</b>  K/Z: ${r['pl']:+,.2f}")
 
-    def _sell_one(self, coin):
-        from src.trader import trader
-        if not coin.endswith("/USD"):
-            coin = coin + "/USD"
-        pos = trader.get_position(coin)
+    def _sell_one(self, coin=""):
+        from src.executor import executor
+        pos = executor.get_position()
         if not pos:
-            self.send(f"<code>{coin}</code> pozisyon yok.")
+            self.send("Pozisyon yok.")
             return
         try:
-            result = trader.sell(coin)
+            result = executor.sell()
             if result:
-                self.send(f"<b>{coin}</b> satildi  K/Z: ${result['pl']:+,.4f}")
+                self.send(f"<b>SATILDI</b>  K/Z: ${result['pl']:+,.2f}")
         except Exception as e:
-            self.send(f"<b>{coin}</b> hata: {str(e)[:100]}")
+            self.send(f"<b>HATA</b> {str(e)[:100]}")
 
     def send_buy_signal(self, symbol, confidence, price, reason, trade_id):
         with self._lock:
             self.pending[trade_id] = {
-                "id": trade_id, "symbol": symbol, "action": "BUY",
+                "id": trade_id, "symbol": "BTC", "action": "BUY",
                 "confidence": confidence, "price": price, "reason": reason
             }
 
         msg = (
-            f"<b>ALIS ONAY</b>  <code>{symbol}</code>\n\n"
+            f"<b>ALIS ONAY</b>  <code>BTC</code>\n\n"
             f"Fiyat: <code>${price:,.2f}</code>\n"
             f"Guven: <b>{confidence:.0%}</b>\n\n"
             f"<i>{reason}</i>\n\n"
@@ -232,7 +230,7 @@ class TelegramBot:
     def send_sell_signal(self, symbol, confidence, price, reason, trade_id, entry=0, pnl=0):
         with self._lock:
             self.pending_sell[trade_id] = {
-                "id": trade_id, "symbol": symbol, "action": "SELL",
+                "id": trade_id, "symbol": "BTC", "action": "SELL",
                 "confidence": confidence, "price": price, "reason": reason,
                 "pnl": pnl, "entry": entry
             }
@@ -240,9 +238,9 @@ class TelegramBot:
         yuzde = ((price - entry) / entry * 100) if entry > 0 else 0
         kar_zarar = "KAR" if pnl > 0 else "ZARAR"
         msg = (
-            f"<b>SATIS ONAY</b>  <code>{symbol}</code>\n\n"
+            f"<b>SATIS ONAY</b>  <code>BTC</code>\n\n"
             f"Giris: <code>${entry:,.2f}</code>  Simdi: <code>${price:,.2f}</code>\n"
-            f"Degisim: <b>{yuzde:+.2f}%</b>  K/Z: <b>${pnl:+,.4f}</b> ({kar_zarar})\n\n"
+            f"Degisim: <b>{yuzde:+.2f}%</b>  K/Z: <b>${pnl:+,.2f}</b> ({kar_zarar})\n\n"
             f"<i>{reason}</i>\n\n"
             f"<code>satis</code> - sat  |  <code>sakla</code> - tut"
         )
@@ -262,12 +260,10 @@ class TelegramBot:
         if self._on_start:
             self._on_start()
         self.send(
-            f"<b>BOT BASLATILDI</b>\n\n"
-            f"Coin: BTC, ETH\n"
+            f"<b>BTC BOT BASLATILDI</b>\n\n"
             f"Miktar: ${settings.position_size_usd:.0f}\n"
-            f"SL: %{settings.stop_loss_pct*100:.1f}  TP: %{settings.take_profit_pct*100:.1f}\n\n"
-            f"Tarama basliyor...\n\n"
-            f"/status - durum\n/pos - pozisyonlar\n/miktar - islem miktari\n/oto - otomatik mod\n/manuel - onayli mod\n/help - komutlar")
+            f"Hedef: ${settings.daily_profit_target:.0f}/gun\n\n"
+            f"/status - durum\n/balance - bakiye\n/oto - otomatik mod\n/manuel - onayli mod\n/help - komutlar")
 
     def _cmd_stop(self):
         if self._on_stop:
@@ -280,13 +276,26 @@ class TelegramBot:
             if data:
                 durum = "DURAKLATILDI" if data.get("paused") else "AKTIF" if data.get("running") else "DURDU"
                 islem_modu = "OTO" if data.get("auto_trade") else "ONAYLI"
+                executor_mod = data.get("executor_mode", "dry_run").upper()
                 msg = (
                     f"<b>DURUM</b>\n\n"
                     f"Durum: <b>{durum}</b>\n"
                     f"Mod: <b>{islem_modu}</b>\n"
+                    f"Islem: <b>{executor_mod}</b>\n"
+                    f"Stop-loss: %{data.get('stop_loss_pct', 3):.0f}\n"
                     f"Tarama: {data.get('total_scans', 0)}\n"
                     f"Sinyal: {data.get('signals_sent', 0)}\n"
                     f"Son: {data.get('last_scan', '-')}")
+                last = data.get('last_decision', {})
+                if last:
+                    msg += f"\n\nSon karar: <b>{last.get('action', '-')}</b> ({last.get('confidence', 0):.0%})"
+                if data.get('daily_pnl', 0) != 0:
+                    msg += f"\nGunluk K/Z: <b>${data['daily_pnl']:+,.2f}</b>"
+                if data.get('position'):
+                    entry = data['position'].get('avg_entry_price', 0)
+                    if entry > 0:
+                        sl_price = entry * (1 - settings.stop_loss_pct / 100)
+                        msg += f"\nSL: <code>${sl_price:,.0f}</code>"
                 if self.pending:
                     msg += f"\nBekleyen alis: {len(self.pending)}"
                 if self.pending_sell:
@@ -298,40 +307,35 @@ class TelegramBot:
             self.send("Bot calismiyor. /start ile baslatin.")
 
     def _cmd_positions(self):
+        from src.executor import executor
         from src.trader import trader
-        positions = trader.get_positions()
-        if not positions:
+        pos = executor.get_position()
+        if not pos:
             self.send("Pozisyon yok.")
             return
-        msg = "<b>POZISYONLAR</b>\n\n"
-        toplam = 0
-        for p in positions:
-            pl = p["unrealized_pl"]
-            toplam += pl
-            entry = p["avg_entry_price"]
-            yuzde = ((p["market_value"] - entry * p["qty"]) / (entry * p["qty"]) * 100) if entry > 0 else 0
-            msg += (
-                f"<code>{p['symbol']}</code>\n"
-                f"  {p['qty']:.6f} @ ${entry:,.2f}\n"
-                f"  Deger: ${p['market_value']:,.2f}\n"
-                f"  K/Z: ${pl:+,.4f} ({yuzde:+.1f}%)\n\n")
-        msg += f"Toplam: <b>${toplam:+,.4f}</b>\n\n"
-        msg += "Sat: <code>sell BTC</code>  Hep: <code>sellall</code>"
+        price = trader.get_price()
+        entry = pos["avg_entry_price"]
+        pnl = pos["unrealized_pl"]
+        yuzde = ((price - entry) / entry * 100) if entry > 0 else 0
+        msg = (
+            f"<b>POZISYON</b>\n\n"
+            f"<code>BTC</code>\n"
+            f"  {pos['qty']:.6f} @ ${entry:,.2f}\n"
+            f"  Deger: ${pos['market_value']:,.2f}\n"
+            f"  K/Z: ${pnl:+,.2f} ({yuzde:+.1f}%)\n\n"
+            f"Sat: <code>sell</code> | Hep: <code>sellall</code>"
+        )
         self.send(msg)
 
     def _cmd_balance(self):
-        from src.trader import trader
+        from src.executor import executor
         try:
-            acc = trader.get_account()
-            positions = trader.get_positions()
-            toplam_kz = sum(p.get("unrealized_pl", 0) for p in positions)
-            toplam_deger = sum(p.get("market_value", 0) for p in positions)
+            acc = executor.get_account()
             self.send(
                 f"<b>BAKIYE</b>\n\n"
                 f"Portfoy: <code>${acc['portfolio_value']:,.2f}</code>\n"
                 f"Nakit: <code>${acc['cash']:,.2f}</code>\n"
-                f"Pozisyon: <code>${toplam_deger:,.2f}</code>\n"
-                f"K/Z: <code>${toplam_kz:+,.4f}</code>")
+                f"BTC: <code>{acc['btc']:.6f}</code> (${acc['btc_value']:,.2f})")
         except Exception as e:
             self.send(f"Hata: {str(e)[:100]}")
 
@@ -424,27 +428,26 @@ class TelegramBot:
             "<b>KOMUTLAR</b>\n\n"
             "<code>/start</code>  Baslat\n"
             "<code>/stop</code>   Durdur\n"
-            "<code>/status</code> Durum\n"
-            "<code>/pos</code>    Pozisyonlar\n"
+            "<code>/status</code> Durum + stop-loss\n"
             "<code>/balance</code> Bakiye\n"
             "<code>/scan</code>   Hemen tara\n"
-            "<code>/signals</code> Sinyaller\n"
-            "<code>/memory</code> AI ogrenme durumu\n"
-            "<code>/onaylar</code> Bekleyen alislar\n"
-            "<code>/oto</code>    Otomatik islem modu\n"
-            "<code>/manuel</code> Onayli islem modu\n\n"
-            "<b>ISLEM MIKTARI</b>\n"
-            "<code>/artir 50</code>  +$50 artir\n"
-            "<code>/azalt 50</code>  -$50 azalt\n"
-            "<code>/miktar</code>  Guncel miktar\n\n"
+            "<code>/oto</code>    Otomatik mod\n"
+            "<code>/manuel</code> Onayli mod\n\n"
+            "<b>MIKTAR</b>\n"
+            "<code>/artir 50</code>  +$50\n"
+            "<code>/azalt 50</code>  -$50\n"
+            "<code>/miktar</code>  Guncel\n\n"
             "<b>ISLEM</b>\n"
             "<code>yap</code>  Alis onay\n"
-            "<code>yapma</code>  Alis iptal\n"
+            "<code>yapma</code>  Iptal\n"
             "<code>satis</code>  Satis onay\n"
-            "<code>sakla</code>  Tut\n\n"
-            "<b>SATIS</b>\n"
-            "<code>sell BTC</code>  Tekil sat\n"
-            "<code>sellall</code>  Hepini sat"
+            "<code>sakla</code>  Tut\n"
+            "<code>sell</code>  Sat\n"
+            "<code>sellall</code>  Hepini sat\n\n"
+            "<b>DURUM</b>\n"
+            f"Mod: <b>{settings.executor_mode.upper()}</b>\n"
+            f"Stop-loss: %{settings.stop_loss_pct:.0f}\n"
+            f"Hedef: ${settings.daily_profit_target:.0f}/gun"
         )
 
     def _cmd_oto(self):

@@ -1,13 +1,13 @@
 import time
 import threading
 import requests
-from datetime import datetime
+from datetime import datetime, date
 from src.config import settings
 from src.trader import trader
-from src.analyzer import analyzer, Memory
+from src.executor import executor
 from src.telegram import tg
-from src.ai_engine import ai_engine
-from src.agents.ml_agent import ml_agent
+from src.deepseek_ai import ai
+from src.analyzer import Memory
 
 
 class Bot:
@@ -18,14 +18,13 @@ class Bot:
         self.total_scans = 0
         self.signals_sent = 0
         self.last_scan = None
-        self.last_signals = {}
-        self.scan_results = []
-        self.agent_results = {}
+        self.last_decision = None
         self.memory = Memory()
-        self._lock = threading.Lock()
-        self._pending_buys = {}
-        self._buy_counter = 0
-        self._last_indicators = {}
+        self.daily_pnl = 0
+        self.today = date.today()
+        self.scan_results = []
+        self.last_signals = {}
+        self._current_trade_id = None
 
     def start(self):
         if self.running:
@@ -33,7 +32,6 @@ class Bot:
         self.running = True
         self.paused = False
         threading.Thread(target=self._main_loop, daemon=True).start()
-        threading.Thread(target=self._keep_alive, daemon=True).start()
         return True
 
     def stop(self):
@@ -46,244 +44,171 @@ class Bot:
 
     def _main_loop(self):
         tg.send(
-            f"<b>TARAMA BASLATILDI</b>\n\n"
-            f"Coin: BTC, ETH\n"
+            f"<b>BTC BOT BASLATILDI</b>\n\n"
             f"Miktar: ${settings.position_size_usd:.0f}\n"
-            f"6 AI Agent: Technical, Sentiment, Volume, Trend, Pattern, ML\n"
+            f"Hedef: ${settings.daily_profit_target:.0f}/gun\n"
+            f"Stop-loss: %{settings.stop_loss_pct:.0f}\n"
             f"Mod: <b>{'OTO' if self.auto_trade else 'ONAYLI'}</b>\n"
+            f"Islem: <b>{settings.executor_mode.upper()}</b>\n"
             f"Her {settings.check_interval}s'de bir tarayacak..."
         )
         time.sleep(2)
-        try:
-            self.scan()
-        except Exception as e:
-            print(f"[SCAN HATA] {e}")
-            tg.send(f"<b>TARAMA HATASI</b>\n\n<code>{str(e)[:200]}</code>")
         while self.running:
             if not self.paused:
+                self._reset_daily()
                 try:
                     self.scan()
                 except Exception as e:
-                    print(f"[SCAN HATA] {e}")
+                    print(f"[BOT] Hata: {e}")
             time.sleep(settings.check_interval)
 
-    def _keep_alive(self):
-        while self.running:
-            time.sleep(600)
-            try:
-                requests.get("http://127.0.0.1:10000/api/keepalive", timeout=5)
-            except:
-                pass
+    def _reset_daily(self):
+        if date.today() != self.today:
+            self.daily_pnl = 0
+            self.today = date.today()
 
     def scan(self):
         self.total_scans += 1
         self.last_scan = datetime.now().strftime('%H:%M:%S')
-        new_results = []
-
         print(f"\n[SCAN #{self.total_scans}] {self.last_scan}")
 
-        for sym in settings.symbols:
-            if not self.running:
-                return
+        if self._check_stop_loss():
+            return
+
+        df = trader.get_bars(100)
+        if df.empty:
+            print("  Veri yok")
+            return
+
+        price = trader.get_price()
+        decision = ai.analyze(df)
+        self.last_decision = decision
+        action = decision.get("action", "HOLD")
+        confidence = decision.get("confidence", 0)
+        reason = decision.get("reason", "")
+
+        print(f"  BTC ${price:,.2f} -> {action} ({confidence:.0%}) {reason[:60]}")
+        print(f"  Mod: {settings.executor_mode.upper()}")
+
+        entry = {
+            "symbol": "BTC/USDT",
+            "action": action,
+            "confidence": confidence,
+            "price": price,
+            "rsi": decision.get("rsi", 50),
+            "reason": reason
+        }
+        self.scan_results = [entry]
+        self.last_signals = {action: {"action": action, "price": price, "confidence": confidence, "reason": reason}}
+
+        self._check_daily_profit()
+
+        has_pos = executor.get_position() is not None
+
+        if action == "BUY" and confidence >= 0.4 and not has_pos:
+            self.signals_sent += 1
+            if self.auto_trade:
+                self._exec_buy(price, decision)
+            else:
+                self._buy_counter = getattr(self, '_buy_counter', 0) + 1
+                tg.send_buy_signal("BTC", confidence, price, reason, self._buy_counter)
+
+        elif action == "SELL" and confidence >= 0.4 and has_pos:
+            self.signals_sent += 1
+            if self.auto_trade:
+                self._exec_sell(reason=f"AI: {reason}", confidence=confidence)
+            else:
+                self._sell_counter = getattr(self, '_sell_counter', 0) + 1
+                pos = executor.get_position()
+                pnl = pos['unrealized_pl'] if pos else 0
+                entry_price = pos['avg_entry_price'] if pos else 0
+                tg.send_sell_signal("BTC", confidence, price, reason, self._sell_counter, entry_price, pnl)
+
+    def _check_stop_loss(self):
+        pos = executor.get_position()
+        if not pos or settings.last_entry_price <= 0:
+            return False
+        price = trader.get_price()
+        loss_pct = (price - settings.last_entry_price) / settings.last_entry_price * 100
+        if loss_pct <= -settings.stop_loss_pct:
+            print(f"[STOP-LOSS] Kayip: {loss_pct:.1f}% - Satiliyor...")
             try:
-                df = trader.get_bars(sym, 60)
-                if df.empty:
-                    print(f"  [{sym}] Veri yok")
-                    new_results.append({
-                        "symbol": sym, "action": "HOLD", "confidence": 0,
-                        "price": 0, "rsi": 0, "volume_ratio": 0, "reason": "Veri yok"
-                    })
-                    continue
-
-                result = analyzer.analyze(df)
-
-                action = result["direction"]
-                if action == "BUY":
-                    action = "BUY"
-                elif action == "SELL":
-                    action = "SELL"
-                else:
-                    action = "HOLD"
-
-                new_results.append({
-                    "symbol": sym, "action": action, "confidence": result["confidence"],
-                    "price": result["price"], "rsi": result["rsi"],
-                    "volume_ratio": result["volume_ratio"],
-                    "reason": "; ".join(result["reasons"][:3])
-                })
-
-                self.agent_results[sym] = result
-
-                print(f"  [{sym}] ${result['price']:,.2f} -> {action} ({result['confidence']:.0%}) Oy:{result.get('consensus', 0)}")
-
-                if action in ["BUY", "SELL"] and result["confidence"] >= settings.min_confidence:
-                    consensus = result.get("consensus", 0)
-                    existing_pos = trader.get_position(sym)
-
-                    if action == "SELL" and not existing_pos:
-                        action = "HOLD"
-
-                    if action == "BUY" and consensus >= 2:
-                        self.last_signals[sym] = {
-                            "action": action, "confidence": result["confidence"],
-                            "price": result["price"], "reason": "; ".join(result["reasons"][:3]),
-                            "rsi": result["rsi"], "time": self.last_scan,
-                            "consensus": consensus
-                        }
-                        self._send_signal(sym, action, result["confidence"], result["price"],
-                                          "; ".join(result["reasons"][:3]), result)
-
-                    elif action == "SELL" and consensus >= 2:
-                        self.last_signals[sym] = {
-                            "action": action, "confidence": result["confidence"],
-                            "price": result["price"], "reason": "; ".join(result["reasons"][:3]),
-                            "rsi": result["rsi"], "time": self.last_scan,
-                            "consensus": consensus
-                        }
-                        self._send_signal(sym, action, result["confidence"], result["price"],
-                                          "; ".join(result["reasons"][:3]), result)
-
-            except Exception as e:
-                print(f"  [{sym}] HATA: {e}")
-                new_results.append({
-                    "symbol": sym, "action": "HOLD", "confidence": 0,
-                    "price": 0, "rsi": 0, "volume_ratio": 0, "reason": str(e)[:50]
-                })
-
-        self.scan_results = new_results
-
-        if self.total_scans == 1 or self.total_scans % 3 == 0:
-            self._send_agent_report()
-
-        self._check_ai_alerts()
-
-    def _send_agent_report(self):
-        for sym, result in self.agent_results.items():
-            summary = result.get("summary", {})
-            agent_statuses = summary.get("agent_statuses", [])
-            direction = summary.get("direction", "BEKLE")
-            confidence = summary.get("confidence", 0)
-            consensus = summary.get("consensus", 0)
-
-            action = "BUY" if direction == "ALIS" else "SELL" if direction == "SATIS" else "NEUTRAL"
-            price = result.get("price", 0)
-            reason = "; ".join(result.get("reasons", [])[:3])
-
-            if action in ["BUY", "SELL"] and consensus >= 3:
-                self.memory.record_prediction(sym, action, confidence, price, result, reason, consensus)
-
-            msg = (
-                f"<b>AI RAPOR - {sym}</b>  {self.last_scan}\n\n"
-                f"Karar: <b>{direction}</b>  Guven: <b>{confidence:.0%}</b>\n"
-                f"Oy Birligi: {consensus}/6 agent\n\n"
-            )
-            for status in agent_statuses:
-                if "ALIS" in status:
-                    msg += f"  {status}\n"
-                elif "SATIS" in status:
-                    msg += f"  {status}\n"
-                else:
-                    msg += f"  {status}\n"
-
-            if result.get("reasons"):
-                msg += f"\n<b>Nedenler:</b>\n"
-                for r in result["reasons"][:5]:
-                    msg += f"  {r}\n"
-
-            tg.send(msg, silent=True)
-
-    def _send_signal(self, symbol, action, confidence, price, reason, indicators):
-        self.signals_sent += 1
-        consensus = indicators.get("consensus", 0) if indicators else 0
-
-        if action == "BUY":
-            self.memory.record_signal(symbol, action, confidence, price, indicators, reason)
-            self._buy_counter += 1
-            self._pending_buys[self._buy_counter] = {
-                "symbol": symbol, "action": action,
-                "confidence": confidence, "price": price,
-                "reason": reason, "indicators": indicators,
-                "time": datetime.now().isoformat(), "recorded": False
-            }
-            trade_id = self._buy_counter
-
-            if self.auto_trade and consensus >= 2:
-                self._exec_trade(trade_id, symbol, action, price)
-            else:
-                tg.send_buy_signal(symbol, confidence, price, reason, trade_id)
-
-        elif action == "SELL":
-            pos = trader.get_position(symbol)
-            if pos:
-                entry = pos["avg_entry_price"]
-                pnl = pos["unrealized_pl"]
-                trade_id = self._buy_counter
-                self._pending_buys[trade_id] = {
-                    "symbol": symbol, "action": action,
-                    "confidence": confidence, "price": price,
-                    "reason": reason, "indicators": indicators,
-                    "time": datetime.now().isoformat(), "recorded": False
-                }
-
-                if entry > 0:
-                    outcome, pnl_usd = self.record_trade_result(symbol, entry, price, indicators)
-                    tg.send_ai_alert(symbol, "down" if outcome == "LOSS" else "up",
-                                     f"Islem kapatildi: {outcome} (${pnl_usd:+,.2f})")
-
-                if self.auto_trade and consensus >= 2:
-                    self._exec_trade(trade_id, symbol, "SELL", price)
-                else:
-                    tg.send_sell_signal(symbol, confidence, price, reason, trade_id, entry, pnl)
-
-    def _exec_trade(self, trade_id, symbol, action, price):
-        try:
-            if action == "BUY":
-                result = trader.buy(symbol)
-                tg.send(
-                    f"<b>OTO ALIS</b>  <code>{symbol}</code>\n"
-                    f"Miktar: <code>{result['qty']:.6f}</code>\n"
-                    f"Giris: <code>${result['price']:,.2f}</code>\n"
-                    f"SL: <code>${result['sl']:,.2f}</code>  TP: <code>${result['tp']:,.2f}</code>")
-            else:
-                result = trader.sell(symbol)
+                result = executor.sell()
                 if result:
+                    self.daily_pnl += result['pl']
+                    self._close_memory_trade(result['pl'])
                     tg.send(
-                        f"<b>OTO SATIS</b>  <code>{symbol}</code>\n"
-                        f"K/Z: <code>${result['pl']:+,.4f}</code>")
-            self._pending_buys[trade_id]["recorded"] = True
+                        f"<b>STOP-LOSS TETIKLENDI</b>\n\n"
+                        f"Giris: <code>${settings.last_entry_price:,.2f}</code>\n"
+                        f"Cikis: <code>${price:,.2f}</code>\n"
+                        f"Kayip: <b>{loss_pct:.1f}%</b>\n"
+                        f"K/Z: <code>${result['pl']:+,.2f}</code>")
+                    return True
+            except Exception as e:
+                tg.send(f"<b>STOP-LOSS HATASI</b>\n<code>{str(e)[:100]}</code>")
+        return False
+
+    def _check_daily_profit(self):
+        if self.daily_pnl >= settings.daily_profit_target:
+            pos = executor.get_position()
+            if pos:
+                tg.send(f"<b>GUNLUK HEDEF</b>\n\nKar: ${self.daily_pnl:.2f}\nHedef: ${settings.daily_profit_target:.0f}\nSatiliyor...")
+                try:
+                    result = executor.sell_all()
+                    if result:
+                        self._close_memory_trade(self.daily_pnl)
+                except Exception as e:
+                    tg.send(f"<b>SATIS HATASI</b>\n<code>{str(e)[:100]}</code>")
+            self.paused = True
+
+    def _exec_buy(self, price, decision=None):
+        try:
+            result = executor.buy()
+            trade_id = self.memory.record_signal("BTC/USDT", "BUY",
+                decision.get('confidence', 0) if decision else 0, price,
+                decision or {}, decision.get('reason', '') if decision else '')
+            self._current_trade_id = trade_id
+            prefix = "SIMULASYON " if settings.executor_mode == "dry_run" else ""
+            tg.send(
+                f"<b>{prefix}ALIS</b>  <code>BTC</code>\n"
+                f"Miktar: <code>{result['qty']:.6f}</code>\n"
+                f"Giris: <code>${result['price']:,.2f}</code>"
+                f"{'  (dry-run)' if settings.executor_mode == 'dry_run' else ''}")
         except Exception as e:
-            tg.send(f"<b>{symbol}</b> oto islem hatasi:\n<code>{str(e)[:200]}</code>")
+            tg.send(f"<b>ALIS HATASI</b>\n<code>{str(e)[:200]}</code>")
 
-    def record_trade_result(self, symbol, entry_price, exit_price, indicators):
-        pnl_pct = (exit_price - entry_price) / entry_price if entry_price > 0 else 0
-        outcome = "WIN" if pnl_pct > 0 else "LOSS" if pnl_pct < 0 else "BREAKEVEN"
-        pnl_usd = pnl_pct * settings.position_size_usd
+    def _exec_sell(self, reason="", confidence=0):
+        try:
+            result = executor.sell()
+            if result:
+                if self._current_trade_id:
+                    self.memory.close_trade(self._current_trade_id, result['pl'])
+                    self._current_trade_id = None
+                self.daily_pnl += result['pl']
+                prefix = "SIMULASYON " if settings.executor_mode == "dry_run" else ""
+                txt = (
+                    f"<b>{prefix}SATIS</b>  <code>BTC</code>\n"
+                    f"K/Z: <code>${result['pl']:+,.2f}</code>\n"
+                    f"Gunluk: ${self.daily_pnl:+,.2f}"
+                    f"{'  (dry-run)' if settings.executor_mode == 'dry_run' else ''}")
+                if reason:
+                    txt += f"\n<i>{reason[:80]}</i>"
+                tg.send(txt)
+        except Exception as e:
+            tg.send(f"<b>SATIS HATASI</b>\n<code>{str(e)[:200]}</code>")
 
-        ai_engine.record_outcome(symbol, "BUY", 0, entry_price, indicators, outcome, pnl_usd)
+    def _close_memory_trade(self, pnl):
+        if self._current_trade_id:
+            self.memory.close_trade(self._current_trade_id, pnl)
+            self._current_trade_id = None
 
-        if isinstance(indicators, dict) and "agents" in indicators:
-            for agent_key, agent_result in indicators["agents"].items():
-                if agent_result.get("direction") == "BUY" and agent_result.get("confidence", 0) > 0.5:
-                    ml_agent.record_outcome(
-                        symbol, "BUY", agent_result["confidence"],
-                        entry_price, indicators, outcome, pnl_usd
-                    )
-
-        self.memory.record_signal(symbol, "BUY", 0, entry_price, indicators, f"Sonuc: {outcome}")
-        self.memory.close_trade(len(self.memory.trades), pnl_usd)
-
-        return outcome, pnl_usd
-
-    def _check_ai_alerts(self):
-        for sym in settings.symbols:
-            avoid, reason = self.memory.should_avoid(sym)
-            if avoid:
-                tg.send_ai_alert(sym, "down", reason)
+    def _has_position(self):
+        return executor.get_position() is not None
 
     def get_status(self):
         try:
-            acc = trader.get_account()
-            positions = trader.get_positions()
+            acc = executor.get_account()
+            pos = executor.get_position()
             return {
                 "running": self.running,
                 "paused": self.paused,
@@ -291,27 +216,17 @@ class Bot:
                 "total_scans": self.total_scans,
                 "signals_sent": self.signals_sent,
                 "last_scan": self.last_scan,
-                "symbols": settings.symbols,
+                "symbol": "BTC/USDT",
                 "position_size": settings.position_size_usd,
-                "stop_loss": settings.stop_loss_pct,
-                "take_profit": settings.take_profit_pct,
+                "daily_target": settings.daily_profit_target,
+                "daily_pnl": self.daily_pnl,
                 "balance": acc,
-                "positions": positions,
+                "position": pos,
+                "last_decision": self.last_decision,
                 "scan_results": self.scan_results,
                 "last_signals": self.last_signals,
-                "agent_results": {k: {
-                    "direction": v.get("direction"),
-                    "confidence": v.get("confidence"),
-                    "buy_score": v.get("buy_score", 0),
-                    "sell_score": v.get("sell_score", 0),
-                    "consensus": v.get("consensus", 0),
-                    "agents": {ak: {
-                        "direction": av.get("direction"),
-                        "confidence": av.get("confidence"),
-                        "reason": av.get("reason", "")[:60]
-                    } for ak, av in v.get("agents", {}).items()},
-                    "reasons": v.get("reasons", [])[:5]
-                } for k, v in self.agent_results.items()},
+                "executor_mode": settings.executor_mode,
+                "stop_loss_pct": settings.stop_loss_pct,
             }
         except Exception as e:
             return {
@@ -321,18 +236,15 @@ class Bot:
                 "total_scans": self.total_scans,
                 "signals_sent": self.signals_sent,
                 "last_scan": self.last_scan,
-                "error": str(e)
+                "error": str(e),
             }
 
     def get_memory_data(self):
-        memory_stats = self.memory.get_win_rate()
-        ai_stats = ai_engine.get_stats()
-        predictions = self.memory.get_predictions(20)
+        stats = self.memory.get_win_rate()
         return {
-            "stats": memory_stats,
+            "stats": stats,
             "recent": self.memory.get_recent(10),
-            "ai": ai_stats,
-            "predictions": predictions
+            "last_decision": self.last_decision,
         }
 
 
@@ -344,7 +256,6 @@ def setup_telegram():
     tg.on_stop(lambda: bot.stop())
     tg.on_scan(lambda: bot.scan())
     tg.on_status(lambda: bot.get_status())
-    tg.on_signals(lambda: bot.last_signals)
     tg.on_memory(lambda: bot.get_memory_data())
     tg.on_oto(lambda: _toggle_auto(True))
     tg.on_manuel(lambda: _toggle_auto(False))
@@ -354,5 +265,5 @@ def setup_telegram():
 def _toggle_auto(enabled):
     bot.auto_trade = enabled
     mod = "OTO" if enabled else "ONAYLI"
-    tg.send(f"<b>MOD DEGISTIRILDI</b>\n\nIslem modu: <b>{mod}</b>")
-    print(f"[BOT] Mod: {mod}")
+    tg.send(f"<b>MOD</b>\n\nIslem modu: <b>{mod}</b>\n"
+            f"Islem: <b>{settings.executor_mode.upper()}</b>")
