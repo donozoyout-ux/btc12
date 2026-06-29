@@ -7,6 +7,7 @@ from src.executor import executor
 from src.analyzer import analyzer
 from src.news import news_fetcher
 from src.quant_agent import quant_agent
+from src.database import db
 from src.telegram import tg
 
 
@@ -130,6 +131,16 @@ class Bot:
         action = karar["action"]
         confidence = karar["confidence_score"]
 
+        haber_sentiment = sum(1 for h in haberler if h.get("sentiment") == "pozitif") - sum(1 for h in haberler if h.get("sentiment") == "negatif")
+        db.save_scan(
+            price=price, rsi=teknik.get("rsi"), ema_cross=teknik.get("ema_cross"),
+            macd_hist=teknik.get("macd_hist"), vol_ratio=teknik.get("vol_ratio"),
+            haber_sentiment=haber_sentiment, action=action, confidence=confidence,
+            stop_loss=karar.get("execution", {}).get("stop_loss", 0),
+            take_profit=karar.get("execution", {}).get("take_profit", 0),
+            system_log=karar.get("system_log", "")
+        )
+
         self.last_action = action
 
         if action == "BUY" and not acik_pozisyon:
@@ -141,6 +152,7 @@ class Bot:
                 quant_agent._save_state()
                 reason = karar["memory_update"]["aktif_strateji_notu"]
                 tg.send_buy_signal(price, confidence * 100, sl, tp, reason)
+                db.save_signal("BUY", price, confidence)
                 self.bekleyen_alis = karar
                 self.last_notified_action = "BUY"
                 print(f"  -> ALIS bildirimi gonderildi (guven: %{confidence:.0%})")
@@ -154,6 +166,7 @@ class Bot:
                 yuzde = (price - entry) / entry * 100
                 reason = karar["memory_update"]["aktif_strateji_notu"]
                 tg.send_sell_signal(price, entry, kar_zarar, yuzde, reason)
+                db.save_signal("SELL", price, confidence)
                 self.bekleyen_satis = karar
                 self.last_notified_action = "SELL"
                 print(f"  -> SATIS bildirimi gonderildi (guven: %{confidence:.0%})")
@@ -172,6 +185,9 @@ class Bot:
             result = executor.buy(size_pct)
             if result:
                 tg.send_islem_sonucu("BUY", result["price"], result["qty"])
+                quant_agent.state["son_giris_fiyati"] = result["price"]
+                quant_agent._save_state()
+                db.save_trade("BUY", result["price"], result["qty"], 0, "Kullanici onayi", result["price"])
                 self.bekleyen_alis = None
                 self.bekleyen_satis = None
                 self.last_notified_action = None
@@ -192,6 +208,7 @@ class Bot:
                 pl = result.get("pl", 0)
                 quant_agent.islem_sonucu_kaydet(pl)
                 tg.send_islem_sonucu("SELL", result["price"], result["qty"], pl)
+                db.save_trade("SELL", result["price"], result["qty"], pl, sebep, quant_agent.state.get("son_giris_fiyati", 0))
                 self.bekleyen_alis = None
                 self.bekleyen_satis = None
                 self.last_notified_action = None
@@ -201,6 +218,32 @@ class Bot:
                 print(f"[BOT] SATIS gerceklesti: K/Z ${pl:+,.2f} ({sebep})")
         except Exception as e:
             tg.send(f"<b>SATIS HATASI</b>\n<code>{str(e)[:200]}</code>")
+
+    def miktar_goster(self, deger=None):
+        if deger is None:
+            tg.send(f"<b>ISLEM MIKTARI</b>\n\nGuncel: <code>${settings.position_size_usd:.0f}</code>\n\nDegistirmek icin: <code>/miktar 100</code>\nArtirmak icin: <code>/artir 50</code>\nAzaltmak icin: <code>/azalt 25</code>")
+        else:
+            if deger < 10:
+                tg.send("Minimum miktar: $10")
+                return
+            settings.position_size_usd = float(deger)
+            tg.send(f"<b>MIKTAR GUNCELLENDI</b>\n\nYeni islem miktari: <code>${settings.position_size_usd:.0f}</code>")
+
+    def miktar_artir(self, miktar):
+        yeni = settings.position_size_usd + miktar
+        if yeni > 10000:
+            tg.send("Maksimum miktar: $10,000")
+            return
+        settings.position_size_usd = yeni
+        tg.send(f"<b>MIKTAR ARTIRILDI</b>\n\nYeni: <code>${settings.position_size_usd:.0f}</code>")
+
+    def miktar_azalt(self, miktar):
+        yeni = settings.position_size_usd - miktar
+        if yeni < 10:
+            tg.send("Minimum miktar: $10")
+            return
+        settings.position_size_usd = yeni
+        tg.send(f"<b>MIKTAR AZALTILDI</b>\n\nYeni: <code>${settings.position_size_usd:.0f}</code>")
 
     def get_status(self):
         try:
@@ -238,6 +281,9 @@ def setup_telegram():
     tg.on_status(lambda: tg.send_durum(bot.get_status()))
     tg.on_oto(lambda: setattr(bot, 'auto_trade', True) or tg.send("Mod: OTO"))
     tg.on_manuel(lambda: setattr(bot, 'auto_trade', False) or tg.send("Mod: ONAYLI"))
+    tg.on_miktar(lambda val: bot.miktar_goster(val))
+    tg.on_artir(lambda val: bot.miktar_artir(val))
+    tg.on_azalt(lambda val: bot.miktar_azalt(val))
     tg.start_polling()
 
 

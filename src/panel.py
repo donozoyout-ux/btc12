@@ -8,6 +8,7 @@ from src.trader import trader
 from src.config import settings
 from src.telegram import tg
 from src.quant_agent import quant_agent
+from src.database import db
 
 app = Flask(__name__)
 
@@ -155,15 +156,11 @@ def api_status():
 
 @app.route('/api/memory')
 def api_memory():
+    stats = db.get_stats()
+    trades = db.get_trade_history(20)
+    scans = db.get_recent_scans(10)
     state = quant_agent.get_state()
-    trades = []
-    if state.get("toplam_islem", 0) > 0:
-        trades.append({
-            "action": "BUY" if state.get("son_islem_kar_zarar", 0) != 0 else "HOLD",
-            "price": 0,
-            "pnl": state.get("son_islem_kar_zarar", 0)
-        })
-    return jsonify({"state": state, "trades": trades})
+    return jsonify({"stats": stats, "trades": trades, "scans": scans, "state": state})
 
 
 @app.route('/api/start', methods=['POST'])

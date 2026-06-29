@@ -18,6 +18,9 @@ class TelegramBot:
         self._on_sell_onay = None
         self._on_oto = None
         self._on_manuel = None
+        self._on_miktar = None
+        self._on_artir = None
+        self._on_azalt = None
 
     def send(self, text, silent=False):
         try:
@@ -86,6 +89,36 @@ class TelegramBot:
         if low in ["manuel", "onayli"]:
             if self._on_manuel:
                 self._on_manuel()
+            return
+
+        parts = low.split()
+        if parts[0] == "miktar" and len(parts) == 1:
+            if self._on_miktar:
+                self._on_miktar(None)
+            return
+        if parts[0] == "miktar" and len(parts) == 2:
+            try:
+                val = int(parts[1])
+                if self._on_miktar:
+                    self._on_miktar(val)
+            except:
+                self.send("Gecerli bir sayi girin. Ornek: <code>/miktar 100</code>")
+            return
+        if parts[0] in ("artir", "arttir") and len(parts) == 2:
+            try:
+                val = int(parts[1])
+                if self._on_artir:
+                    self._on_artir(val)
+            except:
+                self.send("Gecerli bir sayi girin. Ornek: <code>/artir 50</code>")
+            return
+        if parts[0] == "azalt" and len(parts) == 2:
+            try:
+                val = int(parts[1])
+                if self._on_azalt:
+                    self._on_azalt(val)
+            except:
+                self.send("Gecerli bir sayi girin. Ornek: <code>/azalt 25</code>")
             return
 
     def send_buy_signal(self, fiyat, confidence, sl, tp, reason):
@@ -184,6 +217,14 @@ class TelegramBot:
         self._on_oto = fn
     def on_manuel(self, fn):
         self._on_manuel = fn
+
+
+    def on_miktar(self, fn):
+        self._on_miktar = fn
+    def on_artir(self, fn):
+        self._on_artir = fn
+    def on_azalt(self, fn):
+        self._on_azalt = fn
 
 
 tg = TelegramBot()
