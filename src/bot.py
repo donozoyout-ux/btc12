@@ -76,7 +76,7 @@ class Bot:
     def scan(self):
         self.total_scans += 1
         self.last_scan = datetime.now().strftime('%H:%M:%S')
-        self.scan_results = []
+        new_results = []
 
         print(f"\n[SCAN #{self.total_scans}] {self.last_scan}")
 
@@ -87,7 +87,7 @@ class Bot:
                 df = trader.get_bars(sym, 60)
                 if df.empty:
                     print(f"  [{sym}] Veri yok")
-                    self.scan_results.append({
+                    new_results.append({
                         "symbol": sym, "action": "HOLD", "confidence": 0,
                         "price": 0, "rsi": 0, "volume_ratio": 0, "reason": "Veri yok"
                     })
@@ -103,7 +103,7 @@ class Bot:
                 else:
                     action = "HOLD"
 
-                self.scan_results.append({
+                new_results.append({
                     "symbol": sym, "action": action, "confidence": result["confidence"],
                     "price": result["price"], "rsi": result["rsi"],
                     "volume_ratio": result["volume_ratio"],
@@ -143,10 +143,12 @@ class Bot:
 
             except Exception as e:
                 print(f"  [{sym}] HATA: {e}")
-                self.scan_results.append({
+                new_results.append({
                     "symbol": sym, "action": "HOLD", "confidence": 0,
                     "price": 0, "rsi": 0, "volume_ratio": 0, "reason": str(e)[:50]
                 })
+
+        self.scan_results = new_results
 
         if self.total_scans == 1 or self.total_scans % 3 == 0:
             self._send_agent_report()
@@ -164,7 +166,7 @@ class Bot:
             msg = (
                 f"<b>AI RAPOR - {sym}</b>  {self.last_scan}\n\n"
                 f"Karar: <b>{direction}</b>  Guven: <b>{confidence:.0%}</b>\n"
-                f"Oy Birligi: {consensus}/5 agent\n\n"
+                f"Oy Birligi: {consensus}/6 agent\n\n"
             )
             for status in agent_statuses:
                 if "ALIS" in status:

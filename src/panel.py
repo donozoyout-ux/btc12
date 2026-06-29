@@ -311,7 +311,7 @@ function updateStatus(){
         }
 
         var results=d.scan_results||[];
-        if(currentFilter!=='ALL')results=results.filter(r=>r.action===currentFilter);
+        if(currentFilter!=='all')results=results.filter(r=>r.action===currentFilter);
         results.sort((a,b)=>(b.confidence||0)-(a.confidence||0));
         var tbody=document.getElementById('scanBody');
         if(results.length>0){
