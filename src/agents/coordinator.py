@@ -9,14 +9,15 @@ from src.agents.ml_agent import MLAgent
 class AgentCoordinator:
     def __init__(self):
         self.agents = [
-            ("technical", TechnicalAgent(), 0.20),
-            ("sentiment", SentimentAgent(), 0.15),
-            ("volume", VolumeAgent(), 0.15),
-            ("trend", TrendAgent(), 0.20),
+            ("technical", TechnicalAgent(), 0.18),
+            ("sentiment", SentimentAgent(), 0.12),
+            ("volume", VolumeAgent(), 0.12),
+            ("trend", TrendAgent(), 0.18),
             ("pattern", PatternAgent(), 0.10),
-            ("ai_ml", MLAgent(), 0.20),
+            ("ai_ml", MLAgent(), 0.30),
         ]
         self.last_results = {}
+        self.signal_history = []
 
     def analyze_all(self, df, symbol=None):
         results = {}
@@ -25,6 +26,7 @@ class AgentCoordinator:
         buy_count = 0
         sell_count = 0
         neutral_count = 0
+        total_weight = 0
 
         for key, agent, weight in self.agents:
             try:
@@ -38,14 +40,19 @@ class AgentCoordinator:
                 result["icon"] = agent.icon
                 results[key] = result
 
-                if result["direction"] == "BUY":
-                    buy_total += result["confidence"] * weight
+                confidence = result.get("confidence", 0)
+                direction = result.get("direction", "NEUTRAL")
+
+                if direction == "BUY":
+                    buy_total += confidence * weight
                     buy_count += 1
-                elif result["direction"] == "SELL":
-                    sell_total += result["confidence"] * weight
+                elif direction == "SELL":
+                    sell_total += confidence * weight
                     sell_count += 1
                 else:
                     neutral_count += 1
+
+                total_weight += weight
 
             except Exception as e:
                 results[key] = {
@@ -54,14 +61,20 @@ class AgentCoordinator:
                     "weight": weight, "agent_name": key, "icon": "error"
                 }
 
+        if total_weight > 0:
+            buy_avg = buy_total / total_weight if buy_count > 0 else 0
+            sell_avg = sell_total / total_weight if sell_count > 0 else 0
+        else:
+            buy_avg = buy_avg = 0
+
         MIN_AGREEMENTS = 3
 
         if buy_count >= MIN_AGREEMENTS and buy_total > sell_total:
             final = "BUY"
-            final_conf = buy_total / buy_count if buy_count else buy_total
+            final_conf = min(buy_avg * 1.1, 1.0)
         elif sell_count >= MIN_AGREEMENTS and sell_total > buy_total:
             final = "SELL"
-            final_conf = sell_total / sell_count if sell_count else sell_total
+            final_conf = min(sell_avg * 1.1, 1.0)
         else:
             final = "NEUTRAL"
             final_conf = max(buy_total, sell_total)
@@ -78,7 +91,7 @@ class AgentCoordinator:
 
         all_reasons = []
         for r in results.values():
-            if r["direction"] != "NEUTRAL" and r["reason"]:
+            if r["direction"] != "NEUTRAL" and r.get("reason"):
                 all_reasons.append(f"[{r['agent_name']}] {r['reason']}")
 
         self.last_results = results

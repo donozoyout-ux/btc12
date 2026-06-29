@@ -7,6 +7,7 @@ from src.trader import trader
 from src.analyzer import analyzer, Memory
 from src.telegram import tg
 from src.ai_engine import ai_engine
+from src.agents.ml_agent import ml_agent
 
 
 class Bot:
@@ -222,6 +223,15 @@ class Bot:
         pnl_usd = pnl_pct * settings.position_size_usd
 
         ai_engine.record_outcome(symbol, "BUY", 0, entry_price, indicators, outcome, pnl_usd)
+
+        if isinstance(indicators, dict) and "agents" in indicators:
+            for agent_key, agent_result in indicators["agents"].items():
+                if agent_result.get("direction") == "BUY" and agent_result.get("confidence", 0) > 0.5:
+                    ml_agent.record_outcome(
+                        symbol, "BUY", agent_result["confidence"],
+                        entry_price, indicators, outcome, pnl_usd
+                    )
+
         self.memory.record_signal(symbol, "BUY", 0, entry_price, indicators, f"Sonuc: {outcome}")
         self.memory.close_trade(len(self.memory.trades), pnl_usd)
 

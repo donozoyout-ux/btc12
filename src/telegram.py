@@ -365,7 +365,7 @@ class TelegramBot:
             )
             model_durum = "HAZIR" if ai.get("model_ready") else f"Ogreniyor ({ai.get('model_samples', 0)} ornek)"
             msg += (
-                f"<b>ML Model (RandomForest):</b>\n"
+                f"<b>ML Model (GradientBoosting):</b>\n"
                 f"Durum: {model_durum}\n"
                 f"Ornek: {ai.get('model_samples', 0)}\n"
                 f"Dogruluk: %{ai.get('accuracy', 0)*100:.1f}\n\n"
