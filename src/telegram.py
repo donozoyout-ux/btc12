@@ -21,6 +21,8 @@ class TelegramBot:
         self._on_scan = None
         self._on_buy = None
         self._on_sell = None
+        self._on_oto = None
+        self._on_manuel = None
 
     def send(self, text, silent=False):
         try:
@@ -114,6 +116,10 @@ class TelegramBot:
             self._cmd_azalt(arg)
         elif base in ["/ miktar", "miktar"]:
             self._cmd_miktar()
+        elif base in ["/oto", "oto"]:
+            self._cmd_oto()
+        elif base in ["/manuel", "manuel", "/onayli", "onayli"]:
+            self._cmd_manuel()
         elif base in ["/help", "/yardim"]:
             self._cmd_help()
         else:
@@ -122,13 +128,11 @@ class TelegramBot:
     def _approve(self, kind, tid=None):
         with self._lock:
             store = self.pending if kind == "buy" else self.pending_sell
-            self.send(f"<b>DEBUG</b> _approve: kind={kind}, tid={tid}, bekleyen={len(store)}")
             if not store:
                 self.send("Bekleyen islem yok.")
                 return
             if tid and tid in store:
                 trade = store.pop(tid)
-                self.send(f"<b>DEBUG</b> Islem bulundu: #{tid} {trade['symbol']}")
                 if kind == "buy":
                     self._exec_buy(trade)
                 else:
@@ -137,7 +141,6 @@ class TelegramBot:
             if store:
                 key = max(store.keys())
                 trade = store.pop(key)
-                self.send(f"<b>DEBUG</b> Son islem: #{key} {trade['symbol']}")
                 if kind == "buy":
                     self._exec_buy(trade)
                 else:
@@ -156,17 +159,15 @@ class TelegramBot:
     def _exec_buy(self, trade):
         from src.trader import trader
         sym = trade["symbol"]
-        self.send(f"<b>DEBUG</b> _exec_buy basliyor: {sym}")
+        self.send(f"<b>{sym}</b> alis basliyor...")
         try:
             result = trader.buy(sym)
-            self.send(f"<b>DEBUG</b> Alis basarili!")
             self.send(
                 f"<b>ALIS TAMAM</b>  <code>{sym}</code>\n"
                 f"Miktar: <code>{result['qty']:.6f}</code>\n"
                 f"Giris: <code>${result['price']:,.2f}</code>\n"
                 f"SL: <code>${result['sl']:,.2f}</code>  TP: <code>${result['tp']:,.2f}</code>")
         except Exception as e:
-            self.send(f"<b>DEBUG</b> Alis hatasi: {str(e)[:100]}")
             self.send(f"<b>{sym}</b> hata:\n<code>{str(e)[:200]}</code>")
 
     def _exec_sell(self, trade):
@@ -217,7 +218,6 @@ class TelegramBot:
                 "id": trade_id, "symbol": symbol, "action": "BUY",
                 "confidence": confidence, "price": price, "reason": reason
             }
-            self.send(f"<b>DEBUG</b> Sinyal kaydedildi: #{trade_id} {symbol}, bekleyen={list(self.pending.keys())}")
 
         msg = (
             f"<b>ALIS ONAY</b>  <code>{symbol}</code>\n\n"
@@ -267,7 +267,7 @@ class TelegramBot:
             f"Miktar: ${settings.position_size_usd:.0f}\n"
             f"SL: %{settings.stop_loss_pct*100:.1f}  TP: %{settings.take_profit_pct*100:.1f}\n\n"
             f"Tarama basliyor...\n\n"
-            f"/status - durum\n/pos - pozisyonlar\n/miktar - islem miktari\n/help - komutlar")
+            f"/status - durum\n/pos - pozisyonlar\n/miktar - islem miktari\n/oto - otomatik mod\n/manuel - onayli mod\n/help - komutlar")
 
     def _cmd_stop(self):
         if self._on_stop:
@@ -279,9 +279,11 @@ class TelegramBot:
             data = self._on_status()
             if data:
                 durum = "DURAKLATILDI" if data.get("paused") else "AKTIF" if data.get("running") else "DURDU"
+                islem_modu = "OTO" if data.get("auto_trade") else "ONAYLI"
                 msg = (
                     f"<b>DURUM</b>\n\n"
                     f"Durum: <b>{durum}</b>\n"
+                    f"Mod: <b>{islem_modu}</b>\n"
                     f"Tarama: {data.get('total_scans', 0)}\n"
                     f"Sinyal: {data.get('signals_sent', 0)}\n"
                     f"Son: {data.get('last_scan', '-')}")
@@ -428,7 +430,9 @@ class TelegramBot:
             "<code>/scan</code>   Hemen tara\n"
             "<code>/signals</code> Sinyaller\n"
             "<code>/memory</code> AI ogrenme durumu\n"
-            "<code>/onaylar</code> Bekleyen alislar\n\n"
+            "<code>/onaylar</code> Bekleyen alislar\n"
+            "<code>/oto</code>    Otomatik islem modu\n"
+            "<code>/manuel</code> Onayli islem modu\n\n"
             "<b>ISLEM MIKTARI</b>\n"
             "<code>/artir 50</code>  +$50 artir\n"
             "<code>/azalt 50</code>  -$50 azalt\n"
@@ -442,6 +446,18 @@ class TelegramBot:
             "<code>sell BTC</code>  Tekil sat\n"
             "<code>sellall</code>  Hepini sat"
         )
+
+    def _cmd_oto(self):
+        if self._on_oto:
+            self._on_oto()
+        else:
+            self.send("Bot calismiyor.")
+
+    def _cmd_manuel(self):
+        if self._on_manuel:
+            self._on_manuel()
+        else:
+            self.send("Bot calismiyor.")
 
     def _cmd_artir(self, arg):
         if not arg or not arg.isdigit():
@@ -471,7 +487,7 @@ class TelegramBot:
         )
 
     def poll(self):
-        self.send("<b>DEBUG</b> Telegram dinleniyor...")
+        print("[TG] Telegram dinleniyor...")
         self.running = True
         while self.running:
             try:
@@ -483,7 +499,7 @@ class TelegramBot:
                     if txt:
                         self.handle(txt, cid)
             except Exception as e:
-                self.send(f"<b>DEBUG</b> Hata: {str(e)[:50]}")
+                print(f"[TG] Hata: {e}")
             time.sleep(2)
 
     def start_polling(self):
@@ -506,6 +522,12 @@ class TelegramBot:
 
     def on_memory(self, fn):
         self._on_memory = fn
+
+    def on_oto(self, fn):
+        self._on_oto = fn
+
+    def on_manuel(self, fn):
+        self._on_manuel = fn
 
 
 tg = TelegramBot()

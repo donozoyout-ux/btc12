@@ -222,6 +222,10 @@ body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hi
 </div>
 <div class="glass rounded-lg p-3 mt-3 text-center border-dashed border-border/30">
 <div class="text-[10px] font-bold tracking-widest text-text3" id="scanStatus">Durdu</div>
+<div class="flex gap-2 mt-2 justify-center">
+<button onclick="setMode(true)" class="btn px-3 py-1 text-[10px] font-bold rounded bg-accent hover:bg-accent/80 text-white" id="otoBtn">OTO</button>
+<button onclick="setMode(false)" class="btn px-3 py-1 text-[10px] font-bold rounded bg-surface4 hover:bg-surface5 text-text3" id="manBtn">ONAYLI</button>
+</div>
 </div>
 </div>
 </div>
@@ -275,6 +279,11 @@ function sellSelected(){
 function sellAll(){
     if(!confirm('TUM POZISYONLAR SATILSIN MI?'))return;
     fetch('/api/sell-all',{method:'POST'}).then(r=>r.json()).then(d=>{toast(d.message,d.success?'success':'error');setTimeout(refresh,2000)});
+}
+
+function setMode(auto){
+    fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({auto:auto})})
+    .then(r=>r.json()).then(d=>{toast(d.message,'success');setTimeout(refresh,500)});
 }
 
 function toggleAll(el){document.querySelectorAll('.pos-cb').forEach(cb=>cb.checked=el.checked)}
@@ -378,7 +387,17 @@ function updateStatus(){
             sigList.innerHTML=html;
         }
 
-        document.getElementById('scanStatus').textContent=d.running?(d.paused?'DURAKLATILDI':'Tarama aktif - BTC, ETH'):'Durdu';
+        document.getElementById('scanStatus').textContent=d.running?(d.paused?'DURAKLATILDI':(d.auto_trade?'OTO MOD - BTC, ETH':'ONAYLI MOD - BTC, ETH')):'Durdu';
+
+        var otoBtn=document.getElementById('otoBtn');
+        var manBtn=document.getElementById('manBtn');
+        if(d.auto_trade){
+            otoBtn.className='btn px-3 py-1 text-[10px] font-bold rounded bg-accent hover:bg-accent/80 text-white';
+            manBtn.className='btn px-3 py-1 text-[10px] font-bold rounded bg-surface4 hover:bg-surface5 text-text3';
+        }else{
+            otoBtn.className='btn px-3 py-1 text-[10px] font-bold rounded bg-surface4 hover:bg-surface5 text-text3';
+            manBtn.className='btn px-3 py-1 text-[10px] font-bold rounded bg-accent hover:bg-accent/80 text-white';
+        }
     }).catch(e=>console.log('Status error:',e));
 
     fetch('/api/memory').then(r=>r.json()).then(d=>{
@@ -572,6 +591,18 @@ def api_sell_all():
 @app.route('/api/memory')
 def api_memory():
     return jsonify(bot.get_memory_data())
+
+
+@app.route('/api/mode', methods=['POST'])
+def api_mode():
+    try:
+        data = request.get_json()
+        auto = data.get("auto", False)
+        bot.auto_trade = auto
+        mod = "OTO" if auto else "ONAYLI"
+        return jsonify({"success": True, "message": f"Mod: {mod}"})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)[:200]})
 
 
 @app.route('/api/keepalive')

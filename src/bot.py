@@ -14,6 +14,7 @@ class Bot:
     def __init__(self):
         self.running = False
         self.paused = False
+        self.auto_trade = False
         self.total_scans = 0
         self.signals_sent = 0
         self.last_scan = None
@@ -49,6 +50,7 @@ class Bot:
             f"Coin: BTC, ETH\n"
             f"Miktar: ${settings.position_size_usd:.0f}\n"
             f"6 AI Agent: Technical, Sentiment, Volume, Trend, Pattern, ML\n"
+            f"Mod: <b>{'OTO' if self.auto_trade else 'ONAYLI'}</b>\n"
             f"Her {settings.check_interval}s'de bir tarayacak..."
         )
         time.sleep(2)
@@ -204,7 +206,11 @@ class Bot:
                 "time": datetime.now().isoformat(), "recorded": False
             }
             trade_id = self._buy_counter
-            tg.send_buy_signal(symbol, confidence, price, reason, trade_id)
+
+            if self.auto_trade and consensus >= 2:
+                self._exec_trade(trade_id, symbol, action, price)
+            else:
+                tg.send_buy_signal(symbol, confidence, price, reason, trade_id)
 
         elif action == "SELL":
             pos = trader.get_position(symbol)
@@ -224,7 +230,29 @@ class Bot:
                     tg.send_ai_alert(symbol, "down" if outcome == "LOSS" else "up",
                                      f"Islem kapatildi: {outcome} (${pnl_usd:+,.2f})")
 
-                tg.send_sell_signal(symbol, confidence, price, reason, trade_id, entry, pnl)
+                if self.auto_trade and consensus >= 2:
+                    self._exec_trade(trade_id, symbol, "SELL", price)
+                else:
+                    tg.send_sell_signal(symbol, confidence, price, reason, trade_id, entry, pnl)
+
+    def _exec_trade(self, trade_id, symbol, action, price):
+        try:
+            if action == "BUY":
+                result = trader.buy(symbol)
+                tg.send(
+                    f"<b>OTO ALIS</b>  <code>{symbol}</code>\n"
+                    f"Miktar: <code>{result['qty']:.6f}</code>\n"
+                    f"Giris: <code>${result['price']:,.2f}</code>\n"
+                    f"SL: <code>${result['sl']:,.2f}</code>  TP: <code>${result['tp']:,.2f}</code>")
+            else:
+                result = trader.sell(symbol)
+                if result:
+                    tg.send(
+                        f"<b>OTO SATIS</b>  <code>{symbol}</code>\n"
+                        f"K/Z: <code>${result['pl']:+,.4f}</code>")
+            self._pending_buys[trade_id]["recorded"] = True
+        except Exception as e:
+            tg.send(f"<b>{symbol}</b> oto islem hatasi:\n<code>{str(e)[:200]}</code>")
 
     def record_trade_result(self, symbol, entry_price, exit_price, indicators):
         pnl_pct = (exit_price - entry_price) / entry_price if entry_price > 0 else 0
@@ -259,6 +287,7 @@ class Bot:
             return {
                 "running": self.running,
                 "paused": self.paused,
+                "auto_trade": self.auto_trade,
                 "total_scans": self.total_scans,
                 "signals_sent": self.signals_sent,
                 "last_scan": self.last_scan,
@@ -288,6 +317,7 @@ class Bot:
             return {
                 "running": self.running,
                 "paused": self.paused,
+                "auto_trade": self.auto_trade,
                 "total_scans": self.total_scans,
                 "signals_sent": self.signals_sent,
                 "last_scan": self.last_scan,
@@ -316,4 +346,13 @@ def setup_telegram():
     tg.on_status(lambda: bot.get_status())
     tg.on_signals(lambda: bot.last_signals)
     tg.on_memory(lambda: bot.get_memory_data())
+    tg.on_oto(lambda: _toggle_auto(True))
+    tg.on_manuel(lambda: _toggle_auto(False))
     tg.start_polling()
+
+
+def _toggle_auto(enabled):
+    bot.auto_trade = enabled
+    mod = "OTO" if enabled else "ONAYLI"
+    tg.send(f"<b>MOD DEGISTIRILDI</b>\n\nIslem modu: <b>{mod}</b>")
+    print(f"[BOT] Mod: {mod}")

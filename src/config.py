@@ -14,7 +14,7 @@ class Settings:
 
     symbols = ["BTC/USD", "ETH/USD"]
 
-    check_interval = int(os.getenv("CHECK_INTERVAL", "120"))
+    check_interval = int(os.getenv("CHECK_INTERVAL", "30"))
     position_size_usd = float(os.getenv("POSITION_SIZE_USD", "100"))
     stop_loss_pct = float(os.getenv("STOP_LOSS_PCT", "0.012"))
     take_profit_pct = float(os.getenv("TAKE_PROFIT_PCT", "0.025"))
