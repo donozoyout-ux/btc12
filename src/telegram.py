@@ -122,11 +122,13 @@ class TelegramBot:
     def _approve(self, kind, tid=None):
         with self._lock:
             store = self.pending if kind == "buy" else self.pending_sell
+            print(f"[TG] _approve called: kind={kind}, tid={tid}, store_keys={list(store.keys())}")
             if not store:
                 self.send("Bekleyen islem yok.")
                 return
             if tid and tid in store:
                 trade = store.pop(tid)
+                print(f"[TG] Found trade by tid: {trade}")
                 if kind == "buy":
                     self._exec_buy(trade)
                 else:
@@ -135,6 +137,7 @@ class TelegramBot:
             if store:
                 key = max(store.keys())
                 trade = store.pop(key)
+                print(f"[TG] Found trade by max key {key}: {trade}")
                 if kind == "buy":
                     self._exec_buy(trade)
                 else:
@@ -153,15 +156,18 @@ class TelegramBot:
     def _exec_buy(self, trade):
         from src.trader import trader
         sym = trade["symbol"]
+        print(f"[TG] _exec_buy called for {sym}")
         self.send(f"<b>{sym}</b> alis basliyor...")
         try:
             result = trader.buy(sym)
+            print(f"[TG] Buy executed: {result}")
             self.send(
                 f"<b>ALIS TAMAM</b>  <code>{sym}</code>\n"
                 f"Miktar: <code>{result['qty']:.6f}</code>\n"
                 f"Giris: <code>${result['price']:,.2f}</code>\n"
                 f"SL: <code>${result['sl']:,.2f}</code>  TP: <code>${result['tp']:,.2f}</code>")
         except Exception as e:
+            print(f"[TG] Buy error: {e}")
             self.send(f"<b>{sym}</b> hata:\n<code>{str(e)[:200]}</code>")
 
     def _exec_sell(self, trade):
@@ -212,6 +218,7 @@ class TelegramBot:
                 "id": trade_id, "symbol": symbol, "action": "BUY",
                 "confidence": confidence, "price": price, "reason": reason
             }
+            print(f"[TG] send_buy_signal: trade_id={trade_id}, symbol={symbol}, pending_keys={list(self.pending.keys())}")
 
         msg = (
             f"<b>ALIS ONAY</b>  <code>{symbol}</code>\n\n"
@@ -475,7 +482,7 @@ class TelegramBot:
                     txt = msg.get("text", "")
                     cid = msg.get("chat", {}).get("id", "")
                     if txt:
-                        print(f"[TG] {txt}")
+                        print(f"[TG] Mesaj alindi: {txt} (chat_id={cid})")
                         self.handle(txt, cid)
             except Exception as e:
                 print(f"[TG] Hata: {e}")
