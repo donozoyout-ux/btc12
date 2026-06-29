@@ -18,7 +18,7 @@ class Settings:
     position_size_usd = float(os.getenv("POSITION_SIZE_USD", "100"))
     stop_loss_pct = float(os.getenv("STOP_LOSS_PCT", "0.012"))
     take_profit_pct = float(os.getenv("TAKE_PROFIT_PCT", "0.025"))
-    min_confidence = float(os.getenv("MIN_CONFIDENCE", "0.35"))
+    min_confidence = float(os.getenv("MIN_CONFIDENCE", "0.10"))
 
     memory_file = os.getenv("MEMORY_FILE", "trades.json")
     activity_log_file = os.getenv("ACTIVITY_LOG", "activity.json")

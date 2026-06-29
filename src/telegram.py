@@ -43,7 +43,7 @@ class TelegramBot:
         if str(chat_id) != str(self.chat_id):
             return
 
-        low = text.strip().lower()
+        low = text.strip().lower().lstrip("/")
 
         if low in ["yap", "evet", "1", "onay"]:
             self._approve("buy")
