@@ -74,10 +74,26 @@ body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hi
 <div class="grid grid-cols-12 gap-4" style="height:calc(100vh - 200px)">
 <div class="col-span-12 lg:col-span-8 flex flex-col">
 <div class="flex items-center justify-between mb-3">
-<h2 class="text-sm font-bold text-white">Canli Durum</h2>
+<h2 class="text-sm font-bold text-white">Analiz Sonuclari</h2>
+<span class="text-[#909096] text-xs" id="scanCount">0</span>
 </div>
-<div class="glass rounded-lg overflow-hidden flex-1 p-6" id="statusPanel">
-<div class="text-center text-[#909096]">Baslatmak icin START'a tiklayin</div>
+<div class="glass rounded-lg overflow-hidden flex-1">
+<table class="w-full text-left">
+<thead class="bg-[#1c2127]/50 border-b border-[#45464b]/20">
+<tr>
+<th class="px-3 py-2 text-[10px] font-bold tracking-widest text-[#909096]">ZAMAN</th>
+<th class="px-3 py-2 text-[10px] font-bold tracking-widest text-[#909096]">FIYAT</th>
+<th class="px-3 py-2 text-[10px] font-bold tracking-widest text-[#909096]">RSI</th>
+<th class="px-3 py-2 text-[10px] font-bold tracking-widest text-[#909096]">EMA</th>
+<th class="px-3 py-2 text-[10px] font-bold tracking-widest text-[#909096]">MACD</th>
+<th class="px-3 py-2 text-[10px] font-bold tracking-widest text-[#909096]">KARAR</th>
+<th class="px-3 py-2 text-[10px] font-bold tracking-widest text-[#909096]">%</th>
+</tr>
+</thead>
+<tbody id="scanBody" class="divide-y divide-[#45464b]/10 font-mono text-xs">
+<tr><td colspan="7" class="px-3 py-8 text-center text-[#909096] italic">Veri bekleniyor...</td></tr>
+</tbody>
+</table>
 </div>
 </div>
 <div class="col-span-12 lg:col-span-4 flex flex-col">
@@ -115,22 +131,40 @@ var plEl=document.getElementById('sPnl');
 plEl.textContent='$'+(pl>=0?'+':'')+pl.toFixed(2);
 plEl.className='text-2xl font-mono font-bold '+(pl>=0?'text-green-400':'text-red-400');
 
-var panel=document.getElementById('statusPanel');
-panel.innerHTML='<div class="text-sm font-mono"><div class="mb-2"><span class="text-[#909096]">Son Karar:</span> <b>'+(d.son_karar||'-')+'</b></div><div class="mb-2"><span class="text-[#909096]">Pozisyon:</span> <b>'+(d.pozisyon_durumu||'-')+'</b></div><div class="mb-2"><span class="text-[#909096]">Son Tarama:</span> '+(d.last_scan||'-')+'</div><div class="mb-2"><span class="text-[#909096]">Toplam Islem:</span> '+(d.toplam_islem||0)+'</div><div class="mb-2"><span class="text-[#909096]">K/Z:</span> K:'+(d.kazanma||0)+' Z:'+(d.kaybetme||0)+'</div></div>';
-
 var trades=document.getElementById('tradeList');
 fetch('/api/memory').then(r=>r.json()).then(m=>{
-var state=m.state||{};
-document.getElementById('tradeCount').textContent=state.toplam_islem||0;
-var html='';
+var stats=m.stats||{};
+var scans=m.scans||[];
 var items=m.trades||[];
+
+document.getElementById('scanCount').textContent=scans.length+' tarama';
+document.getElementById('tradeCount').textContent=stats.toplam_islem||0;
+
+var scanBody=document.getElementById('scanBody');
+if(scans.length>0){
+var sh='';
+scans.forEach(function(s){
+var emoji=s.ema_cross==='bullish'?'🟢':'🔴';
+var actionColor=s.action==='BUY'?'text-green-400':s.action==='SELL'?'text-red-400':'text-[#909096]';
+sh+='<tr class="hover:bg-white/5"><td class="px-3 py-2">'+(s.time||'').substring(11,19)+'</td>';
+sh+='<td class="px-3 py-2">$'+s.price.toFixed(0)+'</td>';
+sh+='<td class="px-3 py-2">'+s.rsi.toFixed(1)+'</td>';
+sh+='<td class="px-3 py-2">'+emoji+'</td>';
+sh+='<td class="px-3 py-2">'+(s.macd_hist||0).toFixed(1)+'</td>';
+sh+='<td class="px-3 py-2 font-bold '+actionColor+'">'+s.action+'</td>';
+sh+='<td class="px-3 py-2">'+(s.confidence*100).toFixed(0)+'%</td></tr>';
+});
+scanBody.innerHTML=sh;
+}
+
+var html='';
 if(items.length>0){
-items.slice(-10).reverse().forEach(function(t){
+items.forEach(function(t){
 var color=t.pnl>0?'text-green-400':'text-red-400';
 html+='<div class="glass rounded-lg p-2 text-xs font-mono"><span class="'+(t.action==='BUY'?'text-green-400':'text-red-400')+'">'+t.action+'</span> $'+t.price.toFixed(2)+' <span class="'+color+'">'+(t.pnl>0?'+':'')+t.pnl.toFixed(2)+'</span></div>';
 });
 trades.innerHTML=html;
-} else {
+}else{
 trades.innerHTML='<div class="glass rounded-lg p-4 text-center text-[#909096] text-sm">Islem yok</div>';
 }
 }).catch(()=>{});
