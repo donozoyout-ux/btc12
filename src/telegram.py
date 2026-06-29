@@ -343,7 +343,8 @@ class TelegramBot:
             msg = "<b>SON SINYALLER</b>\n\n"
             for coin, sig in list(signals.items())[-10:]:
                 islem = "ALIS" if sig["action"] == "BUY" else "SATIS"
-                msg += f"<code>{coin:12s}</code> {islem}  ${sig['price']:,.2f}  {sig['confidence']:.0%}\n"
+                consensus = sig.get("consensus", 0)
+                msg += f"<code>{coin:12s}</code> {islem}  ${sig['price']:,.2f}  {sig['confidence']:.0%}  Oy:{consensus}/5\n"
             self.send(msg)
         else:
             self.send("Sinyal yok.")
@@ -364,9 +365,10 @@ class TelegramBot:
             )
             model_durum = "HAZIR" if ai.get("model_ready") else f"Ogreniyor ({ai.get('model_samples', 0)} ornek)"
             msg += (
-                f"<b>ML Model:</b>\n"
+                f"<b>ML Model (RandomForest):</b>\n"
                 f"Durum: {model_durum}\n"
-                f"Ornek: {ai.get('model_samples', 0)}\n\n"
+                f"Ornek: {ai.get('model_samples', 0)}\n"
+                f"Dogruluk: %{ai.get('accuracy', 0)*100:.1f}\n\n"
             )
             if recent:
                 msg += "<b>SON ISLEMLER</b>\n"

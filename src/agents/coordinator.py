@@ -3,16 +3,18 @@ from src.agents.sentiment import SentimentAgent
 from src.agents.volume import VolumeAgent
 from src.agents.trend import TrendAgent
 from src.agents.pattern import PatternAgent
+from src.agents.ml_agent import MLAgent
 
 
 class AgentCoordinator:
     def __init__(self):
         self.agents = [
-            ("technical", TechnicalAgent(), 0.25),
+            ("technical", TechnicalAgent(), 0.20),
             ("sentiment", SentimentAgent(), 0.15),
-            ("volume", VolumeAgent(), 0.20),
-            ("trend", TrendAgent(), 0.25),
-            ("pattern", PatternAgent(), 0.15),
+            ("volume", VolumeAgent(), 0.15),
+            ("trend", TrendAgent(), 0.20),
+            ("pattern", PatternAgent(), 0.10),
+            ("ai_ml", MLAgent(), 0.20),
         ]
         self.last_results = {}
 
@@ -20,6 +22,9 @@ class AgentCoordinator:
         results = {}
         buy_total = 0
         sell_total = 0
+        buy_count = 0
+        sell_count = 0
+        neutral_count = 0
 
         for key, agent, weight in self.agents:
             try:
@@ -35,8 +40,12 @@ class AgentCoordinator:
 
                 if result["direction"] == "BUY":
                     buy_total += result["confidence"] * weight
+                    buy_count += 1
                 elif result["direction"] == "SELL":
                     sell_total += result["confidence"] * weight
+                    sell_count += 1
+                else:
+                    neutral_count += 1
 
             except Exception as e:
                 results[key] = {
@@ -45,12 +54,14 @@ class AgentCoordinator:
                     "weight": weight, "agent_name": key, "icon": "error"
                 }
 
-        if buy_total > sell_total and buy_total > 0.15:
+        MIN_AGREEMENTS = 3
+
+        if buy_count >= MIN_AGREEMENTS and buy_total > sell_total:
             final = "BUY"
-            final_conf = buy_total
-        elif sell_total > buy_total and sell_total > 0.15:
+            final_conf = buy_total / buy_count if buy_count else buy_total
+        elif sell_count >= MIN_AGREEMENTS and sell_total > buy_total:
             final = "SELL"
-            final_conf = sell_total
+            final_conf = sell_total / sell_count if sell_count else sell_total
         else:
             final = "NEUTRAL"
             final_conf = max(buy_total, sell_total)
@@ -58,7 +69,12 @@ class AgentCoordinator:
         buy_agents = [r["agent_name"] for r in results.values() if r["direction"] == "BUY"]
         sell_agents = [r["agent_name"] for r in results.values() if r["direction"] == "SELL"]
 
-        consensus = len(buy_agents) if final == "BUY" else len(sell_agents) if final == "SELL" else 0
+        if final == "BUY":
+            consensus = len(buy_agents)
+        elif final == "SELL":
+            consensus = len(sell_agents)
+        else:
+            consensus = max(buy_count, sell_count)
 
         all_reasons = []
         for r in results.values():

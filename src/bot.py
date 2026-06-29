@@ -47,7 +47,7 @@ class Bot:
             f"<b>TARAMA BASLATILDI</b>\n\n"
             f"Coin: BTC, ETH\n"
             f"Miktar: ${settings.position_size_usd:.0f}\n"
-            f"5 AI Agent: Technical, Sentiment, Volume, Trend, Pattern\n"
+            f"6 AI Agent: Technical, Sentiment, Volume, Trend, Pattern, ML\n"
             f"Her {settings.check_interval}s'de bir tarayacak..."
         )
         time.sleep(2)
@@ -114,12 +114,28 @@ class Bot:
                 print(f"  [{sym}] ${result['price']:,.2f} -> {action} ({result['confidence']:.0%})")
 
                 if action in ["BUY", "SELL"] and result["confidence"] >= settings.min_confidence:
-                    prev = self.last_signals.get(sym)
-                    if prev is None or action != prev["action"] or result["confidence"] > 0.7:
+                    consensus = result.get("consensus", 0)
+                    existing_pos = trader.get_position(sym)
+
+                    if action == "SELL" and not existing_pos:
+                        action = "HOLD"
+
+                    if action == "BUY" and consensus >= 3:
                         self.last_signals[sym] = {
                             "action": action, "confidence": result["confidence"],
                             "price": result["price"], "reason": "; ".join(result["reasons"][:3]),
-                            "rsi": result["rsi"], "time": self.last_scan
+                            "rsi": result["rsi"], "time": self.last_scan,
+                            "consensus": consensus
+                        }
+                        self._send_signal(sym, action, result["confidence"], result["price"],
+                                          "; ".join(result["reasons"][:3]), result)
+
+                    elif action == "SELL" and consensus >= 3:
+                        self.last_signals[sym] = {
+                            "action": action, "confidence": result["confidence"],
+                            "price": result["price"], "reason": "; ".join(result["reasons"][:3]),
+                            "rsi": result["rsi"], "time": self.last_scan,
+                            "consensus": consensus
                         }
                         self._send_signal(sym, action, result["confidence"], result["price"],
                                           "; ".join(result["reasons"][:3]), result)
@@ -166,8 +182,10 @@ class Bot:
 
     def _send_signal(self, symbol, action, confidence, price, reason, indicators):
         self.signals_sent += 1
+        consensus = indicators.get("consensus", 0) if indicators else 0
 
         if action == "BUY":
+            self.memory.record_signal(symbol, action, confidence, price, indicators, reason)
             self._buy_counter += 1
             self._pending_buys[self._buy_counter] = {
                 "symbol": symbol, "action": action,
@@ -176,8 +194,6 @@ class Bot:
                 "time": datetime.now().isoformat(), "recorded": False
             }
             trade_id = self._buy_counter
-
-            self.memory.record_signal(symbol, action, confidence, price, indicators, reason)
             tg.send_buy_signal(symbol, confidence, price, reason, trade_id)
 
         elif action == "SELL":
