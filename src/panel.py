@@ -201,7 +201,7 @@ body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hi
 <th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">FIYAT</th>
 <th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">GUVEN</th>
 <th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">SONUC</th>
-<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">K/Z</th>
+<th class="px-4 py-3 text-[10px] font-bold tracking-widest text-text3 text-right">OY</th>
 </tr>
 </thead>
 <tbody id="aiBody" class="divide-y divide-border/10">
@@ -394,22 +394,31 @@ function updateStatus(){
         pnlEl.textContent='$'+(pnl>=0?'+':'')+pnl.toFixed(4);
         pnlEl.className='text-3xl font-mono font-bold '+(pnl>=0?'text-green':'text-red');
 
+        var predictions=d.predictions||[];
         var recent=d.recent||[];
+        var allItems=[].concat(predictions.map(p=>({...p,_type:'prediction'})),recent.map(r=>({...r,_type:'trade'})));
+        allItems.sort((a,b)=>new Date(b.time)-new Date(a.time));
+        allItems=allItems.slice(0,20);
+
         var aiBody=document.getElementById('aiBody');
-        if(recent.length>0){
+        if(allItems.length>0){
             var html='';
-            recent.reverse().forEach(t=>{
-                var outcome=t.outcome==='WIN'?'<span class="text-green font-bold">KAZANDI</span>'
+            allItems.forEach(t=>{
+                var isPrediction=t._type==='prediction';
+                var outcome=isPrediction?('<span class="px-2 py-0.5 bg-accent/10 text-accent text-[10px] font-bold rounded">TAHMIN</span>')
+                    :t.outcome==='WIN'?'<span class="text-green font-bold">KAZANDI</span>'
                     :t.outcome==='LOSS'?'<span class="text-red font-bold">KAYBETTI</span>'
                     :t.outcome==='BREAKEVEN'?'<span class="text-text3">BESLEME</span>'
                     :'<span class="text-text3">---</span>';
+                var conf=t.confidence||0;
+                var consensus=t.consensus||'-';
                 html+='<tr class="hover:bg-white/5 transition-colors">';
                 html+='<td class="px-4 py-3 font-mono text-sm font-bold">'+t.symbol+'</td>';
                 html+='<td class="px-4 py-3"><span class="px-2 py-0.5 text-[10px] font-bold rounded '+(t.action==='BUY'?'bg-green/10 text-green':'bg-red/10 text-red')+'">'+t.action+'</span></td>';
-                html+='<td class="px-4 py-3 font-mono text-sm text-right">$'+t.price.toFixed(2)+'</td>';
-                html+='<td class="px-4 py-3 font-mono text-sm text-right">'+(t.confidence*100).toFixed(0)+'%</td>';
+                html+='<td class="px-4 py-3 font-mono text-sm text-right">$'+(t.price||0).toFixed(2)+'</td>';
+                html+='<td class="px-4 py-3 font-mono text-sm text-right">'+(conf*100).toFixed(0)+'%</td>';
                 html+='<td class="px-4 py-3 text-right">'+outcome+'</td>';
-                html+='<td class="px-4 py-3 font-mono text-sm text-right '+(t.pnl>=0?'text-green':'text-red')+'">$'+(t.pnl>=0?'+':'')+t.pnl.toFixed(4)+'</td>';
+                html+='<td class="px-4 py-3 font-mono text-sm text-right">'+consensus+'</td>';
                 html+='</tr>';
             });
             aiBody.innerHTML=html;

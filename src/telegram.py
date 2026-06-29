@@ -355,6 +355,7 @@ class TelegramBot:
             stats = data.get("stats", {})
             ai = data.get("ai", {})
             recent = data.get("recent", [])
+            predictions = data.get("predictions", [])
             msg = (
                 f"<b>AI OGRENME</b>\n\n"
                 f"<b>Strateji:</b>\n"
@@ -370,6 +371,11 @@ class TelegramBot:
                 f"Ornek: {ai.get('model_samples', 0)}\n"
                 f"Dogruluk: %{ai.get('accuracy', 0)*100:.1f}\n\n"
             )
+            if predictions:
+                msg += "<b>SON TAHMINLER</b>\n"
+                for t in predictions[-5:]:
+                    msg += f"<code>{t['symbol']:10s}</code> {t['action']:4s} ${t['price']:,.2f} Oy:{t.get('consensus', '-')}/6\n"
+                msg += "\n"
             if recent:
                 msg += "<b>SON ISLEMLER</b>\n"
                 for t in recent[-5:]:

@@ -42,6 +42,26 @@ class Memory:
         self._save()
         return entry["id"]
 
+    def record_prediction(self, symbol, action, confidence, price, indicators, reason, consensus):
+        entry = {
+            "id": len(self.trades) + 1,
+            "time": datetime.now().isoformat(),
+            "symbol": symbol,
+            "action": action,
+            "confidence": round(confidence, 3),
+            "price": price,
+            "indicators": indicators,
+            "reason": reason,
+            "consensus": consensus,
+            "type": "prediction",
+            "outcome": None,
+            "pnl": 0,
+            "closed_at": None
+        }
+        self.trades.append(entry)
+        self._save()
+        return entry["id"]
+
     def close_trade(self, trade_id, pnl, closed_at=None):
         for t in self.trades:
             if t["id"] == trade_id:
@@ -81,6 +101,10 @@ class Memory:
 
     def get_recent(self, n=10):
         return self.trades[-n:]
+
+    def get_predictions(self, n=20):
+        predictions = [t for t in self.trades if t.get("type") == "prediction"]
+        return predictions[-n:]
 
     def should_avoid(self, symbol):
         recent = [t for t in self.trades[-10:] if t["symbol"] == symbol and t["outcome"]]

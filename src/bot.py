@@ -163,6 +163,13 @@ class Bot:
             confidence = summary.get("confidence", 0)
             consensus = summary.get("consensus", 0)
 
+            action = "BUY" if direction == "ALIS" else "SELL" if direction == "SATIS" else "NEUTRAL"
+            price = result.get("price", 0)
+            reason = "; ".join(result.get("reasons", [])[:3])
+
+            if action in ["BUY", "SELL"] and consensus >= 3:
+                self.memory.record_prediction(sym, action, confidence, price, result, reason, consensus)
+
             msg = (
                 f"<b>AI RAPOR - {sym}</b>  {self.last_scan}\n\n"
                 f"Karar: <b>{direction}</b>  Guven: <b>{confidence:.0%}</b>\n"
@@ -290,10 +297,12 @@ class Bot:
     def get_memory_data(self):
         memory_stats = self.memory.get_win_rate()
         ai_stats = ai_engine.get_stats()
+        predictions = self.memory.get_predictions(20)
         return {
             "stats": memory_stats,
             "recent": self.memory.get_recent(10),
-            "ai": ai_stats
+            "ai": ai_stats,
+            "predictions": predictions
         }
 
 
