@@ -13,12 +13,10 @@ class Executor:
             self._init_alpaca()
 
     def _init_alpaca(self):
-        import alpaca_trade_api as tradeapi
-        self._api = tradeapi.REST(
+        from alpaca.trading.client import TradingClient
+        self._client = TradingClient(
             settings.alpaca_api_key,
-            settings.alpaca_secret_key,
-            settings.alpaca_base_url,
-            api_version='v2'
+            settings.alpaca_secret_key
         )
 
     def get_account(self):
@@ -104,7 +102,7 @@ class Executor:
         return [result] if result else []
 
     def _alpaca_account(self):
-        acc = self._api.get_account()
+        acc = self._client.get_account()
         return {
             "portfolio_value": round(float(acc.portfolio_value), 2),
             "cash": round(float(acc.cash), 2),
@@ -115,7 +113,7 @@ class Executor:
 
     def _alpaca_position(self):
         try:
-            pos = self._api.get_position("BTC/USD")
+            pos = self._client.get_position("BTC/USD")
             entry = float(pos.avg_entry_price)
             qty = float(pos.qty)
             price = trader.get_price()
@@ -132,31 +130,39 @@ class Executor:
             return None
 
     def _alpaca_buy(self, qty=None):
+        from alpaca.trading.requests import MarketOrderRequest
+        from alpaca.trading.enums import OrderSide, TimeInForce
         price = trader.get_price()
         qty = qty or round(settings.position_size_usd / price, 6)
         qty = max(qty, 0.0001)
-        order = self._api.submit_order(
-            symbol='BTC/USD', side='buy', type='market',
-            qty=qty, time_in_force='gtc'
-        )
+        order = self._client.submit_order(MarketOrderRequest(
+            symbol='BTC/USD',
+            qty=qty,
+            side=OrderSide.BUY,
+            time_in_force=TimeInForce.GTC
+        ))
         settings.last_entry_price = price
-        return {"price": price, "qty": round(qty, 6), "order_id": order.id}
+        return {"price": price, "qty": round(qty, 6), "order_id": str(order.id)}
 
     def _alpaca_sell(self, qty=None):
+        from alpaca.trading.requests import MarketOrderRequest
+        from alpaca.trading.enums import OrderSide, TimeInForce
         pos = self._alpaca_position()
         if not pos:
             return None
         sell_qty = qty or pos["qty"]
-        order = self._api.submit_order(
-            symbol='BTC/USD', side='sell', type='market',
-            qty=sell_qty, time_in_force='gtc'
-        )
+        order = self._client.submit_order(MarketOrderRequest(
+            symbol='BTC/USD',
+            qty=sell_qty,
+            side=OrderSide.SELL,
+            time_in_force=TimeInForce.GTC
+        ))
         pnl = pos.get("unrealized_pl", 0)
-        return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "order_id": order.id}
+        return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "order_id": str(order.id)}
 
     def _alpaca_sell_all(self):
         try:
-            self._api.close_position("BTC/USD")
+            self._client.close_position("BTC/USD")
             return [{"qty": 0, "pl": 0, "order_id": "closed"}]
         except Exception:
             return []
