@@ -112,7 +112,7 @@ class Bot:
 
                 self.agent_results[sym] = result
 
-                print(f"  [{sym}] ${result['price']:,.2f} -> {action} ({result['confidence']:.0%})")
+                print(f"  [{sym}] ${result['price']:,.2f} -> {action} ({result['confidence']:.0%}) Oy:{result.get('consensus', 0)}")
 
                 if action in ["BUY", "SELL"] and result["confidence"] >= settings.min_confidence:
                     consensus = result.get("consensus", 0)
@@ -121,7 +121,7 @@ class Bot:
                     if action == "SELL" and not existing_pos:
                         action = "HOLD"
 
-                    if action == "BUY" and consensus >= 3:
+                    if action == "BUY" and consensus >= 2:
                         self.last_signals[sym] = {
                             "action": action, "confidence": result["confidence"],
                             "price": result["price"], "reason": "; ".join(result["reasons"][:3]),
@@ -131,7 +131,7 @@ class Bot:
                         self._send_signal(sym, action, result["confidence"], result["price"],
                                           "; ".join(result["reasons"][:3]), result)
 
-                    elif action == "SELL" and consensus >= 3:
+                    elif action == "SELL" and consensus >= 2:
                         self.last_signals[sym] = {
                             "action": action, "confidence": result["confidence"],
                             "price": result["price"], "reason": "; ".join(result["reasons"][:3]),

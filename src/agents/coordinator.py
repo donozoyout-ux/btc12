@@ -67,7 +67,7 @@ class AgentCoordinator:
         else:
             buy_avg = buy_avg = 0
 
-        MIN_AGREEMENTS = 3
+        MIN_AGREEMENTS = 2
 
         if buy_count >= MIN_AGREEMENTS and buy_total > sell_total:
             final = "BUY"
