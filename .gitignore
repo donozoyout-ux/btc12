@@ -5,3 +5,7 @@ __pycache__/
 .vscode/
 .idea/
 *.db
+state.json
+memory.json
+config.json
+bot.log

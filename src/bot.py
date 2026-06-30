@@ -162,7 +162,13 @@ class Bot:
         self.last_action = action
 
         if action == "BUY" and not acik_pozisyon:
-            if self.last_notified_action != "BUY" and self.bekleyen_alis is None:
+            if self.auto_trade:
+                self.bekleyen_alis = karar
+                quant_agent.state["son_sl"] = karar["execution"]["stop_loss"]
+                quant_agent.state["son_tp"] = karar["execution"]["take_profit"]
+                quant_agent._save_state()
+                self.alisi_onayla()
+            elif self.last_notified_action != "BUY" and self.bekleyen_alis is None:
                 sl = karar["execution"]["stop_loss"]
                 tp = karar["execution"]["take_profit"]
                 quant_agent.state["son_sl"] = sl
@@ -178,7 +184,10 @@ class Bot:
                 print(f"  -> ALIS sinyali (bekliyor, guven: %{confidence:.0%})")
 
         elif action == "SELL" and acik_pozisyon:
-            if self.last_notified_action != "SELL" and self.bekleyen_satis is None:
+            if self.auto_trade:
+                self.bekleyen_satis = karar
+                self._satisi_gerceklestir("Oto satis")
+            elif self.last_notified_action != "SELL" and self.bekleyen_satis is None:
                 entry = giris_fiyati
                 kar_zarar = pos["unrealized_pl"]
                 yuzde = (price - entry) / entry * 100
