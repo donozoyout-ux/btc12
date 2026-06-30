@@ -21,6 +21,14 @@ class TelegramBot:
         self._on_miktar = None
         self._on_artir = None
         self._on_azalt = None
+        self._on_fiyat = None
+        self._on_portfoy = None
+        self._on_kar = None
+        self._on_son = None
+        self._on_yardim = None
+        self._on_durdur = None
+        self._on_devam = None
+        self._on_sifirla = None
 
     def send(self, text, silent=False):
         try:
@@ -119,6 +127,46 @@ class TelegramBot:
                     self._on_azalt(val)
             except:
                 self.send("Gecerli bir sayi girin. Ornek: <code>/azalt 25</code>")
+            return
+
+        if low in ["fiyat", "btc"]:
+            if self._on_fiyat:
+                self._on_fiyat()
+            return
+
+        if low in ["portfoy", "portföy", "cuzdan"]:
+            if self._on_portfoy:
+                self._on_portfoy()
+            return
+
+        if low in ["kar", "zarar", "pnl"]:
+            if self._on_kar:
+                self._on_kar()
+            return
+
+        if low in ["son", "sonislem"]:
+            if self._on_son:
+                self._on_son()
+            return
+
+        if low in ["yardim", "help", "komutlar"]:
+            if self._on_yardim:
+                self._on_yardim()
+            return
+
+        if low in ["durdur", "pause"]:
+            if self._on_durdur:
+                self._on_durdur()
+            return
+
+        if low in ["devam", "resume"]:
+            if self._on_devam:
+                self._on_devam()
+            return
+
+        if low in ["sifirla", "reset", "temizle"]:
+            if self._on_sifirla:
+                self._on_sifirla()
             return
 
     def send_buy_signal(self, fiyat, confidence, sl, tp, reason):
@@ -225,6 +273,22 @@ class TelegramBot:
         self._on_artir = fn
     def on_azalt(self, fn):
         self._on_azalt = fn
+    def on_fiyat(self, fn):
+        self._on_fiyat = fn
+    def on_portfoy(self, fn):
+        self._on_portfoy = fn
+    def on_kar(self, fn):
+        self._on_kar = fn
+    def on_son(self, fn):
+        self._on_son = fn
+    def on_yardim(self, fn):
+        self._on_yardim = fn
+    def on_durdur(self, fn):
+        self._on_durdur = fn
+    def on_devam(self, fn):
+        self._on_devam = fn
+    def on_sifirla(self, fn):
+        self._on_sifirla = fn
 
 
 tg = TelegramBot()

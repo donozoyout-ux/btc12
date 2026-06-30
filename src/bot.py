@@ -272,6 +272,120 @@ class Bot:
         settings.position_size_usd = yeni
         tg.send(f"<b>MIKTAR AZALTILDI</b>\n\nYeni: <code>${settings.position_size_usd:.0f}</code>")
 
+    def cmd_fiyat(self):
+        try:
+            price = trader.get_price()
+            df = trader.get_bars(50)
+            teknik = analyzer.analyze(df) if not df.empty else None
+            if teknik:
+                msg = (
+                    f"<b>BTC FIYAT</b>\n\n"
+                    f"Fiyat: <code>${price:,.2f}</code>\n"
+                    f"RSI: <code>{teknik['rsi']}</code>\n"
+                    f"EMA: <code>{teknik['ema_cross'].upper()}</code>\n"
+                    f"MACD: <code>{teknik['macd_hist']:+.2f}</code>\n"
+                    f"BB: <code>%{teknik['bb_pct']*100:.1f}</code>\n"
+                    f"Hacim: <code>{teknik['vol_ratio']}x</code>\n"
+                    f"Destek: <code>${teknik['support']:,.0f}</code>\n"
+                    f"Direnc: <code>${teknik['resistance']:,.0f}</code>"
+                )
+            else:
+                msg = f"<b>BTC FIYAT</b>\n\nFiyat: <code>${price:,.2f}</code>"
+            tg.send(msg)
+        except Exception as e:
+            tg.send(f"Fiyat alinamadi: {e}")
+
+    def cmd_portfoy(self):
+        try:
+            acc = executor.get_account()
+            pos = executor.get_position()
+            price = trader.get_price()
+            msg = f"<b>PORTFOY</b>\n\nNakit: <code>${acc.get('cash', 0):,.2f}</code>\nToplam: <code>${acc.get('portfolio_value', 0):,.2f}</code>"
+            if pos:
+                pl = pos.get("unrealized_pl", 0)
+                pl_pct = (price - pos["avg_entry_price"]) / pos["avg_entry_price"] * 100
+                msg += (
+                    f"\n\nPozisyon: <code>{pos['qty']:.6f} BTC</code>\n"
+                    f"Giris: <code>${pos['avg_entry_price']:,.2f}</code>\n"
+                    f"K/Z: <b>{'🟢' if pl >= 0 else '🔴'} ${pl:+,.2f}</b> (%{pl_pct:+.2f})"
+                )
+            tg.send(msg)
+        except Exception as e:
+            tg.send(f"Portfoy alinamadi: {e}")
+
+    def cmd_kar(self):
+        try:
+            state = quant_agent.get_state()
+            stats = db.get_stats()
+            msg = (
+                f"<b>KAR/ZARAR</b>\n\n"
+                f"Toplam Islem: <code>{stats.get('toplam_islem', 0)}</code>\n"
+                f"Kazanc: <code>{stats.get('kazanma', 0)}</code>\n"
+                f"Kayip: <code>{stats.get('kaybetme', 0)}</code>\n"
+                f"Basarim: <code>%{stats.get('kazanma_orani', 0)}</code>\n"
+                f"Net K/Z: <b>${stats.get('toplam_kar_zarar', 0):+,.2f}</b>\n"
+                f"Ardisik Kayip: <code>{state.get('ardisik_kayip', 0)}</code>"
+            )
+            tg.send(msg)
+        except Exception as e:
+            tg.send(f"Kar durumu alinamadi: {e}")
+
+    def cmd_son(self):
+        try:
+            trades = db.get_trade_history(5)
+            if not trades:
+                tg.send("Henuz islem yok.")
+                return
+            lines = ["<b>SON 5 ISLEM</b>\n"]
+            for t in trades:
+                emoji = "🟢" if t["pnl"] >= 0 else "🔴"
+                lines.append(
+                    f"{emoji} {t['action']} ${t['price']:,.2f} | "
+                    f"{'K/Z: $' + t['pnl']:+,.2f' if t['pnl'] else ''}"
+                )
+            tg.send("\n".join(lines))
+        except Exception as e:
+            tg.send(f"Gecmis alinamadi: {e}")
+
+    def cmd_yardim(self):
+        msg = (
+            "<b>KOMUTLAR</b>\n\n"
+            "<code>/start</code> - Botu baslat\n"
+            "<code>/stop</code> - Botu durdur\n"
+            "<code>/scan</code> - El ile tarama\n"
+            "<code>/status</code> - Durum raporu\n"
+            "<code>/fiyat</code> - BTC fiyat + indikatorler\n"
+            "<code>/portfoy</code> - Portfoy detayi\n"
+            "<code>/kar</code> - Kar/zarar ozeti\n"
+            "<code>/son</code> - Son 5 islem\n"
+            "<code>/oto</code> - Oto-alim modu\n"
+            "<code>/manuel</code> - Onayli mod\n"
+            "<code>/onay</code> - Alisi onayla\n"
+            "<code>/sat</code> - Satisi onayla\n"
+            "<code>/iptal</code> - Islemi iptal\n"
+            "<code>/miktar 100</code> - Miktar ayarla\n"
+            "<code>/artir 50</code> - Miktar artir\n"
+            "<code>/azalt 25</code> - Miktar azalt\n"
+            "<code>/durdur</code> - Taramayi duraklat\n"
+            "<code>/devam</code> - Taramaya devam\n"
+            "<code>/sifirla</code> - Bekleyen sinyalleri temizle"
+        )
+        tg.send(msg)
+
+    def cmd_durdur(self):
+        self.paused = True
+        tg.send("⏸ Tarama duraklatildi. <code>/devam</code> ile devam et.")
+
+    def cmd_devam(self):
+        self.paused = False
+        tg.send("▶ Tarama devam ediyor.")
+
+    def cmd_sifirla(self):
+        self.bekleyen_alis = None
+        self.bekleyen_satis = None
+        self.last_notified_action = None
+        tg.send("Bekleyen sinyaller temizlendi.")
+
     def get_status(self):
         try:
             acc = executor.get_account()
@@ -313,6 +427,14 @@ def setup_telegram():
     tg.on_miktar(lambda val: bot.miktar_goster(val))
     tg.on_artir(lambda val: bot.miktar_artir(val))
     tg.on_azalt(lambda val: bot.miktar_azalt(val))
+    tg.on_fiyat(lambda: bot.cmd_fiyat())
+    tg.on_portfoy(lambda: bot.cmd_portfoy())
+    tg.on_kar(lambda: bot.cmd_kar())
+    tg.on_son(lambda: bot.cmd_son())
+    tg.on_yardim(lambda: bot.cmd_yardim())
+    tg.on_durdur(lambda: bot.cmd_durdur())
+    tg.on_devam(lambda: bot.cmd_devam())
+    tg.on_sifirla(lambda: bot.cmd_sifirla())
     tg.start_polling()
 
 
