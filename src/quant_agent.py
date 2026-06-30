@@ -44,11 +44,19 @@ class QuantAgent:
         fiyat = teknik_analiz["price"]
         rsi = teknik_analiz["rsi"]
         ema_cross = teknik_analiz["ema_cross"]
+        ema_dist = teknik_analiz.get("ema_dist", 0)
         macd_hist = teknik_analiz["macd_hist"]
         macd_hist_prev = teknik_analiz["macd_hist_prev"]
         vol_ratio = teknik_analiz["vol_ratio"]
         bb_pct = teknik_analiz["bb_pct"]
         atr = teknik_analiz["atr"]
+        breakout_up = teknik_analiz.get("breakout_up", 0)
+        breakout_down = teknik_analiz.get("breakout_down", 0)
+        price_change_5 = teknik_analiz.get("price_change_5", 0)
+
+        ob = teknik_analiz.get("orderbook", {})
+        ob_sinyal = ob.get("bid_ask_sinyal", "nötr")
+        ob_ratio = ob.get("bid_ask_ratio", 1.0)
 
         acik_pozisyon = mevcut_portfoy.get("acik_pozisyon", False)
         giris_fiyati = mevcut_portfoy.get("giris_fiyati", 0)
@@ -58,9 +66,9 @@ class QuantAgent:
         ardisik_kayip = self.state.get("ardisik_kayip", 0)
         risk_seviyesi = self.state.get("risk_seviyesi_ayari", "normal")
 
-        min_confidence = 0.4
+        min_confidence = 0.25
         if ardisik_kayip >= settings.max_consecutive_losses:
-            min_confidence = 0.6
+            min_confidence = 0.45
             risk_seviyesi = "muhafazakar"
 
         buy_score = 0.0
@@ -109,6 +117,38 @@ class QuantAgent:
         elif vol_ratio > 1.5 and sell_score > buy_score:
             sell_score += 0.1
             reasons.append(f"Hacim destekli ({vol_ratio}x)")
+
+        # Breakout detection - hizli kucuk cikislari yakala
+        if breakout_up > 0:
+            buy_score += 0.30
+            reasons.append("Yukari breakout")
+        if breakout_down > 0:
+            sell_score += 0.30
+            reasons.append("Asagi breakout")
+
+        # EMA'dan pullback - trende donus
+        if -1.5 < ema_dist < 0 and ema_cross == "bullish":
+            buy_score += 0.20
+            reasons.append("EMA'ya pullback")
+        if 0 < ema_dist < 1.5 and ema_cross == "bearish":
+            sell_score += 0.20
+            reasons.append("EMA'ya pullback")
+
+        # Hizli fiyat degisimi (son 5 mumda)
+        if price_change_5 > 0.5 and vol_ratio > 1.3:
+            buy_score += 0.15
+            reasons.append(f"Hizli yukselis %{price_change_5}")
+        if price_change_5 < -0.5 and vol_ratio > 1.3:
+            sell_score += 0.15
+            reasons.append(f"Hizli dusus %{price_change_5}")
+
+        # Orderbook imbalance
+        if ob_sinyal == "alis_baskisi":
+            buy_score += 0.15
+            reasons.append(f"Orderbook alis agirlikli ({ob_ratio})")
+        elif ob_sinyal == "satis_baskisi":
+            sell_score += 0.15
+            reasons.append(f"Orderbook satis agirlikli ({ob_ratio})")
 
         haber_sentiment = 0.0
         for haber in internet_ve_haberler:

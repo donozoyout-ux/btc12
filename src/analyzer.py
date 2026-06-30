@@ -42,6 +42,18 @@ class Analyzer:
         support = close.rolling(20).min().iloc[-1]
         resistance = close.rolling(20).max().iloc[-1]
 
+        # Breakout detection
+        recent_high_3 = high.tail(3).max()
+        recent_low_3 = low.tail(3).min()
+        prev_high_10 = high.tail(13).head(10).max()
+        prev_low_10 = low.tail(13).head(10).min()
+
+        breakout_up = 1.0 if price > prev_high_10 and recent_high_3 == price and vol_ratio > 1.2 else 0.0
+        breakout_down = 1.0 if price < prev_low_10 and recent_low_3 == price and vol_ratio > 1.2 else 0.0
+
+        # Pullback to EMA
+        ema_dist = (close.iloc[-1] - ema21) / ema21 * 100
+
         return {
             "price": round(price, 2),
             "rsi": round(rsi, 1),
@@ -49,6 +61,7 @@ class Analyzer:
             "ema9": round(ema9, 2),
             "ema21": round(ema21, 2),
             "ema_cross": ema_cross,
+            "ema_dist": round(ema_dist, 2),
             "macd_line": round(macd_line, 2),
             "signal_line": round(signal_line, 2),
             "macd_hist": round(macd_hist, 2),
@@ -62,6 +75,8 @@ class Analyzer:
             "price_change_5": round(price_change_5, 2),
             "support": round(support, 2),
             "resistance": round(resistance, 2),
+            "breakout_up": breakout_up,
+            "breakout_down": breakout_down,
         }
 
 

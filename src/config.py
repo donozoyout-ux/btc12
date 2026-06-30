@@ -13,7 +13,7 @@ class Settings:
     telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
 
     symbol = "BTC/USDT"
-    check_interval = int(os.getenv("CHECK_INTERVAL", "300"))
+    check_interval = int(os.getenv("CHECK_INTERVAL", "15"))
     position_size_usd = float(os.getenv("POSITION_SIZE_USD", "50"))
     risk_per_trade = float(os.getenv("RISK_PER_TRADE", "2"))
     rr_ratio = float(os.getenv("RR_RATIO", "2"))

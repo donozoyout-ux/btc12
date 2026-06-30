@@ -26,15 +26,18 @@ class Bot:
 
     def start(self, mesaj_gonder=True):
         if self.running:
+            if mesaj_gonder:
+                tg.send("Bot zaten calisiyor. <code>/stop</code> ile durdurabilirsin.")
             return
         self.running = True
         self.paused = False
+        self.auto_trade = True
         if mesaj_gonder:
             try:
                 tg.send(
                     f"<b>BTC BOT BASLATILDI</b>\n\n"
                     f"Her {settings.check_interval}s'de bir analiz\n"
-                    f"Mod: ONAYLI\n"
+                    f"Mod: <b>OTO</b>\n"
                     f"Islem: {settings.executor_mode.upper()}"
                 )
             except:
@@ -113,6 +116,8 @@ class Bot:
             print("  Analiz basarisiz")
             self.son_hata = "Analiz basarisiz"
             return
+
+        teknik["orderbook"] = trader.get_orderbook()
 
         price = teknik["price"]
         haberler = news_fetcher.fetch_bitcoin_news(3)
