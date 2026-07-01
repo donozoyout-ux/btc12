@@ -8,14 +8,22 @@ class Executor:
         self._sim_balance = 1000.0
         self._sim_btc = 0.0
         self._sim_entry = 0.0
-        if settings.executor_mode == "alpaca":
-            self._init_alpaca()
+        if settings.executor_mode == "alpaca" and settings.alpaca_api_key and settings.alpaca_secret_key:
+            try:
+                self._init_alpaca()
+                print("[EXECUTOR] Alpaca baglantisi basarili (paper=True)")
+            except Exception as e:
+                print(f"[EXECUTOR] Alpaca baglanti hatasi, simülasyon moduna gecildi: {e}")
+                self._client = None
+        else:
+            print("[EXECUTOR] Simülasyon modu (Alpaca key yok veya mode != alpaca)")
 
     def _init_alpaca(self):
         from alpaca.trading.client import TradingClient
         self._client = TradingClient(
             settings.alpaca_api_key,
-            settings.alpaca_secret_key
+            settings.alpaca_secret_key,
+            paper=True
         )
 
     def get_account(self):
@@ -118,14 +126,24 @@ class Executor:
         price = trader.get_price()
         qty = round(settings.position_size_usd / price, 6)
         qty = max(qty, 0.0001)
-        order = self._client.submit_order(MarketOrderRequest(
-            symbol="BTC/USD",
-            qty=qty,
-            side=OrderSide.BUY,
-            time_in_force=TimeInForce.GTC
-        ))
-        settings.last_entry_price = price
-        return {"price": price, "qty": round(qty, 6), "order_id": str(order.id)}
+        try:
+            order = self._client.submit_order(MarketOrderRequest(
+                symbol="BTC/USD",
+                qty=qty,
+                side=OrderSide.BUY,
+                time_in_force=TimeInForce.GTC
+            ))
+            settings.last_entry_price = price
+            return {"price": price, "qty": round(qty, 6), "order_id": str(order.id)}
+        except Exception as e:
+            err = str(e).lower()
+            if "unauthorized" in err:
+                print("[EXECUTOR] Alpaca unauthorized - API key hatali veya paper=True eksik")
+            elif "minimal amount" in err or "cost basis" in err:
+                print(f"[EXECUTOR] Min siparis hatasi: {e}")
+            else:
+                print(f"[EXECUTOR] Alpaca buy hatasi: {e}")
+            raise
 
     def _alpaca_sell(self):
         from alpaca.trading.requests import MarketOrderRequest
