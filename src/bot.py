@@ -104,6 +104,7 @@ class Bot:
         except Exception as e:
             print(f"  Veri hatasi: {e}")
             self.son_hata = f"Veri: {e}"
+            tg.send(f"Veri hatasi: {str(e)[:100]}", silent=True)
             return
 
         if df.empty:
@@ -206,6 +207,16 @@ class Bot:
                 print(f"  -> SATIS sinyali (bekliyor, guven: %{confidence:.0%})")
         else:
             print(f"  -> {action} (%{confidence:.0%})")
+
+        if self.total_scans == 1:
+            rsi_de = teknik.get("rsi", "?")
+            ema_de = teknik.get("ema_cross", "?")
+            tg.send(
+                f"<b>Bot aktif</b> | 15s tarama\n\n"
+                f"Fiyat: <code>${price:,.0f}</code>\n"
+                f"RSI: <code>{rsi_de}</code> | EMA: <code>{ema_de}</code>",
+                silent=True
+            )
 
     def alisi_onayla(self):
         if self.bekleyen_alis is None:

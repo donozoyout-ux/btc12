@@ -35,9 +35,13 @@ class TelegramBot:
             payload = {"chat_id": self.chat_id, "text": text, "parse_mode": "HTML"}
             if silent:
                 payload["disable_notification"] = True
-            requests.post(f"{self.base}/sendMessage", json=payload, timeout=10)
-        except:
-            pass
+            resp = requests.post(f"{self.base}/sendMessage", json=payload, timeout=10)
+            if resp.status_code != 200:
+                print(f"[TG] Send error: {resp.status_code} {resp.text[:200]}")
+            return resp
+        except Exception as e:
+            print(f"[TG] Send exception: {e}")
+            return None
 
     def get_updates(self):
         try:

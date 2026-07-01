@@ -11,7 +11,7 @@ if __name__ == '__main__':
     setup_telegram()
 
     print("[SISTEM] Bot otomatik baslatiliyor...")
-    bot.start(mesaj_gonder=False)
+    bot.start(mesaj_gonder=True)
 
     port = int(os.environ.get('PORT', 5000))
     print(f"[PANEL] http://0.0.0.0:{port}")
