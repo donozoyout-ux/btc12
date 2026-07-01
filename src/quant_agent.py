@@ -66,9 +66,9 @@ class QuantAgent:
         ardisik_kayip = self.state.get("ardisik_kayip", 0)
         risk_seviyesi = self.state.get("risk_seviyesi_ayari", "normal")
 
-        min_confidence = 0.25
+        min_confidence = 0.10
         if ardisik_kayip >= settings.max_consecutive_losses:
-            min_confidence = 0.45
+            min_confidence = 0.25
             risk_seviyesi = "muhafazakar"
 
         buy_score = 0.0
@@ -79,43 +79,70 @@ class QuantAgent:
         if rsi < 30:
             buy_score += 0.35
             reasons.append(f"RSI asiri satim ({rsi})")
-        elif rsi < 40:
-            buy_score += 0.15
+        elif rsi < 35:
+            buy_score += 0.20
             reasons.append(f"RSI dusuk ({rsi})")
+        elif rsi < 42:
+            buy_score += 0.10
         elif rsi > 70:
             sell_score += 0.35
             reasons.append(f"RSI asiri alim ({rsi})")
-        elif rsi > 60:
-            sell_score += 0.15
+        elif rsi > 65:
+            sell_score += 0.20
+            reasons.append(f"RSI yuksek ({rsi})")
+        elif rsi > 58:
+            sell_score += 0.10
+
+        macd_improving = (macd_hist > macd_hist_prev)
+        macd_worsening = (macd_hist < macd_hist_prev)
 
         if macd_hist > 0 and macd_hist_prev <= 0:
             buy_score += 0.25
-            reasons.append("MACD pozitif kesişim")
-        elif macd_hist > 0 and macd_hist > macd_hist_prev:
-            buy_score += 0.1
+            reasons.append("MACD pozitif kesisim")
+        elif macd_hist > 0 and macd_improving:
+            buy_score += 0.15
+            reasons.append("MACD gucleniyor")
+        elif macd_hist < 0 and macd_improving:
+            buy_score += 0.10
+            reasons.append("MACD toparliyor")
         elif macd_hist < 0 and macd_hist_prev >= 0:
             sell_score += 0.25
-            reasons.append("MACD negatif kesişim")
-        elif macd_hist < 0 and macd_hist < macd_hist_prev:
-            sell_score += 0.1
+            reasons.append("MACD negatif kesisim")
+        elif macd_hist < 0 and macd_worsening:
+            sell_score += 0.15
+            reasons.append("MACD zayifliyor")
+        elif macd_hist > 0 and macd_worsening:
+            sell_score += 0.10
 
         if ema_cross == "bullish":
             buy_score += 0.15
         else:
             sell_score += 0.15
 
-        if bb_pct < 0:
+        if bb_pct < 0.1:
             buy_score += 0.15
+            reasons.append("BB alt banda yakin")
+        elif bb_pct < 0:
+            buy_score += 0.20
             reasons.append("BB alt bandinda")
-        elif bb_pct > 1:
+        elif bb_pct > 0.9:
             sell_score += 0.15
+            reasons.append("BB ust banda yakin")
+        elif bb_pct > 1:
+            sell_score += 0.20
             reasons.append("BB ust bandinda")
 
-        if vol_ratio > 1.5 and buy_score > sell_score:
-            buy_score += 0.1
+        if vol_ratio > 2.0 and buy_score > sell_score:
+            buy_score += 0.15
+            reasons.append(f"Hacim cok yuksek ({vol_ratio}x)")
+        elif vol_ratio > 1.5 and buy_score > sell_score:
+            buy_score += 0.10
             reasons.append(f"Hacim destekli ({vol_ratio}x)")
+        elif vol_ratio > 2.0 and sell_score > buy_score:
+            sell_score += 0.15
+            reasons.append(f"Hacim cok yuksek ({vol_ratio}x)")
         elif vol_ratio > 1.5 and sell_score > buy_score:
-            sell_score += 0.1
+            sell_score += 0.10
             reasons.append(f"Hacim destekli ({vol_ratio}x)")
 
         # Breakout detection - hizli kucuk cikislari yakala
@@ -127,28 +154,43 @@ class QuantAgent:
             reasons.append("Asagi breakout")
 
         # EMA'dan pullback - trende donus
-        if -1.5 < ema_dist < 0 and ema_cross == "bullish":
+        if -2.0 < ema_dist < 0 and ema_cross == "bullish":
             buy_score += 0.20
             reasons.append("EMA'ya pullback")
-        if 0 < ema_dist < 1.5 and ema_cross == "bearish":
+        if 0 < ema_dist < 2.0 and ema_cross == "bearish":
             sell_score += 0.20
             reasons.append("EMA'ya pullback")
 
         # Hizli fiyat degisimi (son 5 mumda)
-        if price_change_5 > 0.5 and vol_ratio > 1.3:
+        if price_change_5 > 0.3 and vol_ratio > 1.2:
             buy_score += 0.15
             reasons.append(f"Hizli yukselis %{price_change_5}")
-        if price_change_5 < -0.5 and vol_ratio > 1.3:
+        if price_change_5 < -0.3 and vol_ratio > 1.2:
             sell_score += 0.15
             reasons.append(f"Hizli dusus %{price_change_5}")
 
+        # RSI degisim hizi - momentum
+        rsi_change = teknik_analiz.get("rsi", 50) - teknik_analiz.get("rsi_prev", 50)
+        if rsi_change > 3:
+            buy_score += 0.10
+            reasons.append(f"RSI gucleniyor (+{rsi_change:.1f})")
+        elif rsi_change < -3:
+            sell_score += 0.10
+            reasons.append(f"RSI zayifliyor ({rsi_change:.1f})")
+
         # Orderbook imbalance
-        if ob_sinyal == "alis_baskisi":
-            buy_score += 0.15
-            reasons.append(f"Orderbook alis agirlikli ({ob_ratio})")
+        if ob_ratio > 1.5:
+            buy_score += 0.20
+            reasons.append(f"Orderbook guclu alis ({ob_ratio})")
+        elif ob_sinyal == "alis_baskisi":
+            buy_score += 0.10
+            reasons.append(f"Orderbook alis ({ob_ratio})")
+        elif ob_ratio < 0.6:
+            sell_score += 0.20
+            reasons.append(f"Orderbook guclu satis ({ob_ratio})")
         elif ob_sinyal == "satis_baskisi":
-            sell_score += 0.15
-            reasons.append(f"Orderbook satis agirlikli ({ob_ratio})")
+            sell_score += 0.10
+            reasons.append(f"Orderbook satis ({ob_ratio})")
 
         haber_sentiment = 0.0
         for haber in internet_ve_haberler:
@@ -163,7 +205,7 @@ class QuantAgent:
             sell_score += abs(haber_sentiment)
 
         if not acik_pozisyon:
-            if buy_score > sell_score and buy_score >= min_confidence:
+            if buy_score >= min_confidence and buy_score > sell_score * 0.5:
                 direction = "BUY"
                 confidence = min(buy_score, 1.0)
 
