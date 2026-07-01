@@ -23,6 +23,8 @@ class Bot:
         self.bekleyen_alis = None
         self.bekleyen_satis = None
         self.son_hata = None
+        self._last_error_sent = None
+        self._error_cooldown = 0
 
     def start(self, mesaj_gonder=True):
         if self.running:
@@ -104,7 +106,12 @@ class Bot:
         except Exception as e:
             print(f"  Veri hatasi: {e}")
             self.son_hata = f"Veri: {e}"
-            tg.send(f"Veri hatasi: {str(e)[:100]}", silent=True)
+            err_key = str(e)[:50]
+            now = time.time()
+            if err_key != self._last_error_sent and now - self._error_cooldown > 300:
+                tg.send(f"Veri hatasi: {str(e)[:100]}")
+                self._last_error_sent = err_key
+                self._error_cooldown = now
             return
 
         if df.empty:
@@ -116,6 +123,9 @@ class Bot:
         if not teknik:
             print("  Analiz basarisiz")
             self.son_hata = "Analiz basarisiz"
+            if now - self._error_cooldown > 300:
+                tg.send("Analiz basarisiz - veri kalitesi dusuk")
+                self._error_cooldown = now
             return
 
         teknik["orderbook"] = trader.get_orderbook()
