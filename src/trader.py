@@ -5,19 +5,11 @@ from src.config import settings
 
 class Trader:
     def __init__(self):
-        self.exchange = ccxt.alpaca({
-            "apiKey": settings.alpaca_api_key,
-            "secret": settings.alpaca_secret_key,
-            "urls": {
-                "api": {
-                    "trader": "https://paper-api.alpaca.markets",
-                    "market": "https://data.alpaca.markets",
-                }
-            },
-            "options": {"defaultType": "spot"},
-            "enableRateLimit": True,
+        self.exchange = ccxt.okx({
+            'enableRateLimit': True,
+            'options': {'defaultType': 'spot'},
         })
-        self.symbol = "BTC/USD"
+        self.symbol = 'BTC/USDT'
 
     def get_price(self):
         ticker = self.exchange.fetch_ticker(self.symbol)
