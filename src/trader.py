@@ -5,11 +5,19 @@ from src.config import settings
 
 class Trader:
     def __init__(self):
-        self.exchange = ccxt.binance({
-            'enableRateLimit': True,
-            'options': {'defaultType': 'spot'},
+        self.exchange = ccxt.alpaca({
+            "apiKey": settings.alpaca_api_key,
+            "secret": settings.alpaca_secret_key,
+            "urls": {
+                "api": {
+                    "trader": "https://paper-api.alpaca.markets",
+                    "market": "https://data.alpaca.markets",
+                }
+            },
+            "options": {"defaultType": "spot"},
+            "enableRateLimit": True,
         })
-        self.symbol = "BTC/USDT"
+        self.symbol = "BTC/USD"
 
     def get_price(self):
         ticker = self.exchange.fetch_ticker(self.symbol)
@@ -27,11 +35,9 @@ class Trader:
         bid_vol = sum(b[1] for b in book['bids'])
         ask_vol = sum(a[1] for a in book['asks'])
 
-        # Top 10 concentration
         top10_bid = sum(b[1] for b in book['bids'][:10])
         top10_ask = sum(a[1] for a in book['asks'][:10])
 
-        # Bid-ask imbalance: >1.2 = alis baskisi, <0.8 = satis baskisi
         imbalance = round(bid_vol / ask_vol, 2) if ask_vol > 0 else 1.0
 
         return {
