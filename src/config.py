@@ -26,3 +26,15 @@ class Settings:
 
 
 settings = Settings()
+
+# Startup kontrol
+if not settings.telegram_bot_token or not settings.telegram_chat_id:
+    print("[CONFIG] UYARI: Telegram API anahtarlari eksik!")
+if settings.executor_mode == "alpaca":
+    if not settings.alpaca_api_key or not settings.alpaca_secret_key:
+        print("[CONFIG] UYARI: Alpaca API anahtarlari eksik! EXECUTOR_MODE=alpaca ama key yok.")
+        print("[CONFIG] Render'da Environment Variables ayarlayin:")
+        print("[CONFIG]   ALPACA_API_KEY = PKTDMFS2...")
+        print("[CONFIG]   ALPACA_SECRET_KEY = 3rfJQubVy...")
+    else:
+        print("[CONFIG] Alpaca API anahtarlari mevcut, paper=True ile baglanilacak")

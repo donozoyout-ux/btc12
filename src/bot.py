@@ -240,7 +240,22 @@ class Bot:
         try:
             result = executor.buy(size_pct)
             if result:
-                tg.send_islem_sonucu("BUY", result["price"], result["qty"])
+                is_sim = result.get("order_id", "") == "dry_buy"
+                if is_sim:
+                    tg.send(f"\U0001f7e2 <b>SIMULASYON ALIS</b>\n\n"
+                            f"Miktar: <code>{result['qty']:.6f} BTC</code>\n"
+                            f"Fiyat: <code>${result['price']:,.2f}</code>\n\n"
+                            f"\u26a0\ufe0f Gercek Alpaca emri gonderilemedi, simulasyon")
+                else:
+                    tg.send_islem_sonucu("BUY", result["price"], result["qty"])
+                    quant_agent.state["son_giris_fiyati"] = result["price"]
+                    quant_agent._save_state()
+                    db.save_trade("BUY", result["price"], result["qty"], 0, "Kullanici onayi", result["price"])
+                self.bekleyen_alis = None
+                self.bekleyen_satis = None
+                self.last_notified_action = None
+                self._alis_hata_saati = 0
+                print(f"[BOT] {'SIMULASYON ' if is_sim else ''}ALIS gerceklesti: {result['qty']:.6f} BTC @ ${result['price']:,.2f}")
                 quant_agent.state["son_giris_fiyati"] = result["price"]
                 quant_agent._save_state()
                 db.save_trade("BUY", result["price"], result["qty"], 0, "Kullanici onayi", result["price"])
@@ -287,9 +302,18 @@ class Bot:
             result = executor.sell()
             if result:
                 pl = result.get("pl", 0)
-                quant_agent.islem_sonucu_kaydet(pl)
-                tg.send_islem_sonucu("SELL", result["price"], result["qty"], pl)
-                db.save_trade("SELL", result["price"], result["qty"], pl, sebep, quant_agent.state.get("son_giris_fiyati", 0))
+                is_sim = result.get("order_id", "") == "dry_sell"
+                if is_sim:
+                    tg.send(f"\U0001f534 <b>SIMULASYON SATIS</b>\n\n"
+                            f"Miktar: <code>{result['qty']:.6f} BTC</code>\n"
+                            f"Fiyat: <code>${result['price']:,.2f}</code>\n"
+                            f"K/Z: <code>${pl:+,.2f}</code>\n"
+                            f"Sebep: {sebep}\n\n"
+                            f"\u26a0\ufe0f Simulasyon modu")
+                else:
+                    quant_agent.islem_sonucu_kaydet(pl)
+                    tg.send_islem_sonucu("SELL", result["price"], result["qty"], pl)
+                    db.save_trade("SELL", result["price"], result["qty"], pl, sebep, quant_agent.state.get("son_giris_fiyati", 0))
                 self.bekleyen_alis = None
                 self.bekleyen_satis = None
                 self.last_notified_action = None
