@@ -25,6 +25,9 @@ class Bot:
         self.son_hata = None
         self._last_error_sent = None
         self._error_cooldown = 0
+        self._alis_hata_saati = 0
+        self._satis_hata_saati = 0
+        self._alpaca_uyari_gonderildi = False
 
     def start(self, mesaj_gonder=True):
         if self.running:
@@ -244,8 +247,33 @@ class Bot:
                 self.bekleyen_alis = None
                 self.bekleyen_satis = None
                 self.last_notified_action = None
+                self._alis_hata_saati = 0
                 print(f"[BOT] ALIS gerceklesti: {result['qty']:.6f} BTC @ ${result['price']:,.2f}")
         except Exception as e:
+            now = time.time()
+            err_key = str(e)[:80]
+            is_unauth = "unauthorized" in str(e).lower() or "auth" in str(e).lower() or "401" in str(e)
+            if is_unauth and not self._alpaca_uyari_gonderildi:
+                self._alpaca_uyari_gonderildi = True
+                self.auto_trade = False
+                self.bekleyen_alis = None
+                tg.send(
+                    f"\u26a0\ufe0f <b>Alpaca baglanti hatasi</b>\n\n"
+                    f"API anahtarlari gecersiz. Bot <b>manuel moda</b> gecirildi.\n"
+                    f"Simulasyon modunda calisiyor.\n\n"
+                    f"Dueltmek icin:\n"
+                    f"1. Guncel API key gir\n"
+                    f"2. <code>/oto</code> ile tekrar aktif et"
+                )
+                print("[BOT] Alpaca unauthorized, auto_trade kapatildi, simulasyon modu")
+                return
+            err_same = err_key == self._last_error_sent
+            cooldown_active = (now - self._alis_hata_saati) < 300
+            if err_same and cooldown_active:
+                print(f"[BOT] ALIS HATASI tekrari engellendi (cooldown): {str(e)[:100]}")
+                return
+            self._alis_hata_saati = now
+            self._last_error_sent = err_key
             tg.send(f"<b>ALIS HATASI</b>\n<code>{str(e)[:200]}</code>")
 
     def satisi_onayla(self):
@@ -268,8 +296,25 @@ class Bot:
                 quant_agent.state["son_sl"] = 0
                 quant_agent.state["son_tp"] = 0
                 quant_agent._save_state()
+                self._satis_hata_saati = 0
                 print(f"[BOT] SATIS gerceklesti: K/Z ${pl:+,.2f} ({sebep})")
         except Exception as e:
+            now = time.time()
+            err_key = str(e)[:80]
+            is_unauth = "unauthorized" in str(e).lower() or "auth" in str(e).lower() or "401" in str(e)
+            if is_unauth and not self._alpaca_uyari_gonderildi:
+                self._alpaca_uyari_gonderildi = True
+                self.auto_trade = False
+                tg.send(f"\u26a0\ufe0f <b>Alpaca baglanti hatasi</b> - Manuel moda gecildi")
+                print("[BOT] Alpaca unauthorized (sell), simulasyon modu")
+                return
+            err_same = err_key == self._last_error_sent
+            cooldown_active = (now - self._satis_hata_saati) < 300
+            if err_same and cooldown_active:
+                print(f"[BOT] SATIS HATASI tekrari engellendi (cooldown): {str(e)[:100]}")
+                return
+            self._satis_hata_saati = now
+            self._last_error_sent = err_key
             tg.send(f"<b>SATIS HATASI</b>\n<code>{str(e)[:200]}</code>")
 
     def miktar_goster(self, deger=None):
@@ -448,8 +493,8 @@ def setup_telegram():
     tg.on_buy_onay(lambda: bot.alisi_onayla())
     tg.on_sell_onay(lambda: bot.satisi_onayla())
     tg.on_status(lambda: tg.send_durum(bot.get_status()))
-    tg.on_oto(lambda: setattr(bot, 'auto_trade', True) or tg.send("Mod: OTO"))
-    tg.on_manuel(lambda: setattr(bot, 'auto_trade', False) or tg.send("Mod: ONAYLI"))
+    tg.on_oto(lambda: toggle_auto(True))
+    tg.on_manuel(lambda: toggle_auto(False))
     tg.on_miktar(lambda val: bot.miktar_goster(val))
     tg.on_artir(lambda val: bot.miktar_artir(val))
     tg.on_azalt(lambda val: bot.miktar_azalt(val))
@@ -466,3 +511,14 @@ def setup_telegram():
 
 def toggle_auto(enabled):
     bot.auto_trade = enabled
+    if enabled:
+        bot._alpaca_uyari_gonderildi = False
+        if executor._client is None and settings.alpaca_api_key and settings.alpaca_secret_key:
+            try:
+                executor._init_alpaca()
+                print("[BOT] Alpaca yeniden baglaniyor...")
+            except:
+                pass
+        tg.send("Mod: <b>OTO</b>")
+    else:
+        tg.send("Mod: <b>ONAYLI</b>")

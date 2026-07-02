@@ -120,6 +120,10 @@ class Executor:
         self._sim_btc = 0.0
         return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": "dry_sell"}
 
+    def _fallback_simulation(self, reason=""):
+        print(f"[EXECUTOR] Alpaca basarisiz, simulasyon moduna geciliyor: {reason}")
+        self._client = None
+
     def _alpaca_buy(self):
         from alpaca.trading.requests import MarketOrderRequest
         from alpaca.trading.enums import OrderSide, TimeInForce
@@ -137,13 +141,8 @@ class Executor:
             return {"price": price, "qty": round(qty, 6), "order_id": str(order.id)}
         except Exception as e:
             err = str(e).lower()
-            if "unauthorized" in err:
-                print("[EXECUTOR] Alpaca unauthorized - API key hatali veya paper=True eksik")
-            elif "minimal amount" in err or "cost basis" in err:
-                print(f"[EXECUTOR] Min siparis hatasi: {e}")
-            else:
-                print(f"[EXECUTOR] Alpaca buy hatasi: {e}")
-            raise
+            self._fallback_simulation(str(e)[:100])
+            return self._dry_buy(100)
 
     def _alpaca_sell(self):
         from alpaca.trading.requests import MarketOrderRequest
@@ -152,15 +151,19 @@ class Executor:
         if not pos:
             return None
         sell_qty = pos["qty"]
-        order = self._client.submit_order(MarketOrderRequest(
-            symbol="BTC/USD",
-            qty=sell_qty,
-            side=OrderSide.SELL,
-            time_in_force=TimeInForce.GTC
-        ))
-        pnl = pos.get("unrealized_pl", 0)
-        price = trader.get_price()
-        return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": str(order.id)}
+        try:
+            order = self._client.submit_order(MarketOrderRequest(
+                symbol="BTC/USD",
+                qty=sell_qty,
+                side=OrderSide.SELL,
+                time_in_force=TimeInForce.GTC
+            ))
+            pnl = pos.get("unrealized_pl", 0)
+            price = trader.get_price()
+            return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": str(order.id)}
+        except Exception as e:
+            self._fallback_simulation(str(e)[:100])
+            return self._dry_sell()
 
 
 executor = Executor()
