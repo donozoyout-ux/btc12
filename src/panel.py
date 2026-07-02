@@ -270,6 +270,10 @@ def api_debug():
         "executor_mode": settings.executor_mode,
     })
 
+@app.route('/api/keepalive')
+def api_keepalive():
+    return ("", 200)
+
 
 if __name__ == '__main__':
     import os

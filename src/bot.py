@@ -242,6 +242,19 @@ class Bot:
             if result:
                 is_sim = result.get("order_id", "") == "dry_buy"
                 if is_sim:
+                    if not self._alpaca_uyari_gonderildi:
+                        self._alpaca_uyari_gonderildi = True
+                        self.auto_trade = False
+                        tg.send(
+                            f"\u26a0\ufe0f <b>Alpaca baglanti hatasi</b>\n\n"
+                            f"API anahtarlari gecersiz. Bot <b>manuel moda</b> gecirildi.\n"
+                            f"Simulasyon modunda calisiyor.\n\n"
+                            f"Dueltmek icin:\n"
+                            f"1. Guncel API key gir\n"
+                            f"2. <code>/oto</code> ile tekrar aktif et"
+                        )
+                        print("[BOT] Alpaca unauthorized, auto_trade kapatildi, simulasyon modu")
+                        return
                     tg.send(f"\U0001f7e2 <b>SIMULASYON ALIS</b>\n\n"
                             f"Miktar: <code>{result['qty']:.6f} BTC</code>\n"
                             f"Fiyat: <code>${result['price']:,.2f}</code>\n\n"
@@ -256,39 +269,14 @@ class Bot:
                 self.last_notified_action = None
                 self._alis_hata_saati = 0
                 print(f"[BOT] {'SIMULASYON ' if is_sim else ''}ALIS gerceklesti: {result['qty']:.6f} BTC @ ${result['price']:,.2f}")
-                quant_agent.state["son_giris_fiyati"] = result["price"]
-                quant_agent._save_state()
-                db.save_trade("BUY", result["price"], result["qty"], 0, "Kullanici onayi", result["price"])
-                self.bekleyen_alis = None
-                self.bekleyen_satis = None
-                self.last_notified_action = None
-                self._alis_hata_saati = 0
-                print(f"[BOT] ALIS gerceklesti: {result['qty']:.6f} BTC @ ${result['price']:,.2f}")
         except Exception as e:
-            now = time.time()
-            err_key = str(e)[:80]
-            is_unauth = "unauthorized" in str(e).lower() or "auth" in str(e).lower() or "401" in str(e)
-            if is_unauth and not self._alpaca_uyari_gonderildi:
-                self._alpaca_uyari_gonderildi = True
-                self.auto_trade = False
-                self.bekleyen_alis = None
-                tg.send(
-                    f"\u26a0\ufe0f <b>Alpaca baglanti hatasi</b>\n\n"
-                    f"API anahtarlari gecersiz. Bot <b>manuel moda</b> gecirildi.\n"
-                    f"Simulasyon modunda calisiyor.\n\n"
-                    f"Dueltmek icin:\n"
-                    f"1. Guncel API key gir\n"
-                    f"2. <code>/oto</code> ile tekrar aktif et"
-                )
-                print("[BOT] Alpaca unauthorized, auto_trade kapatildi, simulasyon modu")
-                return
-            err_same = err_key == self._last_error_sent
-            cooldown_active = (now - self._alis_hata_saati) < 300
+            err_same = str(e)[:80] == self._last_error_sent
+            cooldown_active = (time.time() - self._alis_hata_saati) < 300
             if err_same and cooldown_active:
                 print(f"[BOT] ALIS HATASI tekrari engellendi (cooldown): {str(e)[:100]}")
                 return
-            self._alis_hata_saati = now
-            self._last_error_sent = err_key
+            self._alis_hata_saati = time.time()
+            self._last_error_sent = str(e)[:80]
             tg.send(f"<b>ALIS HATASI</b>\n<code>{str(e)[:200]}</code>")
 
     def satisi_onayla(self):
