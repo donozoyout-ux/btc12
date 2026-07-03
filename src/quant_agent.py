@@ -9,6 +9,7 @@ class QuantAgent:
     def __init__(self):
         self.state_file = settings.memory_file
         self.state = self._load_state()
+        self._trade_history = []
 
     def _load_state(self):
         if os.path.exists(self.state_file):
@@ -27,6 +28,13 @@ class QuantAgent:
             "toplam_islem": 0,
             "kazanma": 0,
             "kaybetme": 0,
+            "weights": {
+                "rsi": 1.0, "macd": 1.0, "ema": 1.0,
+                "bb": 1.0, "vol": 1.0, "breakout": 1.0,
+                "orderbook": 1.0, "haber": 1.0, "momentum": 1.0
+            },
+            "weight_hits": {k: 0 for k in ["rsi","macd","ema","bb","vol","breakout","orderbook","haber","momentum"]},
+            "weight_misses": {k: 0 for k in ["rsi","macd","ema","bb","vol","breakout","orderbook","haber","momentum"]},
         }
 
     def _save_state(self):
@@ -55,7 +63,7 @@ class QuantAgent:
         price_change_5 = teknik_analiz.get("price_change_5", 0)
 
         ob = teknik_analiz.get("orderbook", {})
-        ob_sinyal = ob.get("bid_ask_sinyal", "nötr")
+        ob_sinyal = ob.get("bid_ask_sinyal", "notr")
         ob_ratio = ob.get("bid_ask_ratio", 1.0)
 
         acik_pozisyon = mevcut_portfoy.get("acik_pozisyon", False)
@@ -65,132 +73,166 @@ class QuantAgent:
 
         ardisik_kayip = self.state.get("ardisik_kayip", 0)
         risk_seviyesi = self.state.get("risk_seviyesi_ayari", "normal")
+        w = self.state.get("weights", {k: 1.0 for k in ["rsi","macd","ema","bb","vol","breakout","orderbook","haber","momentum"]})
 
-        min_confidence = 0.10
+        min_confidence = 0.20
         if ardisik_kayip >= settings.max_consecutive_losses:
-            min_confidence = 0.25
+            min_confidence = 0.35
             risk_seviyesi = "muhafazakar"
 
         buy_score = 0.0
         sell_score = 0.0
         reasons = []
+        used_indicators = []
         direction = "HOLD"
 
+        rsi_w = w.get("rsi", 1.0)
+        macd_w = w.get("macd", 1.0)
+        ema_w = w.get("ema", 1.0)
+        bb_w = w.get("bb", 1.0)
+        vol_w = w.get("vol", 1.0)
+        breakout_w = w.get("breakout", 1.0)
+        ob_w = w.get("orderbook", 1.0)
+        momentum_w = w.get("momentum", 1.0)
+
         if rsi < 30:
-            buy_score += 0.35
+            buy_score += 0.35 * rsi_w
             reasons.append(f"RSI asiri satim ({rsi})")
+            used_indicators.append("rsi")
         elif rsi < 35:
-            buy_score += 0.20
+            buy_score += 0.20 * rsi_w
             reasons.append(f"RSI dusuk ({rsi})")
+            used_indicators.append("rsi")
         elif rsi < 42:
-            buy_score += 0.10
+            buy_score += 0.10 * rsi_w
         elif rsi > 70:
-            sell_score += 0.35
+            sell_score += 0.35 * rsi_w
             reasons.append(f"RSI asiri alim ({rsi})")
+            used_indicators.append("rsi")
         elif rsi > 65:
-            sell_score += 0.20
+            sell_score += 0.20 * rsi_w
             reasons.append(f"RSI yuksek ({rsi})")
+            used_indicators.append("rsi")
         elif rsi > 58:
-            sell_score += 0.10
+            sell_score += 0.10 * rsi_w
 
         macd_improving = (macd_hist > macd_hist_prev)
         macd_worsening = (macd_hist < macd_hist_prev)
 
         if macd_hist > 0 and macd_hist_prev <= 0:
-            buy_score += 0.25
+            buy_score += 0.25 * macd_w
             reasons.append("MACD pozitif kesisim")
+            used_indicators.append("macd")
         elif macd_hist > 0 and macd_improving:
-            buy_score += 0.15
+            buy_score += 0.15 * macd_w
             reasons.append("MACD gucleniyor")
+            used_indicators.append("macd")
         elif macd_hist < 0 and macd_improving:
-            buy_score += 0.10
+            buy_score += 0.10 * macd_w
             reasons.append("MACD toparliyor")
+            used_indicators.append("macd")
         elif macd_hist < 0 and macd_hist_prev >= 0:
-            sell_score += 0.25
+            sell_score += 0.25 * macd_w
             reasons.append("MACD negatif kesisim")
+            used_indicators.append("macd")
         elif macd_hist < 0 and macd_worsening:
-            sell_score += 0.15
+            sell_score += 0.15 * macd_w
             reasons.append("MACD zayifliyor")
+            used_indicators.append("macd")
         elif macd_hist > 0 and macd_worsening:
-            sell_score += 0.10
+            sell_score += 0.10 * macd_w
 
         if ema_cross == "bullish":
-            buy_score += 0.15
+            buy_score += 0.15 * ema_w
         else:
-            sell_score += 0.15
+            sell_score += 0.15 * ema_w
+        used_indicators.append("ema")
 
         if bb_pct < 0.1:
-            buy_score += 0.15
+            buy_score += 0.15 * bb_w
             reasons.append("BB alt banda yakin")
+            used_indicators.append("bb")
         elif bb_pct < 0:
-            buy_score += 0.20
+            buy_score += 0.20 * bb_w
             reasons.append("BB alt bandinda")
+            used_indicators.append("bb")
         elif bb_pct > 0.9:
-            sell_score += 0.15
+            sell_score += 0.15 * bb_w
             reasons.append("BB ust banda yakin")
+            used_indicators.append("bb")
         elif bb_pct > 1:
-            sell_score += 0.20
+            sell_score += 0.20 * bb_w
             reasons.append("BB ust bandinda")
+            used_indicators.append("bb")
 
         if vol_ratio > 2.0 and buy_score > sell_score:
-            buy_score += 0.15
+            buy_score += 0.15 * vol_w
             reasons.append(f"Hacim cok yuksek ({vol_ratio}x)")
+            used_indicators.append("vol")
         elif vol_ratio > 1.5 and buy_score > sell_score:
-            buy_score += 0.10
+            buy_score += 0.10 * vol_w
             reasons.append(f"Hacim destekli ({vol_ratio}x)")
+            used_indicators.append("vol")
         elif vol_ratio > 2.0 and sell_score > buy_score:
-            sell_score += 0.15
+            sell_score += 0.15 * vol_w
             reasons.append(f"Hacim cok yuksek ({vol_ratio}x)")
+            used_indicators.append("vol")
         elif vol_ratio > 1.5 and sell_score > buy_score:
-            sell_score += 0.10
+            sell_score += 0.10 * vol_w
             reasons.append(f"Hacim destekli ({vol_ratio}x)")
+            used_indicators.append("vol")
 
-        # Breakout detection - hizli kucuk cikislari yakala
         if breakout_up > 0:
-            buy_score += 0.30
+            buy_score += 0.30 * breakout_w
             reasons.append("Yukari breakout")
+            used_indicators.append("breakout")
         if breakout_down > 0:
-            sell_score += 0.30
+            sell_score += 0.30 * breakout_w
             reasons.append("Asagi breakout")
+            used_indicators.append("breakout")
 
-        # EMA'dan pullback - trende donus
         if -2.0 < ema_dist < 0 and ema_cross == "bullish":
-            buy_score += 0.20
+            buy_score += 0.20 * ema_w
             reasons.append("EMA'ya pullback")
         if 0 < ema_dist < 2.0 and ema_cross == "bearish":
-            sell_score += 0.20
+            sell_score += 0.20 * ema_w
             reasons.append("EMA'ya pullback")
 
-        # Hizli fiyat degisimi (son 5 mumda)
         if price_change_5 > 0.3 and vol_ratio > 1.2:
-            buy_score += 0.15
+            buy_score += 0.15 * momentum_w
             reasons.append(f"Hizli yukselis %{price_change_5}")
+            used_indicators.append("momentum")
         if price_change_5 < -0.3 and vol_ratio > 1.2:
-            sell_score += 0.15
+            sell_score += 0.15 * momentum_w
             reasons.append(f"Hizli dusus %{price_change_5}")
+            used_indicators.append("momentum")
 
-        # RSI degisim hizi - momentum
         rsi_change = teknik_analiz.get("rsi", 50) - teknik_analiz.get("rsi_prev", 50)
         if rsi_change > 3:
-            buy_score += 0.10
+            buy_score += 0.10 * rsi_w
             reasons.append(f"RSI gucleniyor (+{rsi_change:.1f})")
+            used_indicators.append("rsi")
         elif rsi_change < -3:
-            sell_score += 0.10
+            sell_score += 0.10 * rsi_w
             reasons.append(f"RSI zayifliyor ({rsi_change:.1f})")
+            used_indicators.append("rsi")
 
-        # Orderbook imbalance
         if ob_ratio > 1.5:
-            buy_score += 0.20
+            buy_score += 0.20 * ob_w
             reasons.append(f"Orderbook guclu alis ({ob_ratio})")
+            used_indicators.append("orderbook")
         elif ob_sinyal == "alis_baskisi":
-            buy_score += 0.10
+            buy_score += 0.10 * ob_w
             reasons.append(f"Orderbook alis ({ob_ratio})")
+            used_indicators.append("orderbook")
         elif ob_ratio < 0.6:
-            sell_score += 0.20
+            sell_score += 0.20 * ob_w
             reasons.append(f"Orderbook guclu satis ({ob_ratio})")
+            used_indicators.append("orderbook")
         elif ob_sinyal == "satis_baskisi":
-            sell_score += 0.10
+            sell_score += 0.10 * ob_w
             reasons.append(f"Orderbook satis ({ob_ratio})")
+            used_indicators.append("orderbook")
 
         haber_sentiment = 0.0
         for haber in internet_ve_haberler:
@@ -205,7 +247,7 @@ class QuantAgent:
             sell_score += abs(haber_sentiment)
 
         if not acik_pozisyon:
-            if buy_score >= min_confidence and buy_score > sell_score * 0.5:
+            if buy_score >= min_confidence and buy_score > sell_score:
                 direction = "BUY"
                 confidence = min(buy_score, 1.0)
 
@@ -221,7 +263,11 @@ class QuantAgent:
                 self.state["son_sinyal"] = {
                     "action": "BUY",
                     "price": fiyat,
-                    "time": datetime.now().isoformat()
+                    "time": datetime.now().isoformat(),
+                    "indicators": used_indicators,
+                    "buy_score": round(buy_score, 3),
+                    "sell_score": round(sell_score, 3),
+                    "rsi": rsi,
                 }
 
                 memory_update = {
@@ -242,7 +288,7 @@ class QuantAgent:
                 }
 
         else:
-            if sell_score > buy_score and sell_score >= min_confidence:
+            if sell_score > buy_score * 1.3 and sell_score >= min_confidence:
                 direction = "SELL"
                 confidence = min(sell_score, 1.0)
 
@@ -251,7 +297,10 @@ class QuantAgent:
                 self.state["son_sinyal"] = {
                     "action": "SELL",
                     "price": fiyat,
-                    "time": datetime.now().isoformat()
+                    "time": datetime.now().isoformat(),
+                    "indicators": used_indicators,
+                    "buy_score": round(buy_score, 3),
+                    "sell_score": round(sell_score, 3),
                 }
 
                 memory_update = {
@@ -298,6 +347,31 @@ class QuantAgent:
             self.state["kaybetme"] += 1
             self.state["ardisik_kayip"] += 1
         self.state["son_islem_kar_zarar"] = round(kar_zarar, 4)
+
+        son_sinyal = self.state.get("son_sinyal", {})
+        indicators = son_sinyal.get("indicators", [])
+        action = son_sinyal.get("action", "")
+
+        if action == "SELL" and indicators:
+            hits = self.state["weight_hits"]
+            misses = self.state["weight_misses"]
+            for ind in indicators:
+                if kar_zarar > 0:
+                    hits[ind] = hits.get(ind, 0) + 1
+                else:
+                    misses[ind] = misses.get(ind, 0) + 1
+
+            w = self.state["weights"]
+            for ind in indicators:
+                total = hits.get(ind, 0) + misses.get(ind, 0)
+                if total >= 3:
+                    accuracy = hits.get(ind, 0) / total
+                    if accuracy > 0.6:
+                        w[ind] = min(1.5, w[ind] * 1.1)
+                    elif accuracy < 0.3:
+                        w[ind] = max(0.5, w[ind] * 0.9)
+            self.state["weights"] = w
+
         self._save_state()
 
     def get_state(self):

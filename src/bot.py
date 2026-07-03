@@ -28,6 +28,8 @@ class Bot:
         self._alis_hata_saati = 0
         self._satis_hata_saati = 0
         self._alpaca_uyari_gonderildi = False
+        self._son_alis_saati = 0
+        self._min_hold_sure = 300
 
     def start(self, mesaj_gonder=True):
         if self.running:
@@ -203,6 +205,10 @@ class Bot:
                 print(f"  -> ALIS sinyali (bekliyor, guven: %{confidence:.0%})")
 
         elif action == "SELL" and acik_pozisyon:
+            pos_suresi = time.time() - self._son_alis_saati if self._son_alis_saati > 0 else 9999
+            if pos_suresi < self._min_hold_sure:
+                print(f"  -> SATIS ENGELLENDI (bekleme: {pos_suresi:.0f}s / {self._min_hold_sure}s)")
+                return
             if self.auto_trade:
                 self.bekleyen_satis = karar
                 self._satisi_gerceklestir("Oto satis")
@@ -268,6 +274,7 @@ class Bot:
                 self.bekleyen_satis = None
                 self.last_notified_action = None
                 self._alis_hata_saati = 0
+                self._son_alis_saati = time.time()
                 print(f"[BOT] {'SIMULASYON ' if is_sim else ''}ALIS gerceklesti: {result['qty']:.6f} BTC @ ${result['price']:,.2f}")
         except Exception as e:
             err_same = str(e)[:80] == self._last_error_sent
