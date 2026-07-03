@@ -1,6 +1,8 @@
 from src.config import settings
 from src.trader import trader
 
+ALPACA_SYMBOL = "BTCUSD"
+
 
 class Executor:
     def __init__(self):
@@ -13,10 +15,10 @@ class Executor:
                 self._init_alpaca()
                 print("[EXECUTOR] Alpaca baglantisi basarili (paper=True)")
             except Exception as e:
-                print(f"[EXECUTOR] Alpaca baglanti hatasi, simülasyon moduna gecildi: {e}")
+                print(f"[EXECUTOR] Alpaca baglanti hatasi, simulasyon moduna gecildi: {e}")
                 self._client = None
         else:
-            print("[EXECUTOR] Simülasyon modu (Alpaca key yok veya mode != alpaca)")
+            print("[EXECUTOR] Simulasyon modu (Alpaca key yok veya mode != alpaca)")
 
     def _init_alpaca(self):
         from alpaca.trading.client import TradingClient
@@ -42,19 +44,21 @@ class Executor:
     def get_position(self):
         if settings.executor_mode == "alpaca" and self._client:
             try:
-                pos = self._client.get_position("BTC/USD")
-                price = trader.get_price()
-                entry = float(pos.avg_entry_price)
-                qty = float(pos.qty)
-                mv = round(qty * price, 2)
-                pl = round(mv - qty * entry, 2)
-                return {
-                    "symbol": "BTC/USD",
-                    "qty": round(qty, 6),
-                    "market_value": mv,
-                    "avg_entry_price": entry,
-                    "unrealized_pl": pl,
-                }
+                for pos in self._client.get_all_positions():
+                    if pos.symbol.upper() in ("BTCUSD", "BTC/USD"):
+                        price = trader.get_price()
+                        entry = float(pos.avg_entry_price)
+                        qty = float(pos.qty)
+                        mv = round(qty * price, 2)
+                        pl = round(mv - qty * entry, 2)
+                        return {
+                            "symbol": "BTC/USD",
+                            "qty": round(qty, 6),
+                            "market_value": mv,
+                            "avg_entry_price": entry,
+                            "unrealized_pl": pl,
+                        }
+                return None
             except:
                 return None
         return self._dry_position()
@@ -132,7 +136,7 @@ class Executor:
         qty = max(qty, 0.0001)
         try:
             order = self._client.submit_order(MarketOrderRequest(
-                symbol="BTC/USD",
+                symbol=ALPACA_SYMBOL,
                 qty=qty,
                 side=OrderSide.BUY,
                 time_in_force=TimeInForce.GTC
@@ -140,27 +144,19 @@ class Executor:
             settings.last_entry_price = price
             return {"price": price, "qty": round(qty, 6), "order_id": str(order.id)}
         except Exception as e:
-            err = str(e).lower()
             self._fallback_simulation(str(e)[:100])
             return self._dry_buy(100)
 
     def _alpaca_sell(self):
-        from alpaca.trading.requests import MarketOrderRequest
-        from alpaca.trading.enums import OrderSide, TimeInForce
-        pos = self.get_position()
-        if not pos:
-            return None
-        sell_qty = pos["qty"]
         try:
-            order = self._client.submit_order(MarketOrderRequest(
-                symbol="BTC/USD",
-                qty=sell_qty,
-                side=OrderSide.SELL,
-                time_in_force=TimeInForce.GTC
-            ))
+            pos = self.get_position()
+            if not pos:
+                return None
+            sell_qty = pos["qty"]
+            self._client.close_position(ALPACA_SYMBOL)
             pnl = pos.get("unrealized_pl", 0)
             price = trader.get_price()
-            return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": str(order.id)}
+            return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": "close_position"}
         except Exception as e:
             self._fallback_simulation(str(e)[:100])
             return self._dry_sell()
