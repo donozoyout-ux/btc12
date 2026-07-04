@@ -29,7 +29,10 @@ class Bot:
         self._satis_hata_saati = 0
         self._alpaca_uyari_gonderildi = False
         self._son_alis_saati = 0
-        self._min_hold_sure = 300
+        self._min_hold_sure = 1800
+        self._alis_onay_sayisi = 0
+        self._alis_onay_gerekli = 3
+        self._son_buy_sinyal_fiyati = 0
 
     def start(self, mesaj_gonder=True):
         if self.running:
@@ -97,6 +100,13 @@ class Bot:
             tg.send(f"\u2705 <b>TAKE-PROFIT TETIKLENDI</b>\n\nFiyat: ${price:,.2f}\nKar: %{pl_pct:.2f}")
             self._satisi_gerceklestir("Take-profit")
             return
+
+        if sl > 0 and pl_pct > 1.0:
+            new_sl = round(entry + (price - entry) * 0.4, 2)
+            if new_sl > sl:
+                quant_agent.state["son_sl"] = new_sl
+                quant_agent._save_state()
+                print(f"[TRAILING] SL guncellendi: ${new_sl:,.2f} (kar: %{pl_pct:.2f})")
 
         sl_tp_str = f"SL:${sl:,.0f} TP:${tp:,.0f}" if sl > 0 else ""
         print(f"[MONITOR] ${price:,.2f} | %{pl_pct:+.2f} {sl_tp_str}")
@@ -183,6 +193,25 @@ class Bot:
         self.last_action = action
 
         if action == "BUY" and not acik_pozisyon:
+            if self._son_buy_sinyal_fiyati > 0:
+                fiyat_fark = abs(price - self._son_buy_sinyal_fiyati) / self._son_buy_sinyal_fiyati * 100
+                if fiyat_fark < 2.0:
+                    self._alis_onay_sayisi += 1
+                else:
+                    self._alis_onay_sayisi = 1
+                    self._son_buy_sinyal_fiyati = price
+            else:
+                self._alis_onay_sayisi = 1
+                self._son_buy_sinyal_fiyati = price
+
+            print(f"  -> ALIS sinyali #{self._alis_onay_sayisi}/{self._alis_onay_gerekli} (guven: %{confidence:.0%})")
+
+            if self._alis_onay_sayisi < self._alis_onay_gerekli:
+                return
+
+            self._alis_onay_sayisi = 0
+            self._son_buy_sinyal_fiyati = 0
+
             if self.auto_trade:
                 self.bekleyen_alis = karar
                 quant_agent.state["son_sl"] = karar["execution"]["stop_loss"]

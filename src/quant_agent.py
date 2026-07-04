@@ -288,7 +288,12 @@ class QuantAgent:
                 }
 
         else:
-            if sell_score > buy_score * 1.3 and sell_score >= min_confidence:
+            mevcut_kar = (fiyat - giris_fiyati) / giris_fiyati * 100 if giris_fiyati > 0 else 0
+
+            kar_engel = mevcut_kar > 0 and mevcut_kar < 0.5
+            yeni_kar_sart = mevcut_kar > 0 and mevcut_kar < 0.3 and sell_score > buy_score * 3.0
+
+            if sell_score > buy_score * 2.5 and sell_score >= min_confidence and not kar_engel and not yeni_kar_sart:
                 direction = "SELL"
                 confidence = min(sell_score, 1.0)
 
