@@ -132,7 +132,13 @@ class Executor:
         from alpaca.trading.requests import MarketOrderRequest
         from alpaca.trading.enums import OrderSide, TimeInForce
         price = trader.get_price()
-        qty = round(settings.position_size_usd / price, 6)
+        try:
+            acc = self._client.get_account()
+            cash = float(acc.cash)
+        except:
+            cash = settings.position_size_usd
+        invest_amount = min(cash * 0.95, cash)
+        qty = round(invest_amount / price, 6)
         qty = max(qty, 0.0001)
         try:
             order = self._client.submit_order(MarketOrderRequest(

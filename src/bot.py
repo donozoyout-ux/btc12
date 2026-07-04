@@ -9,6 +9,7 @@ from src.news import news_fetcher
 from src.quant_agent import quant_agent
 from src.database import db
 from src.telegram import tg
+from src.ai_model import ai_model
 
 
 class Bot:
@@ -29,8 +30,6 @@ class Bot:
         self._satis_hata_saati = 0
         self._alpaca_uyari_gonderildi = False
         self._son_alis_saati = 0
-        self._son_fiyatlar = []
-        self._son_ai_skor = 0
 
     def start(self, mesaj_gonder=True):
         if self.running:
@@ -109,78 +108,9 @@ class Bot:
         sl_tp_str = f"SL:${sl:,.0f} TP:${tp:,.0f}" if sl > 0 else ""
         print(f"[MONITOR] ${price:,.2f} | %{pl_pct:+.2f} {sl_tp_str}")
 
-    def _ai_tahmin_hesapla(self, teknik, price):
-        self._son_fiyatlar.append(price)
-        if len(self._son_fiyatlar) > 20:
-            self._son_fiyatlar = self._son_fiyatlar[-20:]
-
-        skor = 0.5
-
-        rsi = teknik.get("rsi", 50)
-        if rsi < 30:
-            skor += 0.15
-        elif rsi < 40:
-            skor += 0.08
-        elif rsi > 70:
-            skor -= 0.15
-        elif rsi > 60:
-            skor -= 0.08
-
-        macd_hist = teknik.get("macd_hist", 0)
-        macd_prev = teknik.get("macd_hist_prev", 0)
-        if macd_hist > 0 and macd_prev <= 0:
-            skor += 0.12
-        elif macd_hist > macd_prev and macd_hist > 0:
-            skor += 0.08
-        elif macd_hist < 0 and macd_prev >= 0:
-            skor -= 0.12
-        elif macd_hist < macd_prev and macd_hist < 0:
-            skor -= 0.08
-
-        ema_cross = teknik.get("ema_cross", "")
-        if ema_cross == "bullish":
-            skor += 0.08
-        elif ema_cross == "bearish":
-            skor -= 0.08
-
-        vol_ratio = teknik.get("vol_ratio", 1.0)
-        if vol_ratio > 2.0:
-            skor += 0.05
-        elif vol_ratio < 0.5:
-            skor -= 0.03
-
-        bb_pct = teknik.get("bb_pct", 0.5)
-        if bb_pct < 0.1:
-            skor += 0.08
-        elif bb_pct > 0.9:
-            skor -= 0.08
-
-        if len(self._son_fiyatlar) >= 5:
-            son_5 = self._son_fiyatlar[-5:]
-            momentum = (son_5[-1] - son_5[0]) / son_5[0] * 100
-            if momentum > 0.3:
-                skor += 0.10
-            elif momentum < -0.3:
-                skor -= 0.10
-
-        if len(self._son_fiyatlar) >= 10:
-            son_10 = self._son_fiyatlar[-10:]
-            trend = (son_10[-1] - son_10[0]) / son_10[0] * 100
-            if trend > 0.5:
-                skor += 0.07
-            elif trend < -0.5:
-                skor -= 0.07
-
-        state = quant_agent.get_state()
-        win_rate = state.get("kazanma", 0) / max(state.get("toplam_islem", 1), 1)
-        if win_rate > 0.6:
-            skor += 0.05
-        elif win_rate < 0.3:
-            skor -= 0.05
-
-        skor = max(0.0, min(1.0, skor))
-        self._son_ai_skor = skor
-        return skor
+    def _ai_skor(self, teknik):
+        prob, conf = ai_model.predict(teknik)
+        return prob
 
     def scan(self):
         self.total_scans += 1
@@ -209,12 +139,31 @@ class Bot:
         if not teknik:
             print("  Analiz basarisiz")
             self.son_hata = "Analiz basarisiz"
+            now = time.time()
             if now - self._error_cooldown > 300:
                 tg.send("Analiz basarisiz - veri kalitesi dusuk")
                 self._error_cooldown = now
             return
 
         teknik["orderbook"] = trader.get_orderbook()
+
+        if self.total_scans % 100 == 0 and not df.empty:
+            try:
+                teknik_listesi = []
+                for i in range(min(50, len(df))):
+                    temp_df = df.iloc[max(0, i):i+30]
+                    if len(temp_df) >= 30:
+                        t = analyzer.analyze(temp_df)
+                        if t:
+                            t["orderbook"] = teknik.get("orderbook", {})
+                            teknik_listesi.append(t)
+                if len(teknik_listesi) > 10:
+                    ok = ai_model.train(df, teknik_listesi)
+                    if ok:
+                        ai_state = ai_model.get_state()
+                        print(f"[AI] Egitildi: dogruluk=%{ai_state['accuracy']*100:.0f} tahmin={ai_state['prediction_count']}")
+            except:
+                pass
 
         price = teknik["price"]
         haberler = news_fetcher.fetch_bitcoin_news(3)
@@ -264,11 +213,11 @@ class Bot:
         self.last_action = action
 
         if action == "BUY" and not acik_pozisyon:
-            ai_tahmin = self._ai_tahmin_hesapla(teknik, price)
-            print(f"  -> ALIS sinyali (guven: %{confidence:.0%} AI: {ai_tahmin:.1f})")
+            ai_prob, ai_conf = ai_model.predict(teknik)
+            print(f"  -> ALIS sinyali (guven: %{confidence:.0%} AI: {ai_prob:.0%})")
 
-            if ai_tahmin < 0.3:
-                print(f"  -> ALIS ENGELLENDI (AI skoru dusuk: {ai_tahmin:.2f})")
+            if ai_prob < 0.4 and ai_conf > 0.2:
+                print(f"  -> ALIS ENGELLENDI (AI dusus ongoruyor: %{ai_prob:.0%})")
                 return
 
             if self.auto_trade:
@@ -293,11 +242,11 @@ class Bot:
                 print(f"  -> ALIS sinyali (bekliyor, guven: %{confidence:.0%})")
 
         elif action == "SELL" and acik_pozisyon:
-            ai_tahmin = self._ai_tahmin_hesapla(teknik, price)
-            print(f"  -> SATIS sinyali (guven: %{confidence:.0%} AI: {ai_tahmin:.1f})")
+            ai_prob, ai_conf = ai_model.predict(teknik)
+            print(f"  -> SATIS sinyali (guven: %{confidence:.0%} AI: {ai_prob:.0%})")
 
-            if ai_tahmin > 0.7:
-                print(f"  -> SATIS ENGELLENDI (AI yukselis bekliyor: {ai_tahmin:.2f})")
+            if ai_prob > 0.6 and ai_conf > 0.2:
+                print(f"  -> SATIS ENGELLENDI (AI yukselis ongoruyor: %{ai_prob:.0%})")
                 return
 
             if self.auto_trade:

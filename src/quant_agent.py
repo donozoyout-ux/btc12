@@ -3,6 +3,7 @@ import os
 import numpy as np
 from datetime import datetime
 from src.config import settings
+from src.ai_model import ai_model
 
 
 class QuantAgent:
@@ -74,6 +75,8 @@ class QuantAgent:
         ardisik_kayip = self.state.get("ardisik_kayip", 0)
         risk_seviyesi = self.state.get("risk_seviyesi_ayari", "normal")
         w = self.state.get("weights", {k: 1.0 for k in ["rsi","macd","ema","bb","vol","breakout","orderbook","haber","momentum"]})
+
+        ai_prob, ai_conf = ai_model.predict(teknik_analiz)
 
         min_confidence = 0.20
         if ardisik_kayip >= settings.max_consecutive_losses:
@@ -246,6 +249,16 @@ class QuantAgent:
         elif haber_sentiment < 0:
             sell_score += abs(haber_sentiment)
 
+        ai_influence = (ai_prob - 0.5) * 2 * ai_conf * 0.3
+        if ai_influence > 0:
+            buy_score += ai_influence
+            if ai_conf > 0.3:
+                reasons.append(f"AI yukselis (%{ai_prob:.0%})")
+        elif ai_influence < 0:
+            sell_score += abs(ai_influence)
+            if ai_conf > 0.3:
+                reasons.append(f"AI dusus (%{(1-ai_prob):.0%})")
+
         if not acik_pozisyon:
             if buy_score >= min_confidence and buy_score > sell_score:
                 direction = "BUY"
@@ -254,11 +267,7 @@ class QuantAgent:
                 sl_price = round(fiyat - 1.5 * atr, 2)
                 tp_price = round(fiyat + 3 * atr, 2)
 
-                portfolio_value = usdt_bakiye + (btc_bakiye * fiyat)
-                risk_amount = portfolio_value * (settings.risk_per_trade / 100)
-                risk_per_unit = abs(fiyat - sl_price)
-                size_pct = round((risk_amount / risk_per_unit * fiyat) / portfolio_value * 100, 2) if risk_per_unit > 0 and portfolio_value > 0 else 0
-                size_pct = min(max(size_pct, 1), 95)
+                size_pct = min(max(confidence * 95, 5), 95)
 
                 self.state["son_sinyal"] = {
                     "action": "BUY",
@@ -290,10 +299,7 @@ class QuantAgent:
         else:
             mevcut_kar = (fiyat - giris_fiyati) / giris_fiyati * 100 if giris_fiyati > 0 else 0
 
-            kar_engel = mevcut_kar > 0 and mevcut_kar < 0.5
-            yeni_kar_sart = mevcut_kar > 0 and mevcut_kar < 0.3 and sell_score > buy_score * 3.0
-
-            if sell_score > buy_score * 2.5 and sell_score >= min_confidence and not kar_engel and not yeni_kar_sart:
+            if sell_score > buy_score and sell_score >= min_confidence:
                 direction = "SELL"
                 confidence = min(sell_score, 1.0)
 
