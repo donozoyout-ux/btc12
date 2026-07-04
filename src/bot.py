@@ -29,10 +29,8 @@ class Bot:
         self._satis_hata_saati = 0
         self._alpaca_uyari_gonderildi = False
         self._son_alis_saati = 0
-        self._min_hold_sure = 1800
-        self._alis_onay_sayisi = 0
-        self._alis_onay_gerekli = 3
-        self._son_buy_sinyal_fiyati = 0
+        self._son_fiyatlar = []
+        self._son_ai_skor = 0
 
     def start(self, mesaj_gonder=True):
         if self.running:
@@ -110,6 +108,79 @@ class Bot:
 
         sl_tp_str = f"SL:${sl:,.0f} TP:${tp:,.0f}" if sl > 0 else ""
         print(f"[MONITOR] ${price:,.2f} | %{pl_pct:+.2f} {sl_tp_str}")
+
+    def _ai_tahmin_hesapla(self, teknik, price):
+        self._son_fiyatlar.append(price)
+        if len(self._son_fiyatlar) > 20:
+            self._son_fiyatlar = self._son_fiyatlar[-20:]
+
+        skor = 0.5
+
+        rsi = teknik.get("rsi", 50)
+        if rsi < 30:
+            skor += 0.15
+        elif rsi < 40:
+            skor += 0.08
+        elif rsi > 70:
+            skor -= 0.15
+        elif rsi > 60:
+            skor -= 0.08
+
+        macd_hist = teknik.get("macd_hist", 0)
+        macd_prev = teknik.get("macd_hist_prev", 0)
+        if macd_hist > 0 and macd_prev <= 0:
+            skor += 0.12
+        elif macd_hist > macd_prev and macd_hist > 0:
+            skor += 0.08
+        elif macd_hist < 0 and macd_prev >= 0:
+            skor -= 0.12
+        elif macd_hist < macd_prev and macd_hist < 0:
+            skor -= 0.08
+
+        ema_cross = teknik.get("ema_cross", "")
+        if ema_cross == "bullish":
+            skor += 0.08
+        elif ema_cross == "bearish":
+            skor -= 0.08
+
+        vol_ratio = teknik.get("vol_ratio", 1.0)
+        if vol_ratio > 2.0:
+            skor += 0.05
+        elif vol_ratio < 0.5:
+            skor -= 0.03
+
+        bb_pct = teknik.get("bb_pct", 0.5)
+        if bb_pct < 0.1:
+            skor += 0.08
+        elif bb_pct > 0.9:
+            skor -= 0.08
+
+        if len(self._son_fiyatlar) >= 5:
+            son_5 = self._son_fiyatlar[-5:]
+            momentum = (son_5[-1] - son_5[0]) / son_5[0] * 100
+            if momentum > 0.3:
+                skor += 0.10
+            elif momentum < -0.3:
+                skor -= 0.10
+
+        if len(self._son_fiyatlar) >= 10:
+            son_10 = self._son_fiyatlar[-10:]
+            trend = (son_10[-1] - son_10[0]) / son_10[0] * 100
+            if trend > 0.5:
+                skor += 0.07
+            elif trend < -0.5:
+                skor -= 0.07
+
+        state = quant_agent.get_state()
+        win_rate = state.get("kazanma", 0) / max(state.get("toplam_islem", 1), 1)
+        if win_rate > 0.6:
+            skor += 0.05
+        elif win_rate < 0.3:
+            skor -= 0.05
+
+        skor = max(0.0, min(1.0, skor))
+        self._son_ai_skor = skor
+        return skor
 
     def scan(self):
         self.total_scans += 1
@@ -193,24 +264,12 @@ class Bot:
         self.last_action = action
 
         if action == "BUY" and not acik_pozisyon:
-            if self._son_buy_sinyal_fiyati > 0:
-                fiyat_fark = abs(price - self._son_buy_sinyal_fiyati) / self._son_buy_sinyal_fiyati * 100
-                if fiyat_fark < 2.0:
-                    self._alis_onay_sayisi += 1
-                else:
-                    self._alis_onay_sayisi = 1
-                    self._son_buy_sinyal_fiyati = price
-            else:
-                self._alis_onay_sayisi = 1
-                self._son_buy_sinyal_fiyati = price
+            ai_tahmin = self._ai_tahmin_hesapla(teknik, price)
+            print(f"  -> ALIS sinyali (guven: %{confidence:.0%} AI: {ai_tahmin:.1f})")
 
-            print(f"  -> ALIS sinyali #{self._alis_onay_sayisi}/{self._alis_onay_gerekli} (guven: %{confidence:.0%})")
-
-            if self._alis_onay_sayisi < self._alis_onay_gerekli:
+            if ai_tahmin < 0.3:
+                print(f"  -> ALIS ENGELLENDI (AI skoru dusuk: {ai_tahmin:.2f})")
                 return
-
-            self._alis_onay_sayisi = 0
-            self._son_buy_sinyal_fiyati = 0
 
             if self.auto_trade:
                 self.bekleyen_alis = karar
@@ -234,10 +293,13 @@ class Bot:
                 print(f"  -> ALIS sinyali (bekliyor, guven: %{confidence:.0%})")
 
         elif action == "SELL" and acik_pozisyon:
-            pos_suresi = time.time() - self._son_alis_saati if self._son_alis_saati > 0 else 9999
-            if pos_suresi < self._min_hold_sure:
-                print(f"  -> SATIS ENGELLENDI (bekleme: {pos_suresi:.0f}s / {self._min_hold_sure}s)")
+            ai_tahmin = self._ai_tahmin_hesapla(teknik, price)
+            print(f"  -> SATIS sinyali (guven: %{confidence:.0%} AI: {ai_tahmin:.1f})")
+
+            if ai_tahmin > 0.7:
+                print(f"  -> SATIS ENGELLENDI (AI yukselis bekliyor: {ai_tahmin:.2f})")
                 return
+
             if self.auto_trade:
                 self.bekleyen_satis = karar
                 self._satisi_gerceklestir("Oto satis")
