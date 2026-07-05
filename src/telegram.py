@@ -220,11 +220,10 @@ class TelegramBot:
             return
 
         durum = "AKTIF" if data.get("running") else "DURDU"
-        mod = "OTO" if data.get("auto_trade") else "ONAYLI"
         msg = (
             f"<b>DURUM</b>\n\n"
             f"Bot: <b>{durum}</b>\n"
-            f"Mod: <b>{mod}</b>\n"
+            f"Mod: <b>OTO</b>\n"
             f"Portfoy: <code>${data.get('portfolio_value', 0):,.2f}</code>\n"
             f"Nakit: <code>${data.get('cash', 0):,.2f}</code>\n"
             f"Pozisyon: {data.get('pozisyon_durumu', 'Yok')}\n"

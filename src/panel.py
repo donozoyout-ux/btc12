@@ -94,7 +94,7 @@ SCAN
 </div>
 </header>
 <main class="p-4 space-y-4 max-w-[1600px] mx-auto">
-<section class="grid grid-cols-1 md:grid-cols-5 gap-4" data-purpose="top-stats-cards">
+<section class="grid grid-cols-1 md:grid-cols-6 gap-4" data-purpose="top-stats-cards">
 <div class="bg-surface-low p-4 rounded border border-white/5 text-center">
 <p class="text-[10px] text-gray-500 font-bold uppercase mb-2 tracking-widest">PORTFOY</p>
 <h2 class="text-2xl font-bold font-mono text-white" id="sPortfolio">$0</h2>
@@ -109,11 +109,15 @@ SCAN
 </div>
 <div class="bg-surface-low p-4 rounded border border-white/5 text-center">
 <p class="text-[10px] text-gray-500 font-bold uppercase mb-2 tracking-widest">İŞLEM</p>
-<h2 class="text-2xl font-bold font-mono text-white" id="sMode">ONAYLI</h2>
+<h2 class="text-2xl font-bold font-mono text-green-400">OTO</h2>
 </div>
 <div class="bg-surface-low p-4 rounded border border-white/5 text-center">
 <p class="text-[10px] text-gray-500 font-bold uppercase mb-2 tracking-widest">TARAMA</p>
 <h2 class="text-2xl font-bold font-mono text-white" id="sScans">0</h2>
+</div>
+<div class="bg-surface-low p-4 rounded border border-blue-500/20 text-center">
+<p class="text-[10px] text-gray-500 font-bold uppercase mb-2 tracking-widest">AI MODEL</p>
+<h2 class="text-lg font-bold font-mono text-blue-400" id="sAiAccuracy">---</h2>
 </div>
 </section>
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4" style="height:calc(100vh - 220px)">
@@ -228,12 +232,18 @@ badge.className='flex items-center gap-2 px-3 py-1 bg-red/10 border border-red/2
 document.getElementById('sPortfolio').textContent='$'+(d.portfolio_value||0).toLocaleString(undefined,{minimumFractionDigits:2});
 document.getElementById('sCash').textContent='$'+(d.cash||0).toLocaleString(undefined,{minimumFractionDigits:2});
 document.getElementById('sScans').textContent=d.total_scans||0;
-document.getElementById('sMode').textContent=d.auto_trade?'OTO':'ONAYLI';
 
 var pl=d.kar_zarar||0;
 var plEl=document.getElementById('sPnl');
 plEl.textContent='$'+(pl>=0?'+':'')+pl.toFixed(2);
 plEl.className='text-2xl font-mono font-bold '+(pl>=0?'text-green-400':'text-red-400');
+
+var aiEl=document.getElementById('sAiAccuracy');
+if(d.ai_trained){
+aiEl.innerHTML='%'+(d.ai_accuracy*100).toFixed(0)+' ACC <span class="text-[10px] text-gray-500">'+d.ai_prediction_count+'t</span>';
+}else{
+aiEl.textContent='EGITIM BEKLENIYOR';
+}
 
 }).catch(()=>{});
 
@@ -242,7 +252,7 @@ var stats=m.stats||{};
 var scans=m.scans||[];
 var items=m.trades||[];
 
-document.getElementById('tradeCount').textContent=stats.toplam_islem||items.length;
+document.getElementById('tradeCount').textContent=stats.toplam_islem||0;
 
 var scanBody=document.getElementById('scanBody');
 if(scans.length>0){
@@ -258,7 +268,7 @@ sh+='<td class="px-4 py-3 text-right">'+(s.rsi||0).toFixed(1)+'</td>';
 sh+='<td class="px-4 py-3 text-right">'+(s.ema||0).toLocaleString(undefined,{minimumFractionDigits:2})+'</td>';
 sh+='<td class="px-4 py-3 text-right">'+(s.macd_hist||0).toFixed(1)+'</td>';
 sh+='<td class="px-4 py-3 text-center"><span class="px-2 py-0.5 rounded text-[9px] font-bold '+actionBg+'">'+s.action+'</span></td>';
-sh+='<td class="px-4 py-3 text-right '+pctColor+'">'+(s.confidence*100).toFixed(2)+'</td></tr>';
+sh+='<td class="px-4 py-3 text-right '+pctColor+'">'+(s.confidence*100).toFixed(0)+'%</td></tr>';
 });
 scanBody.innerHTML=sh;
 }else{
@@ -269,19 +279,24 @@ var tradeList=document.getElementById('tradeList');
 if(items.length>0){
 var html='';
 items.forEach(function(t){
-var color=t.pnl>=0?'text-green-400':'text-red-400';
 var actionColor=t.action==='BUY'?'text-green-400':'text-red-400';
-var pctBg=t.pnl>=0?'bg-green-500/10':'bg-red-500/10';
 var time=t.time||'';
 if(time.length>10)time=time.substring(11,19);
-html+='<div class="bg-surface-lowest p-3 rounded border border-white/5 flex items-center justify-between text-[11px] font-mono trade-item">';
-html+='<div class="flex items-center space-x-3">';
-html+='<span class="text-gray-500">['+time+']</span>';
-html+='<span class="font-bold '+actionColor+'">'+t.action+'</span>';
-html+='<span class="text-white">'+Number(t.price).toLocaleString(undefined,{minimumFractionDigits:2})+'</span>';
+var modeBadge=t.mode==='REAL'?'<span class="text-[8px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30 font-bold">REAL</span>':'<span class="text-[8px] px-1 py-0.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 font-bold">SIM</span>';
+var pnlStr=t.pnl!==0?(t.pnl>=0?'+'+t.pnl.toFixed(2):t.pnl.toFixed(2)):'---';
+var pnlColor=t.pnl>0?'text-green-400':t.pnl<0?'text-red-400':'text-gray-500';
+var reasonStr=t.reason?t.reason.substring(0,15):'';
+html+='<div class="bg-surface-lowest p-2.5 rounded border border-white/5 flex items-center justify-between text-[10px] font-mono trade-item">';
+html+='<div class="flex items-center space-x-2 flex-shrink-0">';
+html+='<span class="text-gray-500 w-[52px]">'+time+'</span>';
+html+='<span class="font-bold '+actionColor+' w-[32px]">'+t.action+'</span>';
+html+=modeBadge;
 html+='</div>';
-html+='<span class="px-2 py-0.5 rounded '+pctBg+' '+color+'">'+(t.pnl>=0?'+':'')+t.pnl.toFixed(2)+'%</span>';
-html+='</div>';
+html+='<div class="flex items-center space-x-2 min-w-0 ml-2 flex-1 justify-end">';
+html+='<span class="text-white">$'+Number(t.price).toLocaleString(undefined,{minimumFractionDigits:0})+'</span>';
+if(reasonStr){html+='<span class="text-gray-500 truncate max-w-[70px]">'+reasonStr+'</span>';}
+html+='<span class="px-1.5 py-0.5 rounded text-[9px] font-bold '+pnlColor+'">'+pnlStr+'</span>';
+html+='</div></div>';
 });
 tradeList.innerHTML=html;
 }else{
@@ -310,8 +325,8 @@ def api_status():
 @app.route('/api/memory')
 def api_memory():
     stats = db.get_stats()
-    trades = db.get_trade_history(20)
-    scans = db.get_recent_scans(10)
+    trades = db.get_trade_history(50)
+    scans = db.get_recent_scans(20)
     state = quant_agent.get_state()
     return jsonify({"stats": stats, "trades": trades, "scans": scans, "state": state})
 

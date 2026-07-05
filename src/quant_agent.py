@@ -249,7 +249,7 @@ class QuantAgent:
         elif haber_sentiment < 0:
             sell_score += abs(haber_sentiment)
 
-        ai_influence = (ai_prob - 0.5) * 2 * ai_conf * 0.3
+        ai_influence = (ai_prob - 0.5) * 2 * ai_conf * 0.5
         if ai_influence > 0:
             buy_score += ai_influence
             if ai_conf > 0.3:
@@ -363,7 +363,7 @@ class QuantAgent:
         indicators = son_sinyal.get("indicators", [])
         action = son_sinyal.get("action", "")
 
-        if action == "SELL" and indicators:
+        if indicators:
             hits = self.state["weight_hits"]
             misses = self.state["weight_misses"]
             for ind in indicators:

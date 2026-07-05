@@ -45,7 +45,8 @@ class Database:
                     qty REAL,
                     pnl REAL,
                     reason TEXT,
-                    entry_price REAL
+                    entry_price REAL,
+                    mode TEXT DEFAULT 'SIM'
                 )
             """)
             conn.execute("""
@@ -58,6 +59,10 @@ class Database:
                     notified_to TEXT DEFAULT 'telegram'
                 )
             """)
+            try:
+                conn.execute("ALTER TABLE trades ADD COLUMN mode TEXT DEFAULT 'SIM'")
+            except:
+                pass
             conn.commit()
         finally:
             conn.close()
@@ -76,12 +81,12 @@ class Database:
         finally:
             conn.close()
 
-    def save_trade(self, action, price, qty, pnl=0, reason="", entry_price=0):
+    def save_trade(self, action, price, qty, pnl=0, reason="", entry_price=0, mode="SIM"):
         conn = self._conn()
         try:
             conn.execute(
-                "INSERT INTO trades (created_at, action, price, qty, pnl, reason, entry_price) VALUES (?,?,?,?,?,?,?)",
-                (datetime.now().isoformat(), action, price, qty, pnl, reason, entry_price)
+                "INSERT INTO trades (created_at, action, price, qty, pnl, reason, entry_price, mode) VALUES (?,?,?,?,?,?,?,?)",
+                (datetime.now().isoformat(), action, price, qty, pnl, reason, entry_price, mode)
             )
             conn.commit()
         finally:
@@ -106,6 +111,7 @@ class Database:
             losses = conn.execute("SELECT COUNT(*) FROM trades WHERE action='SELL' AND pnl < 0").fetchone()[0]
             total_pnl = conn.execute("SELECT COALESCE(SUM(pnl), 0) FROM trades WHERE action='SELL'").fetchone()[0]
             scan_count = conn.execute("SELECT COUNT(*) FROM scans").fetchone()[0]
+            total_buys = conn.execute("SELECT COUNT(*) FROM trades WHERE action='BUY'").fetchone()[0]
             return {
                 "toplam_islem": total,
                 "kazanma": wins,
@@ -113,6 +119,7 @@ class Database:
                 "kazanma_orani": round(wins / total * 100, 1) if total > 0 else 0,
                 "toplam_kar_zarar": round(total_pnl, 2),
                 "toplam_tarama": scan_count,
+                "toplam_alim": total_buys,
             }
         finally:
             conn.close()
@@ -121,7 +128,7 @@ class Database:
         conn = self._conn()
         try:
             rows = conn.execute(
-                "SELECT created_at, action, price, qty, pnl, reason, entry_price FROM trades ORDER BY id DESC LIMIT ?",
+                "SELECT created_at, action, price, qty, pnl, reason, entry_price, mode FROM trades ORDER BY id DESC LIMIT ?",
                 (limit,)
             ).fetchall()
             return [
@@ -133,6 +140,7 @@ class Database:
                     "pnl": round(r[4], 2) if r[4] else 0,
                     "reason": r[5] or "",
                     "entry_price": r[6] or 0,
+                    "mode": r[7] or "SIM",
                 }
                 for r in rows
             ]

@@ -16,19 +16,12 @@ class Bot:
     def __init__(self):
         self.running = False
         self.paused = False
-        self.auto_trade = False
         self.total_scans = 0
         self.last_scan = None
         self.last_action = None
-        self.last_notified_action = None
         self.bekleyen_alis = None
         self.bekleyen_satis = None
         self.son_hata = None
-        self._last_error_sent = None
-        self._error_cooldown = 0
-        self._alis_hata_saati = 0
-        self._satis_hata_saati = 0
-        self._alpaca_uyari_gonderildi = False
         self._son_alis_saati = 0
 
     def start(self, mesaj_gonder=True):
@@ -38,7 +31,6 @@ class Bot:
             return
         self.running = True
         self.paused = False
-        self.auto_trade = True
         if mesaj_gonder:
             try:
                 tg.send(
@@ -108,8 +100,8 @@ class Bot:
         sl_tp_str = f"SL:${sl:,.0f} TP:${tp:,.0f}" if sl > 0 else ""
         print(f"[MONITOR] ${price:,.2f} | %{pl_pct:+.2f} {sl_tp_str}")
 
-    def _ai_skor(self, teknik):
-        prob, conf = ai_model.predict(teknik)
+    def _ai_skor(self, teknik, teknik_5m=None):
+        prob, conf = ai_model.predict(teknik, teknik_5m)
         return prob
 
     def scan(self):
@@ -119,6 +111,7 @@ class Bot:
 
         try:
             df = trader.get_bars(100)
+            df_5m = trader.get_bars(100, '5m')
         except Exception as e:
             print(f"  Veri hatasi: {e}")
             self.son_hata = f"Veri: {e}"
@@ -147,9 +140,18 @@ class Bot:
 
         teknik["orderbook"] = trader.get_orderbook()
 
-        if self.total_scans % 100 == 0 and not df.empty:
+        teknik_5m = analyzer.analyze(df_5m) if not df_5m.empty else None
+        if teknik_5m:
+            teknik_5m["orderbook"] = teknik.get("orderbook", {})
+
+        anomaly = ai_model.detect_anomaly(teknik["price"], teknik.get("vol_ratio", 1))
+        if anomaly["is_anomaly"]:
+            print(f"  [ANOMALI] Skor: {anomaly['anomaly_score']}")
+
+        if self.total_scans % 50 == 0 and not df.empty:
             try:
                 teknik_listesi = []
+                teknik_listesi_5m = []
                 for i in range(min(50, len(df))):
                     temp_df = df.iloc[max(0, i):i+30]
                     if len(temp_df) >= 30:
@@ -157,8 +159,10 @@ class Bot:
                         if t:
                             t["orderbook"] = teknik.get("orderbook", {})
                             teknik_listesi.append(t)
+                            if teknik_5m:
+                                teknik_listesi_5m.append(teknik_5m)
                 if len(teknik_listesi) > 10:
-                    ok = ai_model.train(df, teknik_listesi)
+                    ok = ai_model.train(df, teknik_listesi, teknik_listesi_5m if teknik_listesi_5m else None)
                     if ok:
                         ai_state = ai_model.get_state()
                         print(f"[AI] Egitildi: dogruluk=%{ai_state['accuracy']*100:.0f} tahmin={ai_state['prediction_count']}")
@@ -213,57 +217,29 @@ class Bot:
         self.last_action = action
 
         if action == "BUY" and not acik_pozisyon:
-            ai_prob, ai_conf = ai_model.predict(teknik)
+            ai_prob, ai_conf = ai_model.predict(teknik, teknik_5m)
             print(f"  -> ALIS sinyali (guven: %{confidence:.0%} AI: {ai_prob:.0%})")
 
             if ai_prob < 0.4 and ai_conf > 0.2:
                 print(f"  -> ALIS ENGELLENDI (AI dusus ongoruyor: %{ai_prob:.0%})")
                 return
 
-            if self.auto_trade:
-                self.bekleyen_alis = karar
-                quant_agent.state["son_sl"] = karar["execution"]["stop_loss"]
-                quant_agent.state["son_tp"] = karar["execution"]["take_profit"]
-                quant_agent._save_state()
-                self.alisi_onayla()
-            elif self.last_notified_action != "BUY" and self.bekleyen_alis is None:
-                sl = karar["execution"]["stop_loss"]
-                tp = karar["execution"]["take_profit"]
-                quant_agent.state["son_sl"] = sl
-                quant_agent.state["son_tp"] = tp
-                quant_agent._save_state()
-                reason = karar["memory_update"]["aktif_strateji_notu"]
-                tg.send_buy_signal(price, confidence * 100, sl, tp, reason)
-                db.save_signal("BUY", price, confidence)
-                self.bekleyen_alis = karar
-                self.last_notified_action = "BUY"
-                print(f"  -> ALIS bildirimi gonderildi (guven: %{confidence:.0%})")
-            else:
-                print(f"  -> ALIS sinyali (bekliyor, guven: %{confidence:.0%})")
+            self.bekleyen_alis = karar
+            quant_agent.state["son_sl"] = karar["execution"]["stop_loss"]
+            quant_agent.state["son_tp"] = karar["execution"]["take_profit"]
+            quant_agent._save_state()
+            self._alisi_gerceklestir(karar)
 
         elif action == "SELL" and acik_pozisyon:
-            ai_prob, ai_conf = ai_model.predict(teknik)
+            ai_prob, ai_conf = ai_model.predict(teknik, teknik_5m)
             print(f"  -> SATIS sinyali (guven: %{confidence:.0%} AI: {ai_prob:.0%})")
 
             if ai_prob > 0.6 and ai_conf > 0.2:
                 print(f"  -> SATIS ENGELLENDI (AI yukselis ongoruyor: %{ai_prob:.0%})")
                 return
 
-            if self.auto_trade:
-                self.bekleyen_satis = karar
-                self._satisi_gerceklestir("Oto satis")
-            elif self.last_notified_action != "SELL" and self.bekleyen_satis is None:
-                entry = giris_fiyati
-                kar_zarar = pos["unrealized_pl"]
-                yuzde = (price - entry) / entry * 100
-                reason = karar["memory_update"]["aktif_strateji_notu"]
-                tg.send_sell_signal(price, entry, kar_zarar, yuzde, reason)
-                db.save_signal("SELL", price, confidence)
-                self.bekleyen_satis = karar
-                self.last_notified_action = "SELL"
-                print(f"  -> SATIS bildirimi gonderildi (guven: %{confidence:.0%})")
-            else:
-                print(f"  -> SATIS sinyali (bekliyor, guven: %{confidence:.0%})")
+            self.bekleyen_satis = karar
+            self._satisi_gerceklestir("AI sinyali")
         else:
             print(f"  -> {action} (%{confidence:.0%})")
 
@@ -278,102 +254,57 @@ class Bot:
             )
 
     def alisi_onayla(self):
-        if self.bekleyen_alis is None:
+        if self.bekleyen_alis:
+            self._alisi_gerceklestir(self.bekleyen_alis)
+        else:
             tg.send("Bekleyen alis yok.")
-            return
-        karar = self.bekleyen_alis
-        size_pct = karar["execution"]["size_percentage"]
+
+    def _alisi_gerceklestir(self, karar):
         try:
+            size_pct = karar["execution"]["size_percentage"]
             result = executor.buy(size_pct)
             if result:
-                is_sim = result.get("order_id", "") == "dry_buy"
-                if is_sim:
-                    if not self._alpaca_uyari_gonderildi:
-                        self._alpaca_uyari_gonderildi = True
-                        self.auto_trade = False
-                        tg.send(
-                            f"\u26a0\ufe0f <b>Alpaca baglanti hatasi</b>\n\n"
-                            f"API anahtarlari gecersiz. Bot <b>manuel moda</b> gecirildi.\n"
-                            f"Simulasyon modunda calisiyor.\n\n"
-                            f"Dueltmek icin:\n"
-                            f"1. Guncel API key gir\n"
-                            f"2. <code>/oto</code> ile tekrar aktif et"
-                        )
-                        print("[BOT] Alpaca unauthorized, auto_trade kapatildi, simulasyon modu")
-                        return
-                    tg.send(f"\U0001f7e2 <b>SIMULASYON ALIS</b>\n\n"
-                            f"Miktar: <code>{result['qty']:.6f} BTC</code>\n"
-                            f"Fiyat: <code>${result['price']:,.2f}</code>\n\n"
-                            f"\u26a0\ufe0f Gercek Alpaca emri gonderilemedi, simulasyon")
-                else:
-                    tg.send_islem_sonucu("BUY", result["price"], result["qty"])
-                    quant_agent.state["son_giris_fiyati"] = result["price"]
-                    quant_agent._save_state()
-                    db.save_trade("BUY", result["price"], result["qty"], 0, "Kullanici onayi", result["price"])
+                db.save_trade("BUY", result["price"], result["qty"], 0, "AI sinyali", result["price"], result.get("mode", "SIM"))
+                quant_agent.state["son_giris_fiyati"] = result["price"]
+                quant_agent._save_state()
                 self.bekleyen_alis = None
                 self.bekleyen_satis = None
-                self.last_notified_action = None
-                self._alis_hata_saati = 0
                 self._son_alis_saati = time.time()
-                print(f"[BOT] {'SIMULASYON ' if is_sim else ''}ALIS gerceklesti: {result['qty']:.6f} BTC @ ${result['price']:,.2f}")
+                is_sim = result.get("mode", "SIM") == "SIM"
+                tag = "SIMULASYON " if is_sim else ""
+                print(f"[BOT] {tag}ALIS: {result['qty']:.6f} BTC @ ${result['price']:,.2f}")
+                tg.send_islem_sonucu("BUY", result["price"], result["qty"])
         except Exception as e:
-            err_same = str(e)[:80] == self._last_error_sent
-            cooldown_active = (time.time() - self._alis_hata_saati) < 300
-            if err_same and cooldown_active:
-                print(f"[BOT] ALIS HATASI tekrari engellendi (cooldown): {str(e)[:100]}")
-                return
-            self._alis_hata_saati = time.time()
-            self._last_error_sent = str(e)[:80]
+            self.son_hata = f"ALIS: {str(e)[:100]}"
+            print(f"[BOT] ALIS HATASI: {e}")
             tg.send(f"<b>ALIS HATASI</b>\n<code>{str(e)[:200]}</code>")
 
     def satisi_onayla(self):
-        if self.bekleyen_satis is None:
+        if self.bekleyen_satis:
+            self._satisi_gerceklestir("Kullanici onayi")
+        else:
             tg.send("Bekleyen satis yok.")
-            return
-        self._satisi_gerceklestir("Kullanici onayi")
 
     def _satisi_gerceklestir(self, sebep):
         try:
             result = executor.sell()
             if result:
                 pl = result.get("pl", 0)
-                is_sim = result.get("order_id", "") == "dry_sell"
-                if is_sim:
-                    tg.send(f"\U0001f534 <b>SIMULASYON SATIS</b>\n\n"
-                            f"Miktar: <code>{result['qty']:.6f} BTC</code>\n"
-                            f"Fiyat: <code>${result['price']:,.2f}</code>\n"
-                            f"K/Z: <code>${pl:+,.2f}</code>\n"
-                            f"Sebep: {sebep}\n\n"
-                            f"\u26a0\ufe0f Simulasyon modu")
-                else:
-                    quant_agent.islem_sonucu_kaydet(pl)
-                    tg.send_islem_sonucu("SELL", result["price"], result["qty"], pl)
-                    db.save_trade("SELL", result["price"], result["qty"], pl, sebep, quant_agent.state.get("son_giris_fiyati", 0))
+                mode = result.get("mode", "SIM")
+                quant_agent.islem_sonucu_kaydet(pl)
+                db.save_trade("SELL", result["price"], result["qty"], pl, sebep, quant_agent.state.get("son_giris_fiyati", 0), mode)
                 self.bekleyen_alis = None
                 self.bekleyen_satis = None
-                self.last_notified_action = None
                 quant_agent.state["son_sl"] = 0
                 quant_agent.state["son_tp"] = 0
                 quant_agent._save_state()
-                self._satis_hata_saati = 0
-                print(f"[BOT] SATIS gerceklesti: K/Z ${pl:+,.2f} ({sebep})")
+                is_sim = mode == "SIM"
+                tag = "SIMULASYON " if is_sim else ""
+                print(f"[BOT] {tag}SATIS: K/Z ${pl:+,.2f} ({sebep})")
+                tg.send_islem_sonucu("SELL", result["price"], result["qty"], pl)
         except Exception as e:
-            now = time.time()
-            err_key = str(e)[:80]
-            is_unauth = "unauthorized" in str(e).lower() or "auth" in str(e).lower() or "401" in str(e)
-            if is_unauth and not self._alpaca_uyari_gonderildi:
-                self._alpaca_uyari_gonderildi = True
-                self.auto_trade = False
-                tg.send(f"\u26a0\ufe0f <b>Alpaca baglanti hatasi</b> - Manuel moda gecildi")
-                print("[BOT] Alpaca unauthorized (sell), simulasyon modu")
-                return
-            err_same = err_key == self._last_error_sent
-            cooldown_active = (now - self._satis_hata_saati) < 300
-            if err_same and cooldown_active:
-                print(f"[BOT] SATIS HATASI tekrari engellendi (cooldown): {str(e)[:100]}")
-                return
-            self._satis_hata_saati = now
-            self._last_error_sent = err_key
+            self.son_hata = f"SATIS: {str(e)[:100]}"
+            print(f"[BOT] SATIS HATASI: {e}")
             tg.send(f"<b>SATIS HATASI</b>\n<code>{str(e)[:200]}</code>")
 
     def miktar_goster(self, deger=None):
@@ -487,18 +418,12 @@ class Bot:
             "<code>/fiyat</code> - BTC fiyat + indikatorler\n"
             "<code>/portfoy</code> - Portfoy detayi\n"
             "<code>/kar</code> - Kar/zarar ozeti\n"
-            "<code>/son</code> - Son 5 islem\n"
-            "<code>/oto</code> - Oto-alim modu\n"
-            "<code>/manuel</code> - Onayli mod\n"
-            "<code>/onay</code> - Alisi onayla\n"
-            "<code>/sat</code> - Satisi onayla\n"
-            "<code>/iptal</code> - Islemi iptal\n"
+            "<code>/son</code> - Son islemler\n"
             "<code>/miktar 100</code> - Miktar ayarla\n"
             "<code>/artir 50</code> - Miktar artir\n"
             "<code>/azalt 25</code> - Miktar azalt\n"
             "<code>/durdur</code> - Taramayi duraklat\n"
-            "<code>/devam</code> - Taramaya devam\n"
-            "<code>/sifirla</code> - Bekleyen sinyalleri temizle"
+            "<code>/devam</code> - Taramaya devam"
         )
         tg.send(msg)
 
@@ -510,21 +435,16 @@ class Bot:
         self.paused = False
         tg.send("▶ Tarama devam ediyor.")
 
-    def cmd_sifirla(self):
-        self.bekleyen_alis = None
-        self.bekleyen_satis = None
-        self.last_notified_action = None
-        tg.send("Bekleyen sinyaller temizlendi.")
-
     def get_status(self):
         try:
             acc = executor.get_account()
             pos = executor.get_position()
             state = quant_agent.get_state()
+            ai_state = ai_model.get_state()
             return {
                 "running": self.running,
                 "paused": self.paused,
-                "auto_trade": self.auto_trade,
+                "auto_trade": True,
                 "total_scans": self.total_scans,
                 "last_scan": self.last_scan,
                 "portfolio_value": acc.get("portfolio_value", 0),
@@ -537,6 +457,9 @@ class Bot:
                 "kaybetme": state.get("kaybetme", 0),
                 "son_hata": self.son_hata,
                 "son_fiyat": trader.get_price() if self.running else 0,
+                "ai_accuracy": ai_state.get("accuracy", 0),
+                "ai_prediction_count": ai_state.get("prediction_count", 0),
+                "ai_trained": ai_state.get("is_trained", False),
             }
         except Exception as e:
             return {"running": self.running, "error": str(e), "son_hata": self.son_hata}
@@ -549,11 +472,7 @@ def setup_telegram():
     tg.on_start(lambda: bot.start())
     tg.on_stop(lambda: bot.stop())
     tg.on_scan(lambda: bot.scan())
-    tg.on_buy_onay(lambda: bot.alisi_onayla())
-    tg.on_sell_onay(lambda: bot.satisi_onayla())
     tg.on_status(lambda: tg.send_durum(bot.get_status()))
-    tg.on_oto(lambda: toggle_auto(True))
-    tg.on_manuel(lambda: toggle_auto(False))
     tg.on_miktar(lambda val: bot.miktar_goster(val))
     tg.on_artir(lambda val: bot.miktar_artir(val))
     tg.on_azalt(lambda val: bot.miktar_azalt(val))
@@ -564,20 +483,4 @@ def setup_telegram():
     tg.on_yardim(lambda: bot.cmd_yardim())
     tg.on_durdur(lambda: bot.cmd_durdur())
     tg.on_devam(lambda: bot.cmd_devam())
-    tg.on_sifirla(lambda: bot.cmd_sifirla())
     tg.start_polling()
-
-
-def toggle_auto(enabled):
-    bot.auto_trade = enabled
-    if enabled:
-        bot._alpaca_uyari_gonderildi = False
-        if executor._client is None and settings.alpaca_api_key and settings.alpaca_secret_key:
-            try:
-                executor._init_alpaca()
-                print("[BOT] Alpaca yeniden baglaniyor...")
-            except:
-                pass
-        tg.send("Mod: <b>OTO</b>")
-    else:
-        tg.send("Mod: <b>ONAYLI</b>")

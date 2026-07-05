@@ -112,7 +112,7 @@ class Executor:
         self._sim_btc += qty
         self._sim_entry = price
         settings.last_entry_price = price
-        return {"price": price, "qty": round(qty, 6), "order_id": "dry_buy"}
+        return {"price": price, "qty": round(qty, 6), "order_id": "dry_buy", "mode": "SIM"}
 
     def _dry_sell(self):
         if self._sim_btc <= 0.0001:
@@ -122,7 +122,7 @@ class Executor:
         pnl = (price - self._sim_entry) * sell_qty
         self._sim_balance += price * sell_qty
         self._sim_btc = 0.0
-        return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": "dry_sell"}
+        return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": "dry_sell", "mode": "SIM"}
 
     def _fallback_simulation(self, reason=""):
         print(f"[EXECUTOR] Alpaca basarisiz, simulasyon moduna geciliyor: {reason}")
@@ -148,7 +148,7 @@ class Executor:
                 time_in_force=TimeInForce.GTC
             ))
             settings.last_entry_price = price
-            return {"price": price, "qty": round(qty, 6), "order_id": str(order.id)}
+            return {"price": price, "qty": round(qty, 6), "order_id": str(order.id), "mode": "REAL"}
         except Exception as e:
             self._fallback_simulation(str(e)[:100])
             return self._dry_buy(100)
@@ -162,7 +162,7 @@ class Executor:
             self._client.close_position(ALPACA_SYMBOL)
             pnl = pos.get("unrealized_pl", 0)
             price = trader.get_price()
-            return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": "close_position"}
+            return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": "close_position", "mode": "REAL"}
         except Exception as e:
             self._fallback_simulation(str(e)[:100])
             return self._dry_sell()
