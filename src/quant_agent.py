@@ -115,6 +115,7 @@ class QuantAgent:
                     },
                     "system_log": f"STRICT+AI:{ai_prob:.0%}"
                 }
+        min_confidence = 0.10
         if ardisik_kayip >= settings.max_consecutive_losses:
             min_confidence = 0.35
             risk_seviyesi = "muhafazakar"
