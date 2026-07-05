@@ -224,6 +224,11 @@ class Bot:
         executed = False
 
         if action == "BUY" and not acik_pozisyon:
+            buy_cooldown = 60
+            if time.time() - self._son_alis_saati < buy_cooldown:
+                kalan = int(buy_cooldown - (time.time() - self._son_alis_saati))
+                print(f"  -> ALIS COOLDOWN ({kalan}s kaldi)")
+                return
             ai_prob, ai_conf = ai_model.predict(teknik, teknik_5m)
             print(f"  -> ALIS sinyali (guven: %{confidence:.0%} AI: {ai_prob:.0%})")
 
@@ -323,6 +328,7 @@ class Bot:
                 quant_agent.state["son_sl"] = 0
                 quant_agent.state["son_tp"] = 0
                 quant_agent._save_state()
+                self._son_alis_saati = 0
                 is_sim = mode == "SIM"
                 tag = "SIMULASYON " if is_sim else ""
                 print(f"[BOT] {tag}SATIS: K/Z ${pl:+,.2f} ({sebep})")
@@ -475,7 +481,7 @@ class Bot:
                 "portfolio_value": acc.get("portfolio_value", 0),
                 "cash": acc.get("cash", 0),
                 "pozisyon_durumu": "Aktif" if pos else "Yok",
-                "kar_zarar": pos["unrealized_pl"] if pos else 0,
+                "kar_zarar": db.get_stats().get("toplam_kar_zarar", 0) + (pos["unrealized_pl"] if pos else 0),
                 "son_karar": self.last_action,
                 "toplam_islem": state.get("toplam_islem", 0),
                 "kazanma": state.get("kazanma", 0),
