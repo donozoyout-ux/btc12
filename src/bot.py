@@ -111,16 +111,14 @@ class Bot:
 
         try:
             df = trader.get_bars(100)
-            df_5m = trader.get_bars(100, '5m')
+            df_5m = None
+            try:
+                df_5m = trader.get_bars(100, '5m')
+            except:
+                pass
         except Exception as e:
             print(f"  Veri hatasi: {e}")
             self.son_hata = f"Veri: {e}"
-            err_key = str(e)[:50]
-            now = time.time()
-            if err_key != self._last_error_sent and now - self._error_cooldown > 300:
-                tg.send(f"Veri hatasi: {str(e)[:100]}")
-                self._last_error_sent = err_key
-                self._error_cooldown = now
             return
 
         if df.empty:
@@ -140,7 +138,7 @@ class Bot:
 
         teknik["orderbook"] = trader.get_orderbook()
 
-        teknik_5m = analyzer.analyze(df_5m) if not df_5m.empty else None
+        teknik_5m = analyzer.analyze(df_5m) if df_5m is not None and not df_5m.empty else None
         if teknik_5m:
             teknik_5m["orderbook"] = teknik.get("orderbook", {})
 

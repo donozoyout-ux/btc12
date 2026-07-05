@@ -263,10 +263,10 @@ var actionColor=s.action==='BUY'?'text-green-400':s.action==='SELL'?'text-red-40
 var actionBg=s.action==='BUY'?'bg-green-500/10 text-green-400 border border-green-500/20':s.action==='SELL'?'bg-red-500/10 text-red-400 border border-red-500/20':'bg-gray-500/10 text-gray-400 border border-white/10';
 var pctColor=s.confidence>=0.6?'text-green-400':s.confidence<=0.4?'text-red-400':'text-gray-400';
 sh+='<tr class="hover:bg-white/5 transition-colors">';
-sh+='<td class="px-4 py-3">'+(s.time||'').substring(11,19)+'</td>';
+sh+='<td class="px-4 py-3">'+(s.time?s.time.substring(11,19):'--')+'</td>';
 sh+='<td class="px-4 py-3 text-right">'+Number(s.price).toLocaleString(undefined,{minimumFractionDigits:2})+'</td>';
 sh+='<td class="px-4 py-3 text-right">'+(s.rsi||0).toFixed(1)+'</td>';
-sh+='<td class="px-4 py-3 text-right">'+(s.ema||0).toLocaleString(undefined,{minimumFractionDigits:2})+'</td>';
+sh+='<td class="px-4 py-3 text-center">'+(s.ema_cross==='bullish'?'🟢':'🔴')+'</td>';
 sh+='<td class="px-4 py-3 text-right">'+(s.macd_hist||0).toFixed(1)+'</td>';
 sh+='<td class="px-4 py-3 text-center"><span class="px-2 py-0.5 rounded text-[9px] font-bold '+actionBg+'">'+s.action+'</span></td>';
 sh+='<td class="px-4 py-3 text-right '+pctColor+'">'+(s.confidence*100).toFixed(0)+'%</td>';
