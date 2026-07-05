@@ -151,7 +151,7 @@ class Database:
         conn = self._conn()
         try:
             rows = conn.execute(
-                "SELECT created_at, price, rsi, ema_cross, macd_hist, action, confidence FROM scans ORDER BY id DESC LIMIT ?",
+                "SELECT created_at, price, rsi, ema_cross, macd_hist, action, confidence, system_log FROM scans ORDER BY id DESC LIMIT ?",
                 (limit,)
             ).fetchall()
             return [
@@ -163,6 +163,7 @@ class Database:
                     "macd_hist": r[4],
                     "action": r[5],
                     "confidence": r[6],
+                    "system_log": r[7] or "",
                 }
                 for r in rows
             ]

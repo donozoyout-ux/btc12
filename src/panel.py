@@ -137,10 +137,11 @@ SCAN
 <th class="px-4 py-3 font-medium uppercase tracking-wider text-right">MACD</th>
 <th class="px-4 py-3 font-medium uppercase tracking-wider text-center">Karar</th>
 <th class="px-4 py-3 font-medium uppercase tracking-wider text-right">%</th>
+<th class="px-4 py-3 font-medium uppercase tracking-wider text-center">Strateji</th>
 </tr>
 </thead>
 <tbody id="scanBody" class="divide-y divide-white/5 text-gray-300">
-<tr><td colspan="7" class="px-4 py-8 text-center text-gray-500 italic">Veri bekleniyor...</td></tr>
+<tr><td colspan="8" class="px-4 py-8 text-center text-gray-500 italic">Veri bekleniyor...</td></tr>
 </tbody>
 </table>
 </div>
@@ -268,11 +269,17 @@ sh+='<td class="px-4 py-3 text-right">'+(s.rsi||0).toFixed(1)+'</td>';
 sh+='<td class="px-4 py-3 text-right">'+(s.ema||0).toLocaleString(undefined,{minimumFractionDigits:2})+'</td>';
 sh+='<td class="px-4 py-3 text-right">'+(s.macd_hist||0).toFixed(1)+'</td>';
 sh+='<td class="px-4 py-3 text-center"><span class="px-2 py-0.5 rounded text-[9px] font-bold '+actionBg+'">'+s.action+'</span></td>';
-sh+='<td class="px-4 py-3 text-right '+pctColor+'">'+(s.confidence*100).toFixed(0)+'%</td></tr>';
+sh+='<td class="px-4 py-3 text-right '+pctColor+'">'+(s.confidence*100).toFixed(0)+'%</td>';
+var slog=s.system_log||'';
+var stratLabel='---';
+var stratColor='text-gray-500';
+if(slog.indexOf('STRICT')>=0){stratLabel='STRICT';stratColor='text-blue-400';}
+else if(slog.indexOf('AI')>=0||s.action!=='HOLD'){stratLabel='AI';stratColor='text-purple-400';}
+sh+='<td class="px-4 py-3 text-center '+stratColor+' text-[9px] font-bold">'+stratLabel+'</td></tr>';
 });
 scanBody.innerHTML=sh;
 }else{
-scanBody.innerHTML='<tr><td colspan="7" class="px-4 py-8 text-center text-gray-500 italic">Veri bekleniyor...</td></tr>';
+scanBody.innerHTML='<tr><td colspan="8" class="px-4 py-8 text-center text-gray-500 italic">Veri bekleniyor...</td></tr>';
 }
 
 var tradeList=document.getElementById('tradeList');

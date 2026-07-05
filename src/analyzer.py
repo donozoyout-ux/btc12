@@ -17,15 +17,39 @@ class Analyzer:
         rsi = ta.momentum.RSIIndicator(close, window=14).rsi().iloc[-1]
         rsi_prev = ta.momentum.RSIIndicator(close, window=14).rsi().iloc[-2]
 
-        ema9 = ta.trend.EMAIndicator(close, window=9).ema_indicator().iloc[-1]
-        ema21 = ta.trend.EMAIndicator(close, window=21).ema_indicator().iloc[-1]
-        ema_cross = "bullish" if ema9 > ema21 else "bearish"
+        ema8 = ta.trend.EMAIndicator(close, window=8).ema_indicator()
+        ema21 = ta.trend.EMAIndicator(close, window=21).ema_indicator()
+        sling_colors = ['GREEN' if e8 > e21 else 'RED' for e8, e21 in zip(ema8, ema21)]
+        sling_color = sling_colors[-1]
+        sling_dist = round((ema8.iloc[-1] - ema21.iloc[-1]) / ema21.iloc[-1] * 100, 2) if ema21.iloc[-1] > 0 else 0
+
+        ema_cross = "bullish" if ema8.iloc[-1] > ema21.iloc[-1] else "bearish"
 
         macd = ta.trend.MACD(close, window_slow=26, window_fast=12, window_sign=9)
         macd_line = macd.macd().iloc[-1]
         signal_line = macd.macd_signal().iloc[-1]
         macd_hist = macd.macd_diff().iloc[-1]
         macd_hist_prev = macd.macd_diff().iloc[-2]
+        macd_line_prev = macd.macd().iloc[-2]
+        signal_line_prev = macd.macd_signal().iloc[-2]
+        macd_cross_below = 1 if macd_hist_prev <= 0 and macd_hist > 0 else 0
+        macd_cross_above = 1 if macd_hist_prev >= 0 and macd_hist < 0 else 0
+
+        rsi_8 = ta.momentum.RSIIndicator(close, window=8).rsi()
+        min_rsi = rsi_8.rolling(window=10).min()
+        max_rsi = rsi_8.rolling(window=10).max()
+        stoch_raw = ((rsi_8 - min_rsi) / (max_rsi - min_rsi)) * 100
+        stoch_k = stoch_raw.rolling(window=3).mean()
+        stoch_rsi_val = round(stoch_k.iloc[-1], 2)
+        stoch_rsi_prev = round(stoch_k.iloc[-2], 2)
+
+        wt_ema = ta.trend.EMAIndicator(close, window=10).ema_indicator()
+        wt_esa = ta.trend.EMAIndicator(close, window=12).ema_indicator()
+        wt_h = (high - wt_esa) / (wt_esa * 0.015).replace(0, np.nan)
+        wt_tci = ta.trend.EMAIndicator(wt_h.fillna(0), window=5).ema_indicator()
+        wt_tci2 = ta.trend.EMAIndicator(wt_tci, window=3).ema_indicator()
+        wt_tci_val = round(wt_tci.iloc[-1], 2) if not pd.isna(wt_tci.iloc[-1]) else 0
+        wt_tci2_val = round(wt_tci2.iloc[-1], 2) if not pd.isna(wt_tci2.iloc[-1]) else 0
 
         bb = ta.volatility.BollingerBands(close, window=20, window_dev=2)
         bb_upper = bb.bollinger_hband().iloc[-1]
@@ -42,7 +66,6 @@ class Analyzer:
         support = close.rolling(20).min().iloc[-1]
         resistance = close.rolling(20).max().iloc[-1]
 
-        # Breakout detection
         recent_high_3 = high.tail(3).max()
         recent_low_3 = low.tail(3).min()
         prev_high_10 = high.tail(13).head(10).max()
@@ -51,21 +74,31 @@ class Analyzer:
         breakout_up = 1.0 if price > prev_high_10 and recent_high_3 == price and vol_ratio > 1.2 else 0.0
         breakout_down = 1.0 if price < prev_low_10 and recent_low_3 == price and vol_ratio > 1.2 else 0.0
 
-        # Pullback to EMA
-        ema_dist = (close.iloc[-1] - ema21) / ema21 * 100
+        ema_dist = (close.iloc[-1] - ema21.iloc[-1]) / ema21.iloc[-1] * 100
 
         return {
             "price": round(price, 2),
             "rsi": round(rsi, 1),
             "rsi_prev": round(rsi_prev, 1),
-            "ema9": round(ema9, 2),
-            "ema21": round(ema21, 2),
+            "ema8": round(ema8.iloc[-1], 2),
+            "ema21": round(ema21.iloc[-1], 2),
             "ema_cross": ema_cross,
             "ema_dist": round(ema_dist, 2),
+            "sling_color": sling_color,
+            "sling_dist": sling_dist,
+            "sling_colors": sling_colors,
             "macd_line": round(macd_line, 2),
             "signal_line": round(signal_line, 2),
             "macd_hist": round(macd_hist, 2),
             "macd_hist_prev": round(macd_hist_prev, 2),
+            "macd_line_prev": round(macd_line_prev, 2),
+            "signal_line_prev": round(signal_line_prev, 2),
+            "macd_cross_below": macd_cross_below,
+            "macd_cross_above": macd_cross_above,
+            "stoch_rsi": stoch_rsi_val,
+            "stoch_rsi_prev": stoch_rsi_prev,
+            "wt_tci": wt_tci_val,
+            "wt_tci2": wt_tci2_val,
             "bb_pct": round(bb_pct, 3),
             "bb_upper": round(bb_upper, 2),
             "bb_lower": round(bb_lower, 2),

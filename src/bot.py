@@ -220,7 +220,10 @@ class Bot:
             ai_prob, ai_conf = ai_model.predict(teknik, teknik_5m)
             print(f"  -> ALIS sinyali (guven: %{confidence:.0%} AI: {ai_prob:.0%})")
 
-            if ai_prob < 0.4 and ai_conf > 0.2:
+            system_log = karar.get("system_log", "")
+            is_strict = "STRICT" in system_log
+
+            if not is_strict and ai_prob < 0.4 and ai_conf > 0.2:
                 print(f"  -> ALIS ENGELLENDI (AI dusus ongoruyor: %{ai_prob:.0%})")
                 return
 
@@ -234,7 +237,10 @@ class Bot:
             ai_prob, ai_conf = ai_model.predict(teknik, teknik_5m)
             print(f"  -> SATIS sinyali (guven: %{confidence:.0%} AI: {ai_prob:.0%})")
 
-            if ai_prob > 0.6 and ai_conf > 0.2:
+            system_log = karar.get("system_log", "")
+            is_strict = "STRICT" in system_log
+
+            if not is_strict and ai_prob > 0.6 and ai_conf > 0.2:
                 print(f"  -> SATIS ENGELLENDI (AI yukselis ongoruyor: %{ai_prob:.0%})")
                 return
 

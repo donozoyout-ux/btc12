@@ -4,6 +4,7 @@ import numpy as np
 from datetime import datetime
 from src.config import settings
 from src.ai_model import ai_model
+from src.strategy import signal_strategy
 
 
 class QuantAgent:
@@ -78,7 +79,42 @@ class QuantAgent:
 
         ai_prob, ai_conf = ai_model.predict(teknik_analiz)
 
-        min_confidence = 0.20
+        signal = signal_strategy.analyze(teknik_analiz)
+        if signal.get("strict_signal") and signal["action"] in ("BUY", "SELL"):
+            if signal["action"] == "BUY" and ai_prob >= 0.4 and not acik_pozisyon:
+                self.state["son_sinyal"] = {"action": "BUY", "source": "STRICT", "ai_prob": ai_prob}
+                self._save_state()
+                return {
+                    "action": "BUY",
+                    "confidence_score": round(max(ai_prob, 0.7), 2),
+                    "execution": {
+                        "size_percentage": 95,
+                        "stop_loss": signal.get("stop_loss", 0),
+                        "take_profit": signal.get("target_profit", 0),
+                    },
+                    "memory_update": {
+                        "aktif_strateji_notu": signal["reason"],
+                        "risk_seviyesi_ayari": risk_seviyesi,
+                    },
+                    "system_log": f"STRICT+AI:{ai_prob:.0%}"
+                }
+            if signal["action"] == "SELL" and ai_prob <= 0.6 and acik_pozisyon:
+                self.state["son_sinyal"] = {"action": "SELL", "source": "STRICT", "ai_prob": ai_prob}
+                self._save_state()
+                return {
+                    "action": "SELL",
+                    "confidence_score": round(max(1 - ai_prob, 0.7), 2),
+                    "execution": {
+                        "size_percentage": 100,
+                        "stop_loss": 0,
+                        "take_profit": 0,
+                    },
+                    "memory_update": {
+                        "aktif_strateji_notu": signal["reason"],
+                        "risk_seviyesi_ayari": risk_seviyesi,
+                    },
+                    "system_log": f"STRICT+AI:{ai_prob:.0%}"
+                }
         if ardisik_kayip >= settings.max_consecutive_losses:
             min_confidence = 0.35
             risk_seviyesi = "muhafazakar"
