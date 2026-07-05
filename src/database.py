@@ -59,6 +59,21 @@ class Database:
                     notified_to TEXT DEFAULT 'telegram'
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS decisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    strategy_action TEXT,
+                    strategy_score REAL,
+                    strategy_reason TEXT,
+                    ai_prob REAL,
+                    ai_veto INTEGER DEFAULT 0,
+                    final_action TEXT,
+                    final_reason TEXT,
+                    price REAL,
+                    executed INTEGER DEFAULT 0
+                )
+            """)
             try:
                 conn.execute("ALTER TABLE trades ADD COLUMN mode TEXT DEFAULT 'SIM'")
             except:
@@ -164,6 +179,45 @@ class Database:
                     "action": r[5],
                     "confidence": r[6],
                     "system_log": r[7] or "",
+                }
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
+    def save_decision(self, strategy_action, strategy_score, strategy_reason, ai_prob, ai_veto, final_action, final_reason, price, executed=0):
+        conn = self._conn()
+        try:
+            conn.execute(
+                "INSERT INTO decisions (created_at, strategy_action, strategy_score, strategy_reason, ai_prob, ai_veto, final_action, final_reason, price, executed) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (datetime.now().isoformat(), strategy_action, strategy_score, strategy_reason, ai_prob, 1 if ai_veto else 0, final_action, final_reason, price, 1 if executed else 0)
+            )
+            count = conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
+            if count > 500:
+                conn.execute("DELETE FROM decisions WHERE id NOT IN (SELECT id FROM decisions ORDER BY id DESC LIMIT 500)")
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_decisions(self, limit=20):
+        conn = self._conn()
+        try:
+            rows = conn.execute(
+                "SELECT created_at, strategy_action, strategy_score, strategy_reason, ai_prob, ai_veto, final_action, final_reason, price, executed FROM decisions ORDER BY id DESC LIMIT ?",
+                (limit,)
+            ).fetchall()
+            return [
+                {
+                    "time": r[0],
+                    "strategy_action": r[1] or "---",
+                    "strategy_score": r[2] or 0,
+                    "strategy_reason": r[3] or "",
+                    "ai_prob": r[4] or 0.5,
+                    "ai_veto": bool(r[5]),
+                    "final_action": r[6] or "HOLD",
+                    "final_reason": r[7] or "",
+                    "price": r[8] or 0,
+                    "executed": bool(r[9]),
                 }
                 for r in rows
             ]

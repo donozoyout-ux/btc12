@@ -34,28 +34,34 @@ class SignalStrategy:
                 "strict_signal": True,
                 "stop_loss": 0,
                 "target_profit": "VT Cross TP sinyali",
+                "long_score": long_score,
+                "short_score": short_score,
             }
 
         if long_score >= 3:
-            sl_price = round(price - 1.5 * atr, 2) if atr > 0 else round(price * 0.98, 2)
-            tp_price = round(price + 3 * atr, 2) if atr > 0 else round(price * 1.02, 2)
+            sl_price = round(price * 0.985, 2)
+            tp_price = round(price * 1.03, 2)
             return {
                 "action": "BUY",
                 "reason": f"Puan: {long_score}/5",
                 "strict_signal": True,
                 "stop_loss": sl_price,
                 "target_profit": tp_price,
+                "long_score": long_score,
+                "short_score": short_score,
             }
 
         if short_score >= 3:
-            sl_price = round(price + 1.5 * atr, 2) if atr > 0 else round(price * 1.02, 2)
-            tp_price = round(price - 3 * atr, 2) if atr > 0 else round(price * 0.98, 2)
+            sl_price = round(price * 1.015, 2)
+            tp_price = round(price * 0.97, 2)
             return {
                 "action": "SELL",
                 "reason": f"Puan: {short_score}/5",
                 "strict_signal": True,
                 "stop_loss": sl_price,
                 "target_profit": tp_price,
+                "long_score": long_score,
+                "short_score": short_score,
             }
 
         return {
@@ -64,6 +70,8 @@ class SignalStrategy:
             "strict_signal": False,
             "stop_loss": 0,
             "target_profit": 0,
+            "long_score": long_score,
+            "short_score": short_score,
         }
 
     def _check_long_score(self, sling_colors, sling_color, stoch_rsi, stoch_rsi_prev, macd_hist, macd_hist_prev, macd_line, signal_line, price, rsi, bb_pct, vol_ratio):

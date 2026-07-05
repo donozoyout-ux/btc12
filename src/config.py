@@ -14,7 +14,7 @@ class Settings:
 
     symbol = "BTC/USDT"
     check_interval = int(os.getenv("CHECK_INTERVAL", "15"))
-    position_size_usd = float(os.getenv("POSITION_SIZE_USD", "50"))
+    position_size_usd = float(os.getenv("POSITION_SIZE_USD", "500"))
     risk_per_trade = float(os.getenv("RISK_PER_TRADE", "2"))
     rr_ratio = float(os.getenv("RR_RATIO", "2"))
     max_consecutive_losses = int(os.getenv("MAX_CONSECUTIVE_LOSSES", "3"))

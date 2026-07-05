@@ -138,12 +138,22 @@ SCAN
 <th class="px-4 py-3 font-medium uppercase tracking-wider text-center">Karar</th>
 <th class="px-4 py-3 font-medium uppercase tracking-wider text-right">%</th>
 <th class="px-4 py-3 font-medium uppercase tracking-wider text-center">Strateji</th>
+<th class="px-4 py-3 font-medium uppercase tracking-wider text-center">Kaynak</th>
 </tr>
 </thead>
 <tbody id="scanBody" class="divide-y divide-white/5 text-gray-300">
-<tr><td colspan="8" class="px-4 py-8 text-center text-gray-500 italic">Veri bekleniyor...</td></tr>
+<tr><td colspan="9" class="px-4 py-8 text-center text-gray-500 italic">Veri bekleniyor...</td></tr>
 </tbody>
 </table>
+</div>
+</section>
+<section class="bg-surface-low rounded border border-white/5 flex flex-col overflow-hidden" style="max-height:250px">
+<div class="p-4 border-b border-white/5 flex justify-between items-center">
+<h3 class="text-sm font-bold text-white">Karar Kayıtları</h3>
+<span class="text-[10px] font-mono text-gray-500">Son 20 karar</span>
+</div>
+<div class="p-3 overflow-y-auto flex-grow space-y-1 scrollbar text-[10px] font-mono" id="decisionList">
+<div class="text-gray-500 italic text-center py-4">Kayıt bekleniyor...</div>
 </div>
 </section>
 <section class="bg-surface-low rounded border border-white/5 flex flex-col overflow-hidden">
@@ -275,11 +285,17 @@ var stratLabel='---';
 var stratColor='text-gray-500';
 if(slog.indexOf('STRICT')>=0){stratLabel='STRICT';stratColor='text-blue-400';}
 else if(slog.indexOf('AI')>=0||s.action!=='HOLD'){stratLabel='AI';stratColor='text-purple-400';}
-sh+='<td class="px-4 py-3 text-center '+stratColor+' text-[9px] font-bold">'+stratLabel+'</td></tr>';
+sh+='<td class="px-4 py-3 text-center '+stratColor+' text-[9px] font-bold">'+stratLabel+'</td>';
+var srcLabel='---';
+var srcColor='text-gray-600';
+if(slog.indexOf('STRICT+AI')>=0){srcLabel='STRICT+AI';srcColor='text-blue-400';}
+else if(slog.indexOf('STRICT')>=0){srcLabel='STRICT';srcColor='text-cyan-400';}
+else if(slog.indexOf('AI')>=0||s.action!=='HOLD'){srcLabel='AI';srcColor='text-purple-400';}
+sh+='<td class="px-4 py-3 text-center '+srcColor+' text-[9px] font-bold">'+srcLabel+'</td></tr>';
 });
 scanBody.innerHTML=sh;
 }else{
-scanBody.innerHTML='<tr><td colspan="8" class="px-4 py-8 text-center text-gray-500 italic">Veri bekleniyor...</td></tr>';
+scanBody.innerHTML='<tr><td colspan="9" class="px-4 py-8 text-center text-gray-500 italic">Veri bekleniyor...</td></tr>';
 }
 
 var tradeList=document.getElementById('tradeList');
@@ -312,8 +328,32 @@ tradeList.innerHTML='<div class="bg-surface-lowest p-4 rounded border border-whi
 }).catch(()=>{});
 }
 
+function updateDecisions(){
+fetch('/api/decisions').then(r=>r.json()).then(d=>{
+var dl=document.getElementById('decisionList');
+if(!dl)return;
+if(d.length===0){dl.innerHTML='<div class="text-gray-500 italic text-center py-4">Kayıt yok</div>';return;}
+var h='';
+d.forEach(function(c){
+var actColor=c.final_action==='BUY'?'text-green-400':c.final_action==='SELL'?'text-red-400':'text-gray-500';
+var vetoBadge=c.ai_veto?'<span class="text-red-400 text-[8px] ml-1">VETO</span>':'';
+var execBadge=c.executed?'<span class="text-green-400 text-[8px] ml-1">✓</span>':'';
+h+='<div class="flex justify-between items-center py-1.5 border-b border-white/5">';
+h+='<span class="text-gray-500">'+(c.time?c.time.substring(11,19):'--')+'</span>';
+h+='<span class="'+actColor+' font-bold">'+c.final_action+'</span>';
+h+='<span class="text-gray-400">'+c.strategy_score+'/5</span>';
+h+='<span class="text-gray-600">'+c.strategy_action+'</span>';
+h+='<span>'+(c.ai_prob*100).toFixed(0)+'%'+vetoBadge+execBadge+'</span>';
+h+='</div>';
+});
+dl.innerHTML=h;
+}).catch(()=>{});
+}
+
 updateStatus();
+updateDecisions();
 setInterval(updateStatus,5000);
+setInterval(updateDecisions,5000);
 </script>
 </body>
 </html>"""
@@ -418,6 +458,11 @@ def api_debug():
         "env": env_keys,
         "executor_mode": settings.executor_mode,
     })
+
+@app.route('/api/decisions')
+def api_decisions():
+    from src.database import db
+    return jsonify(db.get_decisions(20))
 
 @app.route('/api/keepalive')
 def api_keepalive():

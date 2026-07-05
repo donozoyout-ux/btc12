@@ -90,8 +90,8 @@ class Bot:
             self._satisi_gerceklestir("Take-profit")
             return
 
-        if sl > 0 and pl_pct > 1.0:
-            new_sl = round(entry + (price - entry) * 0.4, 2)
+        if sl > 0 and pl_pct > 2.0:
+            new_sl = round(entry + (price - entry) * 0.5, 2)
             if new_sl > sl:
                 quant_agent.state["son_sl"] = new_sl
                 quant_agent._save_state()
@@ -214,38 +214,59 @@ class Bot:
 
         self.last_action = action
 
+        # --- Karar Kaydetme ---
+        karar_sistemi = karar.get("system_log", "")
+        strategy_action = karar.get("action", "HOLD")
+        strategy_score = karar.get("long_score", 0) if strategy_action == "BUY" else karar.get("short_score", 0)
+        strategy_reason = karar.get("reason", "")
+        ai_prob = 0.5
+        ai_veto = False
+        executed = False
+
         if action == "BUY" and not acik_pozisyon:
             ai_prob, ai_conf = ai_model.predict(teknik, teknik_5m)
             print(f"  -> ALIS sinyali (guven: %{confidence:.0%} AI: {ai_prob:.0%})")
 
-            system_log = karar.get("system_log", "")
-            is_strict = "STRICT" in system_log
+            is_strict = "STRICT" in karar_sistemi
 
             if not is_strict and ai_prob < 0.4 and ai_conf > 0.2:
                 print(f"  -> ALIS ENGELLENDI (AI dusus ongoruyor: %{ai_prob:.0%})")
-                return
-
-            self.bekleyen_alis = karar
-            quant_agent.state["son_sl"] = karar["execution"]["stop_loss"]
-            quant_agent.state["son_tp"] = karar["execution"]["take_profit"]
-            quant_agent._save_state()
-            self._alisi_gerceklestir(karar)
+                ai_veto = True
+            else:
+                self.bekleyen_alis = karar
+                quant_agent.state["son_sl"] = karar["execution"]["stop_loss"]
+                quant_agent.state["son_tp"] = karar["execution"]["take_profit"]
+                quant_agent._save_state()
+                self._alisi_gerceklestir(karar)
+                executed = True
 
         elif action == "SELL" and acik_pozisyon:
             ai_prob, ai_conf = ai_model.predict(teknik, teknik_5m)
             print(f"  -> SATIS sinyali (guven: %{confidence:.0%} AI: {ai_prob:.0%})")
 
-            system_log = karar.get("system_log", "")
-            is_strict = "STRICT" in system_log
+            is_strict = "STRICT" in karar_sistemi
 
             if not is_strict and ai_prob > 0.6 and ai_conf > 0.2:
                 print(f"  -> SATIS ENGELLENDI (AI yukselis ongoruyor: %{ai_prob:.0%})")
-                return
-
-            self.bekleyen_satis = karar
-            self._satisi_gerceklestir("AI sinyali")
+                ai_veto = True
+            else:
+                self.bekleyen_satis = karar
+                self._satisi_gerceklestir("AI sinyali")
+                executed = True
         else:
             print(f"  -> {action} (%{confidence:.0%})")
+
+        db.save_decision(
+            strategy_action=strategy_action,
+            strategy_score=round(strategy_score, 1),
+            strategy_reason=strategy_reason,
+            ai_prob=round(ai_prob, 3),
+            ai_veto=ai_veto,
+            final_action=action,
+            final_reason=strategy_reason,
+            price=price,
+            executed=executed
+        )
 
         if self.total_scans == 1:
             rsi_de = teknik.get("rsi", "?")
