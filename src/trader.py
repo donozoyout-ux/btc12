@@ -47,5 +47,25 @@ class Trader:
         buys = sum(1 for t in trades if t.get('side') == 'buy')
         return {"buy_sell_ratio": round(buys / max(len(trades) - buys, 1), 2)}
 
+    def manual_buy(self, amount_usdt):
+        try:
+            price = self.get_price()
+            amount_btc = amount_usdt / price
+            order = self.exchange.create_market_buy_order(self.symbol, amount_btc)
+            return True
+        except Exception as e:
+            print(f"[TRADER] Manuel alım hatası: {e}")
+            return False
+
+    def manual_sell(self, amount_usdt):
+        try:
+            price = self.get_price()
+            amount_btc = amount_usdt / price
+            order = self.exchange.create_market_sell_order(self.symbol, amount_btc)
+            return True
+        except Exception as e:
+            print(f"[TRADER] Manuel satım hatası: {e}")
+            return False
+
 
 trader = Trader()

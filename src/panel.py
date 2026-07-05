@@ -1,6 +1,6 @@
 import sys
 sys.path.insert(0, '.')
-from flask import Flask, render_template_string, jsonify
+from flask import Flask, render_template_string, jsonify, request
 import threading
 from datetime import datetime
 from src.bot import bot, setup_telegram
@@ -18,108 +18,212 @@ HTML = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BTC AI BOT</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+darkMode: 'class',
+theme: {
+extend: {
+fontFamily: {
+sans: ['Inter', 'sans-serif'],
+mono: ['JetBrains Mono', 'monospace'],
+},
+colors: {
+surface: {
+DEFAULT: '#131314',
+dim: '#131314',
+bright: '#3a393a',
+lowest: '#0e0e0f',
+low: '#1c1b1c',
+},
+trading: {
+buy: '#22c55e',
+sell: '#ef4444',
+accent: '#3b82f6'
+}
+}
+}
+}
+}
+</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e2e2;overflow:hidden;height:100vh}
+body{font-family:'Inter',sans-serif;background:#0a0e17;color:#e5e7eb;overflow:hidden;height:100vh;-webkit-font-smoothing:antialiased}
 .glass{background:rgba(28,33,39,0.8);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.05)}
-.scrollbar::-webkit-scrollbar{width:4px}
-.scrollbar::-webkit-scrollbar-track{background:#0e0e0f}
-.scrollbar::-webkit-scrollbar-thumb{background:#45464b;border-radius:2px}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:#0e0e0f}
+::-webkit-scrollbar-thumb{background:#3a393a;border-radius:4px}
 @keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:0.4}}
 .pulse-dot{animation:pulse-dot 1.5s infinite}
+.status-pulse{animation:pulse 2s cubic-bezier(0.4,0,0.6,1) infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 .btn{transition:all .15s}.btn:hover{transform:scale(1.03)}.btn:active{transform:scale(0.97)}
+.trade-item{transition:all .2s}.trade-item:hover{transform:translateX(4px);border-color:rgba(255,255,255,0.1)}
 </style>
 </head>
-<body class="flex flex-col h-screen">
-<header class="bg-[#131314] border-b border-[#45464b]/30 flex items-center justify-between px-6 h-14 shrink-0">
-<div class="flex items-center gap-4">
-<h1 class="text-lg font-bold tracking-tight text-white">BTC AI BOT</h1>
-<div id="statusBadge" class="flex items-center gap-2 px-3 py-1 bg-red/10 border border-red/20 rounded text-xs font-bold text-red">
-<span class="w-2 h-2 rounded-full bg-red"></span><span>STOPPED</span>
+<body class="font-sans antialiased min-h-screen">
+<header class="bg-surface-lowest border-b border-white/5 px-6 py-3 flex items-center justify-between sticky top-0 z-50">
+<div class="flex items-center space-x-4">
+<h1 class="text-xl font-bold tracking-tighter text-white">BTC AI BOT</h1>
+<div id="statusBadge" class="flex items-center gap-2 px-3 py-1 bg-green/10 border border-green/20 rounded text-xs font-bold text-green">
+<span class="w-2 h-2 rounded-full bg-green status-pulse"></span><span>SCANNING</span>
 </div>
 </div>
-<div class="flex items-center gap-3">
-<button onclick="startBot()" class="btn px-4 py-1.5 bg-green hover:bg-green/80 text-black text-xs font-bold rounded">START</button>
-<button onclick="stopBot()" class="btn px-4 py-1.5 bg-red hover:bg-red/80 text-white text-xs font-bold rounded">STOP</button>
-<button onclick="scanNow()" class="btn px-4 py-1.5 bg-blue-500 hover:bg-blue-500/80 text-white text-xs font-bold rounded">SCAN</button>
-<span class="text-text3 text-xs font-mono" id="clock"></span>
+<div class="flex items-center space-x-4" data-purpose="manuel-islem-paneli">
+<div class="flex items-center bg-surface-low rounded border border-white/10 px-3 py-1.5">
+<span class="text-[10px] text-gray-500 mr-2 font-bold">MİKTAR (USDT)</span>
+<input id="tradeAmount" class="bg-transparent border-none text-sm font-mono text-white w-24 p-0 focus:ring-0 placeholder-gray-600" placeholder="0.00" type="number" min="0" step="0.01"/>
+</div>
+<button onclick="manualBuy()" class="bg-trading-buy hover:bg-green-600 text-white text-xs font-bold px-4 py-2 rounded transition-all active:scale-95">
+MANUEL AL
+</button>
+<button onclick="manualSell()" class="bg-trading-sell hover:bg-red-600 text-white text-xs font-bold px-4 py-2 rounded transition-all active:scale-95">
+MANUEL SAT
+</button>
+</div>
+<div class="flex items-center space-x-6">
+<div class="flex items-center space-x-3 text-[11px] font-bold tracking-widest text-gray-400">
+<button onclick="startBot()" class="hover:text-white uppercase transition-colors">START</button>
+<button onclick="stopBot()" class="hover:text-white uppercase transition-colors">STOP</button>
+</div>
+<button onclick="scanNow()" class="bg-trading-accent hover:bg-blue-600 text-white text-xs font-bold px-5 py-2 rounded transition-all">
+SCAN
+</button>
+<div class="font-mono text-sm text-gray-300" id="clock">--:--:--</div>
 </div>
 </header>
-<div class="flex-1 overflow-y-auto p-6 scrollbar">
-<div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-<div class="glass rounded-lg p-4 text-center">
-<div class="text-[#909096] text-[10px] font-bold tracking-widest mb-1">PORTFOY</div>
-<div class="text-2xl font-mono font-bold text-white" id="sPortfolio">$0</div>
+<main class="p-4 space-y-4 max-w-[1600px] mx-auto">
+<section class="grid grid-cols-1 md:grid-cols-5 gap-4" data-purpose="top-stats-cards">
+<div class="bg-surface-low p-4 rounded border border-white/5 text-center">
+<p class="text-[10px] text-gray-500 font-bold uppercase mb-2 tracking-widest">PORTFOY</p>
+<h2 class="text-2xl font-bold font-mono text-white" id="sPortfolio">$0</h2>
 </div>
-<div class="glass rounded-lg p-4 text-center">
-<div class="text-[#909096] text-[10px] font-bold tracking-widest mb-1">NAKIT</div>
-<div class="text-2xl font-mono font-bold text-white" id="sCash">$0</div>
+<div class="bg-surface-low p-4 rounded border border-white/5 text-center">
+<p class="text-[10px] text-gray-500 font-bold uppercase mb-2 tracking-widest">NAKİT</p>
+<h2 class="text-2xl font-bold font-mono text-white" id="sCash">$0</h2>
 </div>
-<div class="glass rounded-lg p-4 text-center">
-<div class="text-[#909096] text-[10px] font-bold tracking-widest mb-1">K/Z</div>
-<div class="text-2xl font-mono font-bold" id="sPnl">$0</div>
+<div class="bg-surface-low p-4 rounded border border-white/5 text-center">
+<p class="text-[10px] text-gray-500 font-bold uppercase mb-2 tracking-widest">K/Z</p>
+<h2 class="text-2xl font-bold font-mono" id="sPnl">$+0.00</h2>
 </div>
-<div class="glass rounded-lg p-4 text-center">
-<div class="text-[#909096] text-[10px] font-bold tracking-widest mb-1">ISLEM</div>
-<div class="text-2xl font-mono font-bold text-white" id="sMode">ONAYLI</div>
+<div class="bg-surface-low p-4 rounded border border-white/5 text-center">
+<p class="text-[10px] text-gray-500 font-bold uppercase mb-2 tracking-widest">İŞLEM</p>
+<h2 class="text-2xl font-bold font-mono text-white" id="sMode">ONAYLI</h2>
 </div>
-<div class="glass rounded-lg p-4 text-center">
-<div class="text-[#909096] text-[10px] font-bold tracking-widest mb-1">TARAMA</div>
-<div class="text-2xl font-mono font-bold text-white" id="sScans">0</div>
+<div class="bg-surface-low p-4 rounded border border-white/5 text-center">
+<p class="text-[10px] text-gray-500 font-bold uppercase mb-2 tracking-widest">TARAMA</p>
+<h2 class="text-2xl font-bold font-mono text-white" id="sScans">0</h2>
 </div>
+</section>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4" style="height:calc(100vh - 220px)">
+<section class="lg:col-span-2 bg-surface-low rounded border border-white/5 flex flex-col">
+<div class="p-4 border-b border-white/5 flex justify-between items-center">
+<h3 class="text-sm font-bold text-white">Analiz Sonuçları</h3>
+<span class="text-[10px] font-mono text-gray-500">REALTIME FEED: <span id="feedStatus" class="text-green-400">ACTIVE</span></span>
 </div>
-
-<div class="grid grid-cols-12 gap-4" style="height:calc(100vh - 200px)">
-<div class="col-span-12 lg:col-span-8 flex flex-col">
-<div class="flex items-center justify-between mb-3">
-<h2 class="text-sm font-bold text-white">Analiz Sonuclari</h2>
-<span class="text-[#909096] text-xs" id="scanCount">0</span>
-</div>
-<div class="glass rounded-lg overflow-hidden flex-1">
-<table class="w-full text-left">
-<thead class="bg-[#1c2127]/50 border-b border-[#45464b]/20">
+<div class="overflow-auto flex-grow scrollbar">
+<table class="w-full text-left text-[11px] font-mono">
+<thead class="sticky top-0 bg-surface-low text-gray-500 border-b border-white/5">
 <tr>
-<th class="px-3 py-2 text-[10px] font-bold tracking-widest text-[#909096]">ZAMAN</th>
-<th class="px-3 py-2 text-[10px] font-bold tracking-widest text-[#909096]">FIYAT</th>
-<th class="px-3 py-2 text-[10px] font-bold tracking-widest text-[#909096]">RSI</th>
-<th class="px-3 py-2 text-[10px] font-bold tracking-widest text-[#909096]">EMA</th>
-<th class="px-3 py-2 text-[10px] font-bold tracking-widest text-[#909096]">MACD</th>
-<th class="px-3 py-2 text-[10px] font-bold tracking-widest text-[#909096]">KARAR</th>
-<th class="px-3 py-2 text-[10px] font-bold tracking-widest text-[#909096]">%</th>
+<th class="px-4 py-3 font-medium uppercase tracking-wider">Zaman</th>
+<th class="px-4 py-3 font-medium uppercase tracking-wider text-right">Fiyat</th>
+<th class="px-4 py-3 font-medium uppercase tracking-wider text-right">RSI</th>
+<th class="px-4 py-3 font-medium uppercase tracking-wider text-right">EMA</th>
+<th class="px-4 py-3 font-medium uppercase tracking-wider text-right">MACD</th>
+<th class="px-4 py-3 font-medium uppercase tracking-wider text-center">Karar</th>
+<th class="px-4 py-3 font-medium uppercase tracking-wider text-right">%</th>
 </tr>
 </thead>
-<tbody id="scanBody" class="divide-y divide-[#45464b]/10 font-mono text-xs">
-<tr><td colspan="7" class="px-3 py-8 text-center text-[#909096] italic">Veri bekleniyor...</td></tr>
+<tbody id="scanBody" class="divide-y divide-white/5 text-gray-300">
+<tr><td colspan="7" class="px-4 py-8 text-center text-gray-500 italic">Veri bekleniyor...</td></tr>
 </tbody>
 </table>
 </div>
+</section>
+<section class="bg-surface-low rounded border border-white/5 flex flex-col overflow-hidden">
+<div class="p-4 border-b border-white/5 flex justify-between items-center">
+<h3 class="text-sm font-bold text-white">İşlem Geçmişi</h3>
+<span class="text-[10px] font-mono text-gray-500">TOTAL: <span id="tradeCount">0</span></span>
 </div>
-<div class="col-span-12 lg:col-span-4 flex flex-col">
-<div class="flex items-center justify-between mb-3">
-<h2 class="text-sm font-bold text-white">Islem Gecmisi</h2>
-<span class="text-[#909096] text-xs" id="tradeCount">0</span>
+<div class="p-3 overflow-y-auto flex-grow space-y-2 scrollbar" id="tradeList" data-purpose="islem-listesi">
+<div class="bg-surface-lowest p-4 rounded border border-white/5 text-center text-gray-500 text-sm">İşlem yok</div>
 </div>
-<div class="flex flex-col gap-2 overflow-y-auto flex-1 scrollbar pr-1" id="tradeList">
-<div class="glass rounded-lg p-4 text-center text-[#909096] text-sm">Islem yok</div>
+</section>
 </div>
-</div>
-</div>
-</div>
+</main>
 <script>
 setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleTimeString('tr-TR')},1000);
 
-function startBot(){fetch('/api/start',{method:'POST'}).then(r=>r.json()).then(d=>{setTimeout(updateStatus,2000)})}
-function stopBot(){fetch('/api/stop',{method:'POST'}).then(r=>r.json()).then(d=>{setTimeout(updateStatus,1000)})}
-function scanNow(){fetch('/api/scan',{method:'POST'}).then(r=>r.json()).then(d=>{setTimeout(updateStatus,3000)})}
+function startBot(){
+fetch('/api/start',{method:'POST'}).then(r=>r.json()).then(d=>{
+setTimeout(updateStatus,2000);
+});
+}
+
+function stopBot(){
+fetch('/api/stop',{method:'POST'}).then(r=>r.json()).then(d=>{
+setTimeout(updateStatus,1000);
+});
+}
+
+function scanNow(){
+fetch('/api/scan',{method:'POST'}).then(r=>r.json()).then(d=>{
+setTimeout(updateStatus,3000);
+});
+}
+
+function manualBuy(){
+var amount=parseFloat(document.getElementById('tradeAmount').value)||0;
+if(amount<=0){alert('Lütfen geçerli bir miktar girin.');return;}
+fetch('/api/manual_buy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:amount})})
+.then(r=>r.json()).then(d=>{
+if(d.success){
+document.getElementById('tradeAmount').value='';
+showNotification('MANUEL AL emri verildi: '+amount+' USDT','success');
+setTimeout(updateStatus,1000);
+}else{
+alert('Hata: '+(d.message||'İşlem başarısız'));
+}
+}).catch(e=>alert('Bağlantı hatası'));
+}
+
+function manualSell(){
+var amount=parseFloat(document.getElementById('tradeAmount').value)||0;
+if(amount<=0){alert('Lütfen geçerli bir miktar girin.');return;}
+fetch('/api/manual_sell',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:amount})})
+.then(r=>r.json()).then(d=>{
+if(d.success){
+document.getElementById('tradeAmount').value='';
+showNotification('MANUEL SAT emri verildi: '+amount+' USDT','success');
+setTimeout(updateStatus,1000);
+}else{
+alert('Hata: '+(d.message||'İşlem başarısız'));
+}
+}).catch(e=>alert('Bağlantı hatası'));
+}
+
+function showNotification(msg,type){
+var n=document.createElement('div');
+n.className='fixed top-20 right-6 px-4 py-3 rounded-lg text-sm font-bold text-white z-50 transition-all transform translate-x-0 '+(type==='success'?'bg-green-600':'bg-red-600');
+n.textContent=msg;
+document.body.appendChild(n);
+setTimeout(()=>{n.style.opacity='0';n.style.transform='translateX(100px)';setTimeout(()=>n.remove(),300);},3000);
+}
 
 function updateStatus(){
 fetch('/api/status').then(r=>r.json()).then(d=>{
 var badge=document.getElementById('statusBadge');
-if(d.running&&!d.paused){badge.innerHTML='<span class="w-2 h-2 rounded-full bg-green pulse-dot"></span><span>SCANNING</span>';badge.className='flex items-center gap-2 px-3 py-1 bg-green/10 border border-green/20 rounded text-xs font-bold text-green'}
-else if(d.paused){badge.innerHTML='<span class="w-2 h-2 rounded-full bg-yellow-500 pulse-dot"></span><span>PAUSED</span>';badge.className='flex items-center gap-2 px-3 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded text-xs font-bold text-yellow-500'}
-else{badge.innerHTML='<span class="w-2 h-2 rounded-full bg-red"></span><span>STOPPED</span>';badge.className='flex items-center gap-2 px-3 py-1 bg-red/10 border border-red/20 rounded text-xs font-bold text-red'}
+if(d.running&&!d.paused){
+badge.innerHTML='<span class="w-2 h-2 rounded-full bg-green status-pulse"></span><span>SCANNING</span>';
+badge.className='flex items-center gap-2 px-3 py-1 bg-green/10 border border-green/20 rounded text-xs font-bold text-green';
+}else if(d.paused){
+badge.innerHTML='<span class="w-2 h-2 rounded-full bg-yellow-500 status-pulse"></span><span>PAUSED</span>';
+badge.className='flex items-center gap-2 px-3 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded text-xs font-bold text-yellow-500';
+}else{
+badge.innerHTML='<span class="w-2 h-2 rounded-full bg-red"></span><span>STOPPED</span>';
+badge.className='flex items-center gap-2 px-3 py-1 bg-red/10 border border-red/20 rounded text-xs font-bold text-red';
+}
 
 document.getElementById('sPortfolio').textContent='$'+(d.portfolio_value||0).toLocaleString(undefined,{minimumFractionDigits:2});
 document.getElementById('sCash').textContent='$'+(d.cash||0).toLocaleString(undefined,{minimumFractionDigits:2});
@@ -131,67 +235,58 @@ var plEl=document.getElementById('sPnl');
 plEl.textContent='$'+(pl>=0?'+':'')+pl.toFixed(2);
 plEl.className='text-2xl font-mono font-bold '+(pl>=0?'text-green-400':'text-red-400');
 
-var errorDiv=document.getElementById('errorDisplay');
-if(d.son_hata){
-if(!errorDiv){
-errorDiv=document.createElement('div');
-errorDiv.id='errorDisplay';
-errorDiv.className='col-span-5';
-document.querySelector('.grid-cols-5').after(errorDiv);
-}
-errorDiv.innerHTML='<div class="glass rounded-lg p-3 border border-red-400/30 text-red-400 text-xs font-mono">Hata: '+d.son_hata+'</div>';
-}else if(errorDiv){
-errorDiv.remove();
-}
+}).catch(()=>{});
 
-var lastScanDiv=document.getElementById('lastScanDisplay');
-if(!lastScanDiv){
-lastScanDiv=document.createElement('div');
-lastScanDiv.id='lastScanDisplay';
-lastScanDiv.className='col-span-5';
-document.querySelector('.grid-cols-5').after(errorDiv||document.querySelector('.grid-cols-5'));
-}
-lastScanDiv.innerHTML='<div class="glass rounded-lg p-2 text-center text-[#909096] text-xs font-mono">Son Tarama: '+(d.last_scan||'---')+' | Fiyat: $'+(d.son_fiyat||0).toFixed(0)+'</div>';
-
-var trades=document.getElementById('tradeList');
 fetch('/api/memory').then(r=>r.json()).then(m=>{
 var stats=m.stats||{};
 var scans=m.scans||[];
 var items=m.trades||[];
 
-document.getElementById('scanCount').textContent=scans.length+' tarama';
-document.getElementById('tradeCount').textContent=stats.toplam_islem||0;
+document.getElementById('tradeCount').textContent=stats.toplam_islem||items.length;
 
 var scanBody=document.getElementById('scanBody');
 if(scans.length>0){
 var sh='';
 scans.forEach(function(s){
-var emoji=s.ema_cross==='bullish'?'🟢':'🔴';
-var actionColor=s.action==='BUY'?'text-green-400':s.action==='SELL'?'text-red-400':'text-[#909096]';
-sh+='<tr class="hover:bg-white/5"><td class="px-3 py-2">'+(s.time||'').substring(11,19)+'</td>';
-sh+='<td class="px-3 py-2">$'+s.price.toFixed(0)+'</td>';
-sh+='<td class="px-3 py-2">'+s.rsi.toFixed(1)+'</td>';
-sh+='<td class="px-3 py-2">'+emoji+'</td>';
-sh+='<td class="px-3 py-2">'+(s.macd_hist||0).toFixed(1)+'</td>';
-sh+='<td class="px-3 py-2 font-bold '+actionColor+'">'+s.action+'</td>';
-sh+='<td class="px-3 py-2">'+(s.confidence*100).toFixed(0)+'%</td></tr>';
+var actionColor=s.action==='BUY'?'text-green-400':s.action==='SELL'?'text-red-400':'text-gray-500';
+var actionBg=s.action==='BUY'?'bg-green-500/10 text-green-400 border border-green-500/20':s.action==='SELL'?'bg-red-500/10 text-red-400 border border-red-500/20':'bg-gray-500/10 text-gray-400 border border-white/10';
+var pctColor=s.confidence>=0.6?'text-green-400':s.confidence<=0.4?'text-red-400':'text-gray-400';
+sh+='<tr class="hover:bg-white/5 transition-colors">';
+sh+='<td class="px-4 py-3">'+(s.time||'').substring(11,19)+'</td>';
+sh+='<td class="px-4 py-3 text-right">'+Number(s.price).toLocaleString(undefined,{minimumFractionDigits:2})+'</td>';
+sh+='<td class="px-4 py-3 text-right">'+(s.rsi||0).toFixed(1)+'</td>';
+sh+='<td class="px-4 py-3 text-right">'+(s.ema||0).toLocaleString(undefined,{minimumFractionDigits:2})+'</td>';
+sh+='<td class="px-4 py-3 text-right">'+(s.macd_hist||0).toFixed(1)+'</td>';
+sh+='<td class="px-4 py-3 text-center"><span class="px-2 py-0.5 rounded text-[9px] font-bold '+actionBg+'">'+s.action+'</span></td>';
+sh+='<td class="px-4 py-3 text-right '+pctColor+'">'+(s.confidence*100).toFixed(2)+'</td></tr>';
 });
 scanBody.innerHTML=sh;
 }else{
-scanBody.innerHTML='<tr><td colspan="7" class="px-3 py-8 text-center text-[#909096] italic">Ilk tarama bekleniyor...</td></tr>';
+scanBody.innerHTML='<tr><td colspan="7" class="px-4 py-8 text-center text-gray-500 italic">Veri bekleniyor...</td></tr>';
 }
 
-var html='';
+var tradeList=document.getElementById('tradeList');
 if(items.length>0){
+var html='';
 items.forEach(function(t){
-var color=t.pnl>0?'text-green-400':'text-red-400';
-html+='<div class="glass rounded-lg p-2 text-xs font-mono"><span class="'+(t.action==='BUY'?'text-green-400':'text-red-400')+'">'+t.action+'</span> $'+t.price.toFixed(2)+' <span class="'+color+'">'+(t.pnl>0?'+':'')+t.pnl.toFixed(2)+'</span></div>';
+var color=t.pnl>=0?'text-green-400':'text-red-400';
+var actionColor=t.action==='BUY'?'text-green-400':'text-red-400';
+var pctBg=t.pnl>=0?'bg-green-500/10':'bg-red-500/10';
+var time=t.time||'';
+if(time.length>10)time=time.substring(11,19);
+html+='<div class="bg-surface-lowest p-3 rounded border border-white/5 flex items-center justify-between text-[11px] font-mono trade-item">';
+html+='<div class="flex items-center space-x-3">';
+html+='<span class="text-gray-500">['+time+']</span>';
+html+='<span class="font-bold '+actionColor+'">'+t.action+'</span>';
+html+='<span class="text-white">'+Number(t.price).toLocaleString(undefined,{minimumFractionDigits:2})+'</span>';
+html+='</div>';
+html+='<span class="px-2 py-0.5 rounded '+pctBg+' '+color+'">'+(t.pnl>=0?'+':'')+t.pnl.toFixed(2)+'%</span>';
+html+='</div>';
 });
-trades.innerHTML=html;
+tradeList.innerHTML=html;
 }else{
-trades.innerHTML='<div class="glass rounded-lg p-4 text-center text-[#909096] text-sm">Islem yok</div>';
+tradeList.innerHTML='<div class="bg-surface-lowest p-4 rounded border border-white/5 text-center text-gray-500 text-sm">İşlem yok</div>';
 }
-}).catch(()=>{});
 }).catch(()=>{});
 }
 
@@ -251,6 +346,38 @@ def api_buy():
 def api_sell():
     bot.satisi_onayla()
     return jsonify({"success": True})
+
+
+@app.route('/api/manual_buy', methods=['POST'])
+def api_manual_buy():
+    try:
+        data = request.get_json()
+        amount = float(data.get('amount', 0))
+        if amount <= 0:
+            return jsonify({"success": False, "message": "Geçersiz miktar"})
+        success = trader.manual_buy(amount)
+        if success:
+            return jsonify({"success": True, "message": f"{amount} USDT ile alım yapıldı"})
+        else:
+            return jsonify({"success": False, "message": "Alım başarısız - bakiye yetersiz veya bağlantı hatası"})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+
+@app.route('/api/manual_sell', methods=['POST'])
+def api_manual_sell():
+    try:
+        data = request.get_json()
+        amount = float(data.get('amount', 0))
+        if amount <= 0:
+            return jsonify({"success": False, "message": "Geçersiz miktar"})
+        success = trader.manual_sell(amount)
+        if success:
+            return jsonify({"success": True, "message": f"{amount} USDT ile satım yapıldı"})
+        else:
+            return jsonify({"success": False, "message": "Satım başarısız - pozisyon yetersiz veya bağlantı hatası"})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
 
 
 @app.route('/api/debug')
