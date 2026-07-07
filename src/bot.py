@@ -491,6 +491,9 @@ class Bot:
                 "ai_accuracy": ai_state.get("accuracy", 0),
                 "ai_prediction_count": ai_state.get("prediction_count", 0),
                 "ai_trained": ai_state.get("is_trained", False),
+                "ai_memory_size": ai_state.get("memory_size", 0),
+                "executor_mode": settings.executor_mode,
+                "sim_balance": executor._sim_balance if hasattr(executor, '_sim_balance') else 0,
             }
         except Exception as e:
             return {"running": self.running, "error": str(e), "son_hata": self.son_hata}

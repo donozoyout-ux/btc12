@@ -108,6 +108,10 @@ SCAN
 <h2 class="text-2xl font-bold font-mono" id="sPnl">$+0.00</h2>
 </div>
 <div class="bg-surface-low p-4 rounded border border-white/5 text-center">
+<p class="text-[10px] text-gray-500 font-bold uppercase mb-2 tracking-widest">MOD</p>
+<h2 class="text-lg font-bold font-mono" id="sMode">SIM</h2>
+</div>
+<div class="bg-surface-low p-4 rounded border border-white/5 text-center">
 <p class="text-[10px] text-gray-500 font-bold uppercase mb-2 tracking-widest">İŞLEM</p>
 <h2 class="text-2xl font-bold font-mono text-green-400">OTO</h2>
 </div>
@@ -258,9 +262,15 @@ var plEl=document.getElementById('sPnl');
 plEl.textContent='$'+(pl>=0?'+':'')+pl.toFixed(2);
 plEl.className='text-2xl font-mono font-bold '+(pl>=0?'text-green-400':'text-red-400');
 
+var modeEl=document.getElementById('sMode');
+var m=d.executor_mode||'sim';
+modeEl.textContent=m==='alpaca'?'GERÇEK':'SIM';
+modeEl.className='text-lg font-mono font-bold '+(m==='alpaca'?'text-green-400':'text-yellow-400');
+
 var aiEl=document.getElementById('sAiAccuracy');
 if(d.ai_trained){
-aiEl.innerHTML='%'+(d.ai_accuracy*100).toFixed(0)+' ACC <span class="text-[10px] text-gray-500">'+d.ai_prediction_count+'t</span>';
+aiEl.innerHTML='%'+(d.ai_accuracy*100).toFixed(0)+' <span class="text-[10px] text-gray-500">'+d.ai_prediction_count+'t</span>';
+if(d.ai_memory_size){aiEl.innerHTML+=' <span class="text-[8px] text-gray-600">| '+d.ai_memory_size+'m</span>';}
 }else{
 aiEl.textContent='EGITIM BEKLENIYOR';
 }

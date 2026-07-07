@@ -1,6 +1,7 @@
 import sqlite3
 import os
 from datetime import datetime
+from src import supabase_store
 
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "trades.db")
@@ -93,6 +94,7 @@ class Database:
             if count > MAX_SCANS:
                 conn.execute(f"DELETE FROM scans WHERE id NOT IN (SELECT id FROM scans ORDER BY id DESC LIMIT {MAX_SCANS})")
             conn.commit()
+            supabase_store.save_scan(price, rsi, ema_cross, macd_hist, vol_ratio, haber_sentiment, action, confidence, stop_loss, take_profit, system_log)
         finally:
             conn.close()
 
@@ -104,6 +106,7 @@ class Database:
                 (datetime.now().isoformat(), action, price, qty, pnl, reason, entry_price, mode)
             )
             conn.commit()
+            supabase_store.save_trade(action, price, qty, pnl, reason, entry_price, mode)
         finally:
             conn.close()
 
@@ -196,6 +199,7 @@ class Database:
             if count > 500:
                 conn.execute("DELETE FROM decisions WHERE id NOT IN (SELECT id FROM decisions ORDER BY id DESC LIMIT 500)")
             conn.commit()
+            supabase_store.save_decision(strategy_action, strategy_score, strategy_reason, ai_prob, ai_veto, final_action, final_reason, price, executed)
         finally:
             conn.close()
 
