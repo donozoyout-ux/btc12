@@ -224,5 +224,18 @@ class Database:
         finally:
             conn.close()
 
+    def get_daily_pnl(self, limit=30):
+        conn = self._conn()
+        try:
+            rows = conn.execute("""
+                SELECT DATE(created_at) as gun, ROUND(SUM(pnl), 2), COUNT(*)
+                FROM trades WHERE action='SELL'
+                GROUP BY gun ORDER BY gun DESC LIMIT ?
+            """, (limit,)).fetchall()
+            rows.reverse()
+            return [{"date": r[0], "pnl": r[1], "count": r[2]} for r in rows]
+        finally:
+            conn.close()
+
 
 db = Database()

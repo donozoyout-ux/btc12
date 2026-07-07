@@ -147,6 +147,15 @@ SCAN
 </table>
 </div>
 </section>
+<section class="bg-surface-low rounded border border-white/5 flex flex-col overflow-hidden" style="max-height:260px">
+<div class="p-4 border-b border-white/5 flex items-center gap-3">
+<h3 class="text-sm font-bold text-white">Günlük K/Z</h3>
+<span class="text-[10px] font-mono text-gray-500" id="dailyPnlTotal">HESAPLANIYOR...</span>
+</div>
+<div class="p-4 overflow-x-auto flex-grow scrollbar" id="dailyPnlChart">
+<div class="text-gray-500 italic text-center py-4 text-sm">Veri bekleniyor...</div>
+</div>
+</section>
 <section class="bg-surface-low rounded border border-white/5 flex flex-col overflow-hidden" style="max-height:250px">
 <div class="p-4 border-b border-white/5 flex justify-between items-center">
 <h3 class="text-sm font-bold text-white">Karar Kayıtları</h3>
@@ -350,10 +359,38 @@ dl.innerHTML=h;
 }).catch(()=>{});
 }
 
+function updateDailyPnl(){
+fetch('/api/daily_pnl').then(r=>r.json()).then(d=>{
+var dt=document.getElementById('dailyPnlTotal');
+if(!dt)return;
+if(!d||d.length===0){dt.textContent='Veri yok';return;}
+var total=0,totalWin=0,totalLoss=0;
+d.forEach(function(g){total+=g.pnl;if(g.pnl>0)totalWin+=g.pnl;else totalLoss+=g.pnl;});
+dt.textContent='NET: '+(total>=0?'+':'')+total.toFixed(2)+'$ | +'+totalWin.toFixed(0)+'$ / '+totalLoss.toFixed(0)+'$';
+var max=Math.max(...d.map(g=>Math.abs(g.pnl)),0.01);
+var ch=document.getElementById('dailyPnlChart');
+var h='<div style="display:flex;align-items:end;gap:6px;height:160px;padding:0 4px">';
+d.forEach(function(g){
+var pct=Math.abs(g.pnl)/max*100;
+var color=g.pnl>=0?'#22c55e':'#ef4444';
+var barH=Math.max(pct*1.2,4);
+h+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:end">';
+h+='<span style="font-size:9px;color:'+color+';font-weight:700;margin-bottom:2px">'+(g.pnl>=0?'+':'')+g.pnl.toFixed(1)+'</span>';
+h+='<div style="width:100%;height:'+barH+'px;background:'+color+';border-radius:3px 3px 0 0;min-height:4px;opacity:0.85"></div>';
+h+='<span style="font-size:7px;color:#6b7280;margin-top:3px;white-space:nowrap">'+g.date.slice(5)+'</span>';
+h+='</div>';
+});
+h+='</div>';
+ch.innerHTML=h;
+}).catch(()=>{});
+}
+
 updateStatus();
 updateDecisions();
+updateDailyPnl();
 setInterval(updateStatus,5000);
 setInterval(updateDecisions,5000);
+setInterval(updateDailyPnl,10000);
 </script>
 </body>
 </html>"""
@@ -463,6 +500,11 @@ def api_debug():
 def api_decisions():
     from src.database import db
     return jsonify(db.get_decisions(20))
+
+@app.route('/api/daily_pnl')
+def api_daily_pnl():
+    from src.database import db
+    return jsonify(db.get_daily_pnl(14))
 
 @app.route('/api/keepalive')
 def api_keepalive():
