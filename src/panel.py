@@ -124,8 +124,8 @@ SCAN
 <h2 class="text-lg font-bold font-mono text-blue-400" id="sAiAccuracy">---</h2>
 </div>
 </section>
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-4" style="height:calc(100vh - 220px)">
-<section class="lg:col-span-2 bg-surface-low rounded border border-white/5 flex flex-col">
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4" style="height:calc(100vh - 220px);overflow:hidden">
+<section class="lg:col-span-2 bg-surface-low rounded border border-white/5 flex flex-col" style="min-height:0">
 <div class="p-4 border-b border-white/5 flex justify-between items-center">
 <h3 class="text-sm font-bold text-white">Analiz Sonuçları</h3>
 <span class="text-[10px] font-mono text-gray-500">REALTIME FEED: <span id="feedStatus" class="text-green-400">ACTIVE</span></span>
@@ -151,33 +151,35 @@ SCAN
 </table>
 </div>
 </section>
-<section class="bg-surface-low rounded border border-white/5 flex flex-col overflow-hidden" style="max-height:260px">
-<div class="p-4 border-b border-white/5 flex items-center gap-3">
+<div class="flex flex-col gap-3 overflow-y-auto scrollbar" style="min-height:0">
+<section class="bg-surface-low rounded border border-white/5 flex flex-col" style="max-height:160px;min-height:0">
+<div class="p-3 border-b border-white/5 flex items-center gap-3">
 <h3 class="text-sm font-bold text-white">Günlük K/Z</h3>
 <span class="text-[10px] font-mono text-gray-500" id="dailyPnlTotal">HESAPLANIYOR...</span>
 </div>
-<div class="p-4 overflow-x-auto flex-grow scrollbar" id="dailyPnlChart">
+<div class="p-3 overflow-x-auto flex-grow scrollbar" id="dailyPnlChart">
 <div class="text-gray-500 italic text-center py-4 text-sm">Veri bekleniyor...</div>
 </div>
 </section>
-<section class="bg-surface-low rounded border border-white/5 flex flex-col overflow-hidden" style="max-height:250px">
-<div class="p-4 border-b border-white/5 flex justify-between items-center">
+<section class="bg-surface-low rounded border border-white/5 flex flex-col" style="max-height:150px;min-height:0">
+<div class="p-3 border-b border-white/5 flex justify-between items-center">
 <h3 class="text-sm font-bold text-white">Karar Kayıtları</h3>
-<span class="text-[10px] font-mono text-gray-500">Son 20 karar</span>
+<span class="text-[10px] font-mono text-gray-500">Son 20</span>
 </div>
-<div class="p-3 overflow-y-auto flex-grow space-y-1 scrollbar text-[10px] font-mono" id="decisionList">
+<div class="p-2 overflow-y-auto flex-grow scrollbar text-[10px] font-mono" id="decisionList">
 <div class="text-gray-500 italic text-center py-4">Kayıt bekleniyor...</div>
 </div>
 </section>
-<section class="bg-surface-low rounded border border-white/5 flex flex-col overflow-hidden">
-<div class="p-4 border-b border-white/5 flex justify-between items-center">
+<section class="bg-surface-low rounded border border-white/5 flex flex-col" style="min-height:0;flex:1">
+<div class="p-3 border-b border-white/5 flex justify-between items-center">
 <h3 class="text-sm font-bold text-white">İşlem Geçmişi</h3>
 <span class="text-[10px] font-mono text-gray-500">TOTAL: <span id="tradeCount">0</span></span>
 </div>
-<div class="p-3 overflow-y-auto flex-grow space-y-2 scrollbar" id="tradeList" data-purpose="islem-listesi">
+<div class="p-2 overflow-y-auto flex-grow scrollbar" id="tradeList" data-purpose="islem-listesi">
 <div class="bg-surface-lowest p-4 rounded border border-white/5 text-center text-gray-500 text-sm">İşlem yok</div>
 </div>
 </section>
+</div>
 </div>
 </main>
 <script>
