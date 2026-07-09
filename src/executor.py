@@ -114,6 +114,10 @@ class Executor:
                 return None
             except Exception as e:
                 print(f"[EXECUTOR] Alpaca pozisyon hatasi: {e}")
+                sd = self._dry_position()
+                if sd:
+                    print("[EXECUTOR] SIM pozisyon kullaniliyor (Alpaca gecici hata)")
+                    return sd
                 return None
         return self._dry_position()
 
@@ -195,32 +199,48 @@ class Executor:
         from alpaca.trading.requests import MarketOrderRequest
         from alpaca.trading.enums import OrderSide, TimeInForce
         price = trader.get_price()
+        invest_amount = settings.position_size_usd * (size_pct / 100)
         try:
             acc = self._client.get_account()
             cash = float(acc.cash)
-        except:
-            cash = settings.position_size_usd
-        invest_amount = min(cash * 0.95, cash)
-        qty = round(invest_amount / price, 6)
-        qty = max(qty, 0.0001)
+            invest_amount = min(invest_amount, cash * 0.95)
+            print(f"[ALPACA] Hesap: ${cash:.2f}, Alim: ${invest_amount:.2f}")
+        except Exception as e:
+            print(f"[ALPACA] Hesap bilgisi alinamadi: {e}")
         order = self._client.submit_order(MarketOrderRequest(
             symbol=ALPACA_SYMBOL,
-            qty=qty,
+            notional=round(invest_amount, 2),
             side=OrderSide.BUY,
-            time_in_force=TimeInForce.GTC
+            time_in_force=TimeInForce.DAY
         ))
+        qty = float(order.filled_qty) if hasattr(order, 'filled_qty') and order.filled_qty else round(invest_amount / price, 6)
         settings.last_entry_price = price
+        print(f"[ALPACA] ALIS basarili: {qty:.6f} BTC @ ${price:,.2f} (order: {order.id})")
         return {"price": price, "qty": round(qty, 6), "order_id": str(order.id), "mode": "REAL"}
 
     def _alpaca_sell(self):
-        pos = self.get_position()
-        if not pos:
+        from alpaca.trading.requests import MarketOrderRequest
+        from alpaca.trading.enums import OrderSide, TimeInForce
+        pos = self._client.get_all_positions()
+        btc_pos = None
+        for p in pos:
+            if p.symbol.upper() in ("BTCUSD", "BTC/USD"):
+                btc_pos = p
+                break
+        if not btc_pos:
+            print("[ALPACA] Satilacak BTC pozisyonu bulunamadi")
             return None
-        sell_qty = pos["qty"]
-        self._client.close_position(ALPACA_SYMBOL)
-        pnl = pos.get("unrealized_pl", 0)
+        sell_qty = float(btc_pos.qty)
         price = trader.get_price()
-        return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": "close_position", "mode": "REAL"}
+        order = self._client.submit_order(MarketOrderRequest(
+            symbol=ALPACA_SYMBOL,
+            qty=round(sell_qty, 6),
+            side=OrderSide.SELL,
+            time_in_force=TimeInForce.DAY
+        ))
+        pnl = float(btc_pos.unrealized_pl) if hasattr(btc_pos, 'unrealized_pl') else 0
+        print(f"[ALPACA] SATIS basarili: {sell_qty:.6f} BTC @ ${price:,.2f} (order: {order.id})")
+        return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": str(order.id), "mode": "REAL"}
 
 
 executor = Executor()
