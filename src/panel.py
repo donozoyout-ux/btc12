@@ -453,8 +453,8 @@ function updateStatus() {
 
     var modeEl = document.getElementById('sMode');
     var m = d.executor_mode || 'sim';
-    modeEl.textContent = m === 'binance' ? 'GERÇEK HESAP' : 'SİMÜLASYON';
-    modeEl.className = 'text-base font-mono font-bold ' + (m === 'binance' ? 'text-emerald-400' : 'text-amber-400');
+    modeEl.textContent = m === 'bybit' ? 'GERÇEK HESAP' : 'SİMÜLASYON';
+    modeEl.className = 'text-base font-mono font-bold ' + (m === 'bybit' ? 'text-emerald-400' : 'text-amber-400');
 
     var aiEl = document.getElementById('sAiAccuracy');
     if (d.ai_trained) {
@@ -825,7 +825,7 @@ def api_debug():
     import os
     db_exists = os.path.exists("trades.db")
     db_size = os.path.getsize("trades.db") if db_exists else 0
-    env_keys = {k: v[:10] + "..." if v and k.endswith(("KEY", "TOKEN", "SECRET")) else v for k, v in os.environ.items() if k.startswith(("BINANCE", "TELEGRAM"))}
+    env_keys = {k: v[:10] + "..." if v and k.endswith(("KEY", "TOKEN", "SECRET")) else v for k, v in os.environ.items() if k.startswith(("BYBIT", "TELEGRAM"))}
     return jsonify({
         "db_exists": db_exists,
         "db_size": db_size,

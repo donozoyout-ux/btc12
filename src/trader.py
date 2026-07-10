@@ -5,7 +5,7 @@ from src.config import settings
 
 class Trader:
     def __init__(self):
-        self.exchange = ccxt.binance({
+        self.exchange = ccxt.bybit({
             'enableRateLimit': True,
             'options': {'defaultType': 'spot'},
         })
