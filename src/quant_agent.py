@@ -5,6 +5,7 @@ from datetime import datetime
 from src.config import settings
 from src.ai_model import ai_model
 from src.strategy import signal_strategy
+from src import supabase_store
 
 
 class QuantAgent:
