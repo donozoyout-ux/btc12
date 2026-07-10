@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from src.config import settings
 from src.trader import trader
 from src import supabase_store
@@ -22,10 +23,7 @@ class Executor:
                 self._test_connection()
                 print("[EXECUTOR] Alpaca baglantisi basarili (paper=True)")
             except Exception as e:
-                print(f"[EXECUTOR] Alpaca baglanti hatasi: {e}")
-                print("[EXECUTOR] SIM moda geciliyor...")
-                self._client = None
-                settings.executor_mode = "sim"
+                print(f"[EXECUTOR] UYARI: Alpaca test baglanti hatasi (gecici olabilir): {e}")
         else:
             print("[EXECUTOR] SIM modu (Alpaca key yok veya mode != alpaca)")
             settings.executor_mode = "sim"
@@ -80,7 +78,13 @@ class Executor:
         )
 
     def get_account(self):
-        if settings.executor_mode == "alpaca" and self._client:
+        if settings.executor_mode == "alpaca":
+            if not self._client:
+                try:
+                    self._init_alpaca()
+                except Exception as e:
+                    print(f"[EXECUTOR] Alpaca baslatilamadi: {e}")
+                    return self._dry_account()
             try:
                 acc = self._client.get_account()
                 return {
@@ -89,13 +93,17 @@ class Executor:
                     "buying_power": round(float(acc.buying_power), 2),
                 }
             except Exception as e:
-                print(f"[EXECUTOR] Alpaca account hatasi: {e}, SIM'e donuluyor")
-                settings.executor_mode = "sim"
-                self._client = None
+                print(f"[EXECUTOR] Alpaca account hatasi (gecici): {e}")
+                return self._dry_account()
         return self._dry_account()
 
     def get_position(self):
-        if settings.executor_mode == "alpaca" and self._client:
+        if settings.executor_mode == "alpaca":
+            if not self._client:
+                try:
+                    self._init_alpaca()
+                except:
+                    return self._dry_position()
             try:
                 for pos in self._client.get_all_positions():
                     if pos.symbol.upper() in ("BTCUSD", "BTC/USD"):
@@ -113,32 +121,38 @@ class Executor:
                         }
                 return None
             except Exception as e:
-                print(f"[EXECUTOR] Alpaca pozisyon hatasi: {e}")
-                sd = self._dry_position()
-                if sd:
-                    print("[EXECUTOR] SIM pozisyon kullaniliyor (Alpaca gecici hata)")
-                    return sd
-                return None
+                print(f"[EXECUTOR] Alpaca pozisyon hatasi (gecici): {e}")
+                return self._dry_position()
         return self._dry_position()
 
-    def buy(self, size_pct=100):
-        if settings.executor_mode == "alpaca" and self._client:
+    def buy(self, size_pct=100, amount_usd=None):
+        if settings.executor_mode == "alpaca":
+            if not self._client:
+                try:
+                    self._init_alpaca()
+                except Exception as e:
+                    print(f"[EXECUTOR] Alpaca baslatilamadi: {e}")
+                    return self._dry_buy(size_pct, amount_usd)
             try:
-                return self._alpaca_buy(size_pct)
+                return self._alpaca_buy(size_pct, amount_usd)
             except Exception as e:
-                print(f"[EXECUTOR] Alpaca alim hatasi: {e}, SIM'e donuluyor")
-                settings.executor_mode = "sim"
-                self._client = None
-        return self._dry_buy(size_pct)
+                print(f"[EXECUTOR] Alpaca alim hatasi (gecici): {e}")
+                return self._dry_buy(size_pct, amount_usd)
+        return self._dry_buy(size_pct, amount_usd)
 
     def sell(self):
-        if settings.executor_mode == "alpaca" and self._client:
+        if settings.executor_mode == "alpaca":
+            if not self._client:
+                try:
+                    self._init_alpaca()
+                except Exception as e:
+                    print(f"[EXECUTOR] Alpaca baslatilamadi: {e}")
+                    return self._dry_sell()
             try:
                 return self._alpaca_sell()
             except Exception as e:
-                print(f"[EXECUTOR] Alpaca satis hatasi: {e}, SIM'e donuluyor")
-                settings.executor_mode = "sim"
-                self._client = None
+                print(f"[EXECUTOR] Alpaca satis hatasi (gecici): {e}")
+                return self._dry_sell()
         return self._dry_sell()
 
     def _dry_account(self):
@@ -166,9 +180,9 @@ class Executor:
             }
         return None
 
-    def _dry_buy(self, size_pct=100):
+    def _dry_buy(self, size_pct=100, amount_usd=None):
         price = trader.get_price()
-        invest = settings.position_size_usd * (size_pct / 100)
+        invest = amount_usd if amount_usd is not None else settings.position_size_usd * (size_pct / 100)
         qty = round(invest / price, 6)
         qty = max(qty, 0.0001)
         cost = price * qty
@@ -195,11 +209,11 @@ class Executor:
         self._save_state()
         return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": "dry_sell", "mode": "SIM"}
 
-    def _alpaca_buy(self, size_pct=100):
+    def _alpaca_buy(self, size_pct=100, amount_usd=None):
         from alpaca.trading.requests import MarketOrderRequest
         from alpaca.trading.enums import OrderSide, TimeInForce
         price = trader.get_price()
-        invest_amount = settings.position_size_usd * (size_pct / 100)
+        invest_amount = amount_usd if amount_usd is not None else settings.position_size_usd * (size_pct / 100)
         try:
             acc = self._client.get_account()
             cash = float(acc.cash)
@@ -213,6 +227,11 @@ class Executor:
             side=OrderSide.BUY,
             time_in_force=TimeInForce.DAY
         ))
+        time.sleep(1)
+        try:
+            order = self._client.get_order_by_id(order.id)
+        except:
+            pass
         qty = float(order.filled_qty) if hasattr(order, 'filled_qty') and order.filled_qty else round(invest_amount / price, 6)
         settings.last_entry_price = price
         print(f"[ALPACA] ALIS basarili: {qty:.6f} BTC @ ${price:,.2f} (order: {order.id})")

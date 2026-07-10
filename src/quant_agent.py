@@ -14,12 +14,27 @@ class QuantAgent:
         self._trade_history = []
 
     def _load_state(self):
+        local_state = None
         if os.path.exists(self.state_file):
             try:
                 with open(self.state_file, "r") as f:
-                    return json.load(f)
+                    local_state = json.load(f)
             except:
                 pass
+        
+        if local_state:
+            return local_state
+            
+        sb_state = supabase_store.load_agent_state()
+        if sb_state:
+            print("[QUANT_AGENT] Agent state Supabase'den yuklendi.")
+            try:
+                with open(self.state_file, "w") as f:
+                    json.dump(sb_state, f, indent=2, default=str)
+            except:
+                pass
+            return sb_state
+            
         return {
             "son_islem_kar_zarar": 0.0,
             "son_hatalar": [],
@@ -40,8 +55,16 @@ class QuantAgent:
         }
 
     def _save_state(self):
-        with open(self.state_file, "w") as f:
-            json.dump(self.state, f, indent=2, default=str)
+        try:
+            with open(self.state_file, "w") as f:
+                json.dump(self.state, f, indent=2, default=str)
+        except Exception as e:
+            print(f"[QUANT_AGENT] Local state kaydetme hatasi: {e}")
+            
+        try:
+            supabase_store.save_agent_state(self.state)
+        except Exception as e:
+            print(f"[QUANT_AGENT] Supabase state kaydetme hatasi: {e}")
 
     def analyze(self, teknik_analiz, internet_ve_haberler, mevcut_portfoy, gecmis_hafiza):
         hata_var = False
@@ -115,9 +138,9 @@ class QuantAgent:
                     },
                     "system_log": f"STRICT+AI:{ai_prob:.0%}"
                 }
-        min_confidence = 0.10
+        min_confidence = 0.50
         if ardisik_kayip >= settings.max_consecutive_losses:
-            min_confidence = 0.35
+            min_confidence = 0.70
             risk_seviyesi = "muhafazakar"
 
         buy_score = 0.0

@@ -11,6 +11,7 @@ MAX_SCANS = 1000
 class Database:
     def __init__(self):
         self._init_db()
+        self.sync_from_supabase()
 
     def _conn(self):
         conn = sqlite3.connect(DB_PATH)
@@ -238,6 +239,55 @@ class Database:
             """, (limit,)).fetchall()
             rows.reverse()
             return [{"date": r[0], "pnl": r[1], "count": r[2]} for r in rows]
+        finally:
+            conn.close()
+
+    def sync_from_supabase(self):
+        if not supabase_store.is_connected():
+            return
+        print("[DATABASE] Supabase'den veri senkronizasyonu baslatiliyor...")
+        try:
+            conn = self._conn()
+            
+            # 1. Sync trades
+            trade_count = conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0]
+            if trade_count == 0:
+                print("[DATABASE] Yerel trades tablosu bos, Supabase'den cekiliyor...")
+                sb_trades = supabase_store.load_trades(100)
+                for t in reversed(sb_trades):
+                    conn.execute(
+                        "INSERT INTO trades (created_at, action, price, qty, pnl, reason, entry_price, mode) VALUES (?,?,?,?,?,?,?,?)",
+                        (t.get("created_at"), t.get("action"), t.get("price"), t.get("qty"), t.get("pnl"), t.get("reason"), t.get("entry_price"), t.get("mode", "SIM"))
+                    )
+                print(f"[DATABASE] {len(sb_trades)} adet islem basariyla senkronize edildi.")
+            
+            # 2. Sync scans
+            scan_count = conn.execute("SELECT COUNT(*) FROM scans").fetchone()[0]
+            if scan_count == 0:
+                print("[DATABASE] Yerel scans tablosu bos, Supabase'den cekiliyor...")
+                sb_scans = supabase_store.load_scans(100)
+                for s in reversed(sb_scans):
+                    conn.execute(
+                        "INSERT INTO scans (created_at, price, rsi, ema_cross, macd_hist, vol_ratio, haber_sentiment, action, confidence, stop_loss, take_profit, system_log) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (s.get("created_at"), s.get("price"), s.get("rsi"), s.get("ema_cross"), s.get("macd_hist"), s.get("vol_ratio"), s.get("haber_sentiment"), s.get("action"), s.get("confidence"), s.get("stop_loss"), s.get("take_profit"), s.get("system_log"))
+                    )
+                print(f"[DATABASE] {len(sb_scans)} adet tarama basariyla senkronize edildi.")
+
+            # 3. Sync decisions
+            decision_count = conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
+            if decision_count == 0:
+                print("[DATABASE] Yerel decisions tablosu bos, Supabase'den cekiliyor...")
+                sb_decisions = supabase_store.load_decisions(100)
+                for d in reversed(sb_decisions):
+                    conn.execute(
+                        "INSERT INTO decisions (created_at, strategy_action, strategy_score, strategy_reason, ai_prob, ai_veto, final_action, final_reason, price, executed) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        (d.get("created_at"), d.get("strategy_action"), d.get("strategy_score"), d.get("strategy_reason"), d.get("ai_prob"), d.get("ai_veto", 0), d.get("final_action"), d.get("final_reason"), d.get("price"), d.get("executed", 0))
+                    )
+                print(f"[DATABASE] {len(sb_decisions)} adet karar basariyla senkronize edildi.")
+
+            conn.commit()
+        except Exception as e:
+            print(f"[DATABASE] Supabase senkronizasyon hatasi: {e}")
         finally:
             conn.close()
 

@@ -180,6 +180,69 @@ def load_ai_memory(limit=5000):
         print(f"[SUPABASE] load_ai_memory hatasi: {e}")
         return []
 
+def load_trades(limit=50):
+    c = _client()
+    if not c:
+        return []
+    try:
+        res = c.table("trades").select("*").order("created_at", desc=True).limit(limit).execute()
+        return res.data if res.data else []
+    except Exception as e:
+        print(f"[SUPABASE] load_trades hatasi: {e}")
+        return []
+
+
+def load_scans(limit=20):
+    c = _client()
+    if not c:
+        return []
+    try:
+        res = c.table("scans").select("*").order("created_at", desc=True).limit(limit).execute()
+        return res.data if res.data else []
+    except Exception as e:
+        print(f"[SUPABASE] load_scans hatasi: {e}")
+        return []
+
+
+def load_decisions(limit=20):
+    c = _client()
+    if not c:
+        return []
+    try:
+        res = c.table("decisions").select("*").order("created_at", desc=True).limit(limit).execute()
+        return res.data if res.data else []
+    except Exception as e:
+        print(f"[SUPABASE] load_decisions hatasi: {e}")
+        return []
+
+
+def save_agent_state(state):
+    c = _client()
+    if not c:
+        return
+    try:
+        existing = c.table("agent_state").select("*").limit(1).execute()
+        data = {"state": state, "updated_at": datetime.now().isoformat()}
+        if existing.data and len(existing.data) > 0:
+            c.table("agent_state").update(data).eq("id", existing.data[0]["id"]).execute()
+        else:
+            c.table("agent_state").insert(data).execute()
+    except Exception as e:
+        print(f"[SUPABASE] save_agent_state hatasi: {e}")
+
+
+def load_agent_state():
+    c = _client()
+    if not c:
+        return None
+    try:
+        result = c.table("agent_state").select("*").limit(1).execute()
+        if result.data and len(result.data) > 0:
+            return result.data[0].get("state")
+    except Exception as e:
+        print(f"[SUPABASE] load_agent_state hatasi: {e}")
+    return None
+
 
 def delete_old_scans():
     """Supabase'deki eski scan kayitlarini temizle"""
@@ -231,5 +294,10 @@ def create_tables():
         created_at TIMESTAMPTZ DEFAULT NOW(),
         features JSONB, future_return REAL,
         predicted_prob REAL, actual_direction INT, pnl REAL
+    );
+    CREATE TABLE agent_state (
+        id BIGSERIAL PRIMARY KEY,
+        state JSONB,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
     );
     """)

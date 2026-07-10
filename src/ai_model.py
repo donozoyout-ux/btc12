@@ -58,6 +58,7 @@ class AIModel:
                     pass
         if loaded:
             print(f"[AI] Model yuklendi (acc={self.accuracy:.1%}, tahmin={self.prediction_count})")
+        self.load_memory_from_supabase()
 
     def _save(self):
         self._save_local()
