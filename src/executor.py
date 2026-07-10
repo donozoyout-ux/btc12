@@ -1,11 +1,12 @@
 import json
 import os
 import time
+import ccxt
 from src.config import settings
 from src.trader import trader
 from src import supabase_store
 
-ALPACA_SYMBOL = "BTCUSD"
+SYMBOL = "BTC/USDT"
 STATE_FILE = "executor_state.json"
 
 
@@ -15,24 +16,34 @@ class Executor:
         self._sim_balance = 100000.0
         self._sim_btc = 0.0
         self._sim_entry = 0.0
-        self._alpaca_error = None
+        self._binance_error = None
         self._load_state()
-        if settings.executor_mode == "alpaca" and settings.alpaca_api_key and settings.alpaca_secret_key:
+
+        if settings.executor_mode == "binance" and settings.binance_api_key and settings.binance_secret_key:
             try:
-                self._init_alpaca()
-                self._test_connection()
-                print("[EXECUTOR] Alpaca baglantisi basarili (paper=True)")
+                self._init_binance()
+                print(f"[EXECUTOR] Binance baglantisi basarili (testnet={settings.binance_testnet})")
             except Exception as e:
-                print(f"[EXECUTOR] UYARI: Alpaca test baglanti hatasi (gecici olabilir): {e}")
+                print(f"[EXECUTOR] UYARI: Binance baglanti hatasi (gecici olabilir): {e}")
+                self._binance_error = str(e)
         else:
-            print("[EXECUTOR] SIM modu (Alpaca key yok veya mode != alpaca)")
+            print("[EXECUTOR] SIM modu (Binance key yok veya mode != binance)")
             settings.executor_mode = "sim"
 
-    def _test_connection(self):
+    def _init_binance(self):
+        self._client = ccxt.binance({
+            'apiKey': settings.binance_api_key,
+            'secret': settings.binance_secret_key,
+            'enableRateLimit': True,
+            'options': {'defaultType': 'spot'},
+        })
+        if settings.binance_testnet:
+            self._client.set_sandbox_mode(True)
+        # Piyasa bilgilerini yukle (precision limitleri icin)
         try:
-            self._client.get_account()
+            self._client.load_markets()
         except Exception as e:
-            raise Exception(f"Alpaca test failed: {e}")
+            print(f"[EXECUTOR] load_markets hatasi: {e}")
 
     def _load_state(self):
         try:
@@ -69,89 +80,89 @@ class Executor:
         except Exception as e:
             print(f"[EXECUTOR] State kaydetme hatasi: {e}")
 
-    def _init_alpaca(self):
-        from alpaca.trading.client import TradingClient
-        self._client = TradingClient(
-            settings.alpaca_api_key,
-            settings.alpaca_secret_key,
-            paper=True
-        )
-
     def get_account(self):
-        if settings.executor_mode == "alpaca":
+        if settings.executor_mode == "binance":
             if not self._client:
                 try:
-                    self._init_alpaca()
+                    self._init_binance()
                 except Exception as e:
-                    print(f"[EXECUTOR] Alpaca baslatilamadi: {e}")
+                    print(f"[EXECUTOR] Binance baslatilamadi: {e}")
                     return self._dry_account()
             try:
-                acc = self._client.get_account()
+                balance = self._client.fetch_balance()
+                usdt_balance = float(balance['free'].get('USDT', 0.0))
+                btc_balance = float(balance['free'].get('BTC', 0.0))
+                price = trader.get_price()
+                portfolio_value = usdt_balance + (btc_balance * price)
                 return {
-                    "portfolio_value": round(float(acc.portfolio_value), 2),
-                    "cash": round(float(acc.cash), 2),
-                    "buying_power": round(float(acc.buying_power), 2),
+                    "portfolio_value": round(portfolio_value, 2),
+                    "cash": round(usdt_balance, 2),
+                    "buying_power": round(usdt_balance, 2),
+                    "btc": round(btc_balance, 6),
                 }
             except Exception as e:
-                print(f"[EXECUTOR] Alpaca account hatasi (gecici): {e}")
+                print(f"[EXECUTOR] Binance bakiye hatasi (gecici): {e}")
                 return self._dry_account()
         return self._dry_account()
 
     def get_position(self):
-        if settings.executor_mode == "alpaca":
+        if settings.executor_mode == "binance":
             if not self._client:
                 try:
-                    self._init_alpaca()
+                    self._init_binance()
                 except:
                     return self._dry_position()
             try:
-                for pos in self._client.get_all_positions():
-                    if pos.symbol.upper() in ("BTCUSD", "BTC/USD"):
-                        price = trader.get_price()
-                        entry = float(pos.avg_entry_price)
-                        qty = float(pos.qty)
-                        mv = round(qty * price, 2)
-                        pl = round(mv - qty * entry, 2)
-                        return {
-                            "symbol": "BTC/USD",
-                            "qty": round(qty, 6),
-                            "market_value": mv,
-                            "avg_entry_price": entry,
-                            "unrealized_pl": pl,
-                        }
+                balance = self._client.fetch_balance()
+                btc_qty = float(balance['free'].get('BTC', 0.0))
+                price = trader.get_price()
+
+                # Eger elimizde kayda deger miktarda BTC varsa (ornegin > 1 USDT degerinde) pozisyon var sayilir
+                if btc_qty * price > 1.0:
+                    mv = round(btc_qty * price, 2)
+                    # Ortalama giris fiyati cüzdandan ogrenilemedigi icin Supabase state'den aliyoruz
+                    entry = self._sim_entry if self._sim_entry > 0 else price
+                    pl = round(mv - btc_qty * entry, 2)
+                    return {
+                        "symbol": SYMBOL,
+                        "qty": round(btc_qty, 6),
+                        "market_value": mv,
+                        "avg_entry_price": entry,
+                        "unrealized_pl": pl,
+                    }
                 return None
             except Exception as e:
-                print(f"[EXECUTOR] Alpaca pozisyon hatasi (gecici): {e}")
+                print(f"[EXECUTOR] Binance pozisyon hatasi (gecici): {e}")
                 return self._dry_position()
         return self._dry_position()
 
     def buy(self, size_pct=100, amount_usd=None):
-        if settings.executor_mode == "alpaca":
+        if settings.executor_mode == "binance":
             if not self._client:
                 try:
-                    self._init_alpaca()
+                    self._init_binance()
                 except Exception as e:
-                    print(f"[EXECUTOR] Alpaca baslatilamadi: {e}")
+                    print(f"[EXECUTOR] Binance baslatilamadi: {e}")
                     return self._dry_buy(size_pct, amount_usd)
             try:
-                return self._alpaca_buy(size_pct, amount_usd)
+                return self._binance_buy(size_pct, amount_usd)
             except Exception as e:
-                print(f"[EXECUTOR] Alpaca alim hatasi (gecici): {e}")
+                print(f"[EXECUTOR] Binance alim hatasi (gecici): {e}")
                 return self._dry_buy(size_pct, amount_usd)
         return self._dry_buy(size_pct, amount_usd)
 
     def sell(self):
-        if settings.executor_mode == "alpaca":
+        if settings.executor_mode == "binance":
             if not self._client:
                 try:
-                    self._init_alpaca()
+                    self._init_binance()
                 except Exception as e:
-                    print(f"[EXECUTOR] Alpaca baslatilamadi: {e}")
+                    print(f"[EXECUTOR] Binance baslatilamadi: {e}")
                     return self._dry_sell()
             try:
-                return self._alpaca_sell()
+                return self._binance_sell()
             except Exception as e:
-                print(f"[EXECUTOR] Alpaca satis hatasi (gecici): {e}")
+                print(f"[EXECUTOR] Binance satis hatasi (gecici): {e}")
                 return self._dry_sell()
         return self._dry_sell()
 
@@ -172,7 +183,7 @@ class Executor:
             mv = round(self._sim_btc * price, 2)
             pl = round(mv - self._sim_btc * self._sim_entry, 2)
             return {
-                "symbol": "BTC/USDT",
+                "symbol": SYMBOL,
                 "qty": round(self._sim_btc, 6),
                 "market_value": mv,
                 "avg_entry_price": self._sim_entry,
@@ -209,57 +220,114 @@ class Executor:
         self._save_state()
         return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": "dry_sell", "mode": "SIM"}
 
-    def _alpaca_buy(self, size_pct=100, amount_usd=None):
-        from alpaca.trading.requests import MarketOrderRequest
-        from alpaca.trading.enums import OrderSide, TimeInForce
+    def _binance_buy(self, size_pct=100, amount_usd=None):
         price = trader.get_price()
         invest_amount = amount_usd if amount_usd is not None else settings.position_size_usd * (size_pct / 100)
-        try:
-            acc = self._client.get_account()
-            cash = float(acc.cash)
-            invest_amount = min(invest_amount, cash * 0.95)
-            print(f"[ALPACA] Hesap: ${cash:.2f}, Alim: ${invest_amount:.2f}")
-        except Exception as e:
-            print(f"[ALPACA] Hesap bilgisi alinamadi: {e}")
-        order = self._client.submit_order(MarketOrderRequest(
-            symbol=ALPACA_SYMBOL,
-            notional=round(invest_amount, 2),
-            side=OrderSide.BUY,
-            time_in_force=TimeInForce.DAY
-        ))
-        time.sleep(1)
-        try:
-            order = self._client.get_order_by_id(order.id)
-        except:
-            pass
-        qty = float(order.filled_qty) if hasattr(order, 'filled_qty') and order.filled_qty else round(invest_amount / price, 6)
-        settings.last_entry_price = price
-        print(f"[ALPACA] ALIS basarili: {qty:.6f} BTC @ ${price:,.2f} (order: {order.id})")
-        return {"price": price, "qty": round(qty, 6), "order_id": str(order.id), "mode": "REAL"}
+        
+        # Free USDT kontrol et
+        balance = self._client.fetch_balance()
+        free_usdt = float(balance['free'].get('USDT', 0.0))
+        invest_amount = min(invest_amount, free_usdt * 0.99) # %1 komisyon/slippage payi birak
 
-    def _alpaca_sell(self):
-        from alpaca.trading.requests import MarketOrderRequest
-        from alpaca.trading.enums import OrderSide, TimeInForce
-        pos = self._client.get_all_positions()
-        btc_pos = None
-        for p in pos:
-            if p.symbol.upper() in ("BTCUSD", "BTC/USD"):
-                btc_pos = p
-                break
-        if not btc_pos:
-            print("[ALPACA] Satilacak BTC pozisyonu bulunamadi")
+        if invest_amount < 10.0:
+            print(f"[BINANCE] HATA: Alim tutari minimum Spot limiti olan 10 USDT'den az: ${invest_amount:.2f}")
             return None
-        sell_qty = float(btc_pos.qty)
+
+        print(f"[BINANCE] Market Buy gonderiliyor: Tutar = {invest_amount:.2f} USDT")
+
+        order = None
+        try:
+            # USDT tutari ile alis yapmak icin quoteOrderQty parametresini kullaniyoruz
+            order = self._client.create_order(
+                symbol=SYMBOL,
+                type='market',
+                side='buy',
+                amount=invest_amount,
+                price=None,
+                params={'quoteOrderQty': self._client.cost_to_precision(SYMBOL, invest_amount)}
+            )
+        except Exception as e:
+            print(f"[BINANCE] quoteOrderQty hatasi, fallback yapiliyor: {e}")
+            # Fallback: miktar hesaplayarak BTC adet bazli market buy
+            qty = invest_amount / price
+            qty_prec = float(self._client.amount_to_precision(SYMBOL, qty))
+            order = self._client.create_market_buy_order(SYMBOL, qty_prec)
+
+        # Emir bilgilerini al
+        filled_qty = float(order.get('filled', 0.0))
+        cost = float(order.get('cost', 0.0))
+        avg_price = float(order.get('average', 0.0)) if order.get('average') else price
+
+        if filled_qty == 0.0:
+            # CCXT bazen filled bilgisini anlik donmeyebilir, order status sorgula
+            try:
+                time.sleep(0.5)
+                order_info = self._client.fetch_order(order['id'], SYMBOL)
+                filled_qty = float(order_info.get('filled', 0.0))
+                cost = float(order_info.get('cost', 0.0))
+                if order_info.get('average'):
+                    avg_price = float(order_info['average'])
+            except:
+                pass
+
+        if filled_qty == 0.0:
+            # Fallback hesaplama
+            filled_qty = round(invest_amount / price, 6)
+            avg_price = price
+
+        self._sim_entry = avg_price
+        self._sim_btc = filled_qty
+        self._sim_balance = free_usdt - cost if free_usdt > cost else 0.0
+        settings.last_entry_price = avg_price
+        self._save_state()
+
+        print(f"[BINANCE] ALIS basarili: {filled_qty:.6f} BTC @ ${avg_price:,.2f} (cost: ${cost:.2f})")
+        return {"price": avg_price, "qty": round(filled_qty, 6), "order_id": str(order.get('id', 'binance_buy')), "mode": "REAL"}
+
+    def _binance_sell(self):
+        balance = self._client.fetch_balance()
+        btc_qty = float(balance['free'].get('BTC', 0.0))
         price = trader.get_price()
-        order = self._client.submit_order(MarketOrderRequest(
-            symbol=ALPACA_SYMBOL,
-            qty=round(sell_qty, 6),
-            side=OrderSide.SELL,
-            time_in_force=TimeInForce.DAY
-        ))
-        pnl = float(btc_pos.unrealized_pl) if hasattr(btc_pos, 'unrealized_pl') else 0
-        print(f"[ALPACA] SATIS basarili: {sell_qty:.6f} BTC @ ${price:,.2f} (order: {order.id})")
-        return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": str(order.id), "mode": "REAL"}
+
+        # Binance min tutar kontrolu (min 10 USDT degeri olan BTC olmali)
+        if btc_qty * price < 10.0:
+            print(f"[BINANCE] HATA: Satilacak BTC degeri minimum 10 USDT Spot limitinin altinda: ${btc_qty * price:.2f}")
+            return None
+
+        # BTC miktarini borsanin hassasiyetine yuvarla
+        qty_prec = float(self._client.amount_to_precision(SYMBOL, btc_qty))
+
+        print(f"[BINANCE] Market Sell gonderiliyor: Miktar = {qty_prec:.6f} BTC")
+        order = self._client.create_market_sell_order(SYMBOL, qty_prec)
+
+        filled_qty = float(order.get('filled', 0.0)) if order.get('filled') else qty_prec
+        cost = float(order.get('cost', 0.0))
+        avg_price = float(order.get('average', 0.0)) if order.get('average') else price
+
+        if filled_qty == 0.0:
+            try:
+                time.sleep(0.5)
+                order_info = self._client.fetch_order(order['id'], SYMBOL)
+                filled_qty = float(order_info.get('filled', 0.0))
+                cost = float(order_info.get('cost', 0.0))
+                if order_info.get('average'):
+                    avg_price = float(order_info['average'])
+            except:
+                pass
+
+        # Kar zarar hesapla
+        pnl = 0.0
+        if self._sim_entry > 0:
+            pnl = (avg_price - self._sim_entry) * filled_qty
+
+        # Cüzdan durumunu güncelle ve kaydet
+        self._sim_entry = 0.0
+        self._sim_btc = 0.0
+        self._sim_balance = float(balance['free'].get('USDT', 0.0)) + cost
+        self._save_state()
+
+        print(f"[BINANCE] SATIS basarili: {filled_qty:.6f} BTC @ ${avg_price:,.2f} (PNL: ${pnl:+.2f})")
+        return {"qty": round(filled_qty, 6), "pl": round(pnl, 2), "price": avg_price, "order_id": str(order.get('id', 'binance_sell')), "mode": "REAL"}
 
 
 executor = Executor()

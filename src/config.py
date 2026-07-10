@@ -5,9 +5,9 @@ load_dotenv()
 
 
 class Settings:
-    alpaca_api_key = os.getenv("ALPACA_API_KEY", "")
-    alpaca_secret_key = os.getenv("ALPACA_SECRET_KEY", "")
-    alpaca_base_url = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+    binance_api_key = os.getenv("BINANCE_API_KEY", "")
+    binance_secret_key = os.getenv("BINANCE_SECRET_KEY", "")
+    binance_testnet = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
 
     telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
@@ -19,7 +19,7 @@ class Settings:
     rr_ratio = float(os.getenv("RR_RATIO", "2"))
     max_consecutive_losses = int(os.getenv("MAX_CONSECUTIVE_LOSSES", "3"))
 
-    executor_mode = os.getenv("EXECUTOR_MODE", "alpaca")
+    executor_mode = os.getenv("EXECUTOR_MODE", "binance")
     stop_loss_pct = float(os.getenv("STOP_LOSS_PCT", "3"))
     last_entry_price = 0
     memory_file = "state.json"
@@ -30,11 +30,11 @@ settings = Settings()
 # Startup kontrol
 if not settings.telegram_bot_token or not settings.telegram_chat_id:
     print("[CONFIG] UYARI: Telegram API anahtarlari eksik!")
-if settings.executor_mode == "alpaca":
-    if not settings.alpaca_api_key or not settings.alpaca_secret_key:
-        print("[CONFIG] UYARI: Alpaca API anahtarlari eksik! EXECUTOR_MODE=alpaca ama key yok.")
+if settings.executor_mode == "binance":
+    if not settings.binance_api_key or not settings.binance_secret_key:
+        print("[CONFIG] UYARI: Binance API anahtarlari eksik! EXECUTOR_MODE=binance ama key yok.")
         print("[CONFIG] Render'da Environment Variables ayarlayin:")
-        print("[CONFIG]   ALPACA_API_KEY = PKTDMFS2...")
-        print("[CONFIG]   ALPACA_SECRET_KEY = 3rfJQubVy...")
+        print("[CONFIG]   BINANCE_API_KEY = ...")
+        print("[CONFIG]   BINANCE_SECRET_KEY = ...")
     else:
-        print("[CONFIG] Alpaca API anahtarlari mevcut, paper=True ile baglanilacak")
+        print(f"[CONFIG] Binance API anahtarlari mevcut, testnet={settings.binance_testnet} ile baglanilacak")
