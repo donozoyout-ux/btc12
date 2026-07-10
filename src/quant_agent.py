@@ -6,6 +6,7 @@ from src.config import settings
 from src.ai_model import ai_model
 from src.strategy import signal_strategy
 from src import supabase_store
+from src.agents import consensus
 
 
 class QuantAgent:
@@ -13,6 +14,25 @@ class QuantAgent:
         self.state_file = settings.memory_file
         self.state = self._load_state()
         self._trade_history = []
+        # Ajan durumlarını yükle
+        self._load_agent_states()
+
+    def _load_agent_states(self):
+        """Konsensüs ajan durumlarını Supabase'den yükle."""
+        try:
+            agent_data = supabase_store.load_consensus_states()
+            if agent_data:
+                consensus.load_states(agent_data)
+        except Exception as e:
+            print(f"[QUANT_AGENT] Ajan durumlari yuklenemedi: {e}")
+
+    def _save_agent_states(self):
+        """Konsensüs ajan durumlarını Supabase'e kaydet."""
+        try:
+            data = consensus.save_states()
+            supabase_store.save_consensus_states(data)
+        except Exception as e:
+            print(f"[QUANT_AGENT] Ajan durumlari kaydedilemedi: {e}")
 
     def _load_state(self):
         local_state = None
@@ -88,10 +108,6 @@ class QuantAgent:
         breakout_down = teknik_analiz.get("breakout_down", 0)
         price_change_5 = teknik_analiz.get("price_change_5", 0)
 
-        ob = teknik_analiz.get("orderbook", {})
-        ob_sinyal = ob.get("bid_ask_sinyal", "notr")
-        ob_ratio = ob.get("bid_ask_ratio", 1.0)
-
         acik_pozisyon = mevcut_portfoy.get("acik_pozisyon", False)
         giris_fiyati = mevcut_portfoy.get("giris_fiyati", 0)
         usdt_bakiye = mevcut_portfoy.get("usdt_bakiye", 0)
@@ -99,10 +115,11 @@ class QuantAgent:
 
         ardisik_kayip = self.state.get("ardisik_kayip", 0)
         risk_seviyesi = self.state.get("risk_seviyesi_ayari", "normal")
-        w = self.state.get("weights", {k: 1.0 for k in ["rsi","macd","ema","bb","vol","breakout","orderbook","haber","momentum"]})
 
+        # ─── XGBoost AI Tahmini ───
         ai_prob, ai_conf = ai_model.predict(teknik_analiz)
 
+        # ─── Strict Strateji Sinyali (hızlı giriş/çıkış) ───
         signal = signal_strategy.analyze(teknik_analiz)
         if signal.get("strict_signal") and signal["action"] in ("BUY", "SELL"):
             if signal["action"] == "BUY" and ai_prob >= 0.4 and not acik_pozisyon:
@@ -139,215 +156,72 @@ class QuantAgent:
                     },
                     "system_log": f"STRICT+AI:{ai_prob:.0%}"
                 }
+
+        # ─── 5 AI AJAN KONSENSÜS SİSTEMİ ───
+        consensus_result = consensus.vote(teknik_analiz, internet_ve_haberler)
+        consensus_action = consensus_result["action"]
+        consensus_confidence = consensus_result["confidence"]
+        consensus_ok = consensus_result["consensus"]
+        votes = consensus_result["votes"]
+        details = consensus_result["details"]
+
+        print(f"  [CONSENSUS] {details}")
+        print(f"  [CONSENSUS] Karar: {consensus_action} | Güven: {consensus_confidence:.0%} | Konsensüs: {'✓' if consensus_ok else '✗'}")
+        print(f"  [CONSENSUS] AL:{consensus_result['buy_count']} SAT:{consensus_result['sell_count']} BEKLE:{consensus_result['hold_count']}")
+
+        # Ardışık kayıp durumunda güven eşiğini yükselt
         min_confidence = 0.50
         if ardisik_kayip >= settings.max_consecutive_losses:
             min_confidence = 0.70
             risk_seviyesi = "muhafazakar"
 
-        buy_score = 0.0
-        sell_score = 0.0
-        reasons = []
+        # ─── Konsensüs sonucunu XGBoost ile doğrula ───
         used_indicators = []
-        direction = "HOLD"
+        for name, v in votes.items():
+            if v["action"] != "HOLD":
+                used_indicators.append(name)
 
-        rsi_w = w.get("rsi", 1.0)
-        macd_w = w.get("macd", 1.0)
-        ema_w = w.get("ema", 1.0)
-        bb_w = w.get("bb", 1.0)
-        vol_w = w.get("vol", 1.0)
-        breakout_w = w.get("breakout", 1.0)
-        ob_w = w.get("orderbook", 1.0)
-        momentum_w = w.get("momentum", 1.0)
+        # Konsensüs + AI Birleşik Karar
+        if consensus_ok and consensus_action == "BUY" and not acik_pozisyon:
+            # AI veto kontrolü
+            if ai_prob < 0.35 and ai_conf > 0.3:
+                system_log = f"CONSENSUS_BUY_VETOED|AI:{ai_prob:.0%}|{details}"
+                print(f"  [VETO] Konsensüs AL dedi ama XGBoost düşüş öngörüyor ({ai_prob:.0%})")
+                return self._hold_karar(risk_seviyesi, "AI Veto", system_log)
 
-        if rsi < 30:
-            buy_score += 0.35 * rsi_w
-            reasons.append(f"RSI asiri satim ({rsi})")
-            used_indicators.append("rsi")
-        elif rsi < 35:
-            buy_score += 0.20 * rsi_w
-            reasons.append(f"RSI dusuk ({rsi})")
-            used_indicators.append("rsi")
-        elif rsi < 42:
-            buy_score += 0.10 * rsi_w
-        elif rsi > 70:
-            sell_score += 0.35 * rsi_w
-            reasons.append(f"RSI asiri alim ({rsi})")
-            used_indicators.append("rsi")
-        elif rsi > 65:
-            sell_score += 0.20 * rsi_w
-            reasons.append(f"RSI yuksek ({rsi})")
-            used_indicators.append("rsi")
-        elif rsi > 58:
-            sell_score += 0.10 * rsi_w
+            # Güven birleştirme: %50 Konsensüs + %30 AI + %20 Kural
+            combined_confidence = consensus_confidence * 0.50 + ai_prob * 0.30 + (signal.get("long_score", 0) / 5 * 0.20)
+            combined_confidence = max(combined_confidence, consensus_confidence * 0.7)
 
-        macd_improving = (macd_hist > macd_hist_prev)
-        macd_worsening = (macd_hist < macd_hist_prev)
-
-        if macd_hist > 0 and macd_hist_prev <= 0:
-            buy_score += 0.25 * macd_w
-            reasons.append("MACD pozitif kesisim")
-            used_indicators.append("macd")
-        elif macd_hist > 0 and macd_improving:
-            buy_score += 0.15 * macd_w
-            reasons.append("MACD gucleniyor")
-            used_indicators.append("macd")
-        elif macd_hist < 0 and macd_improving:
-            buy_score += 0.10 * macd_w
-            reasons.append("MACD toparliyor")
-            used_indicators.append("macd")
-        elif macd_hist < 0 and macd_hist_prev >= 0:
-            sell_score += 0.25 * macd_w
-            reasons.append("MACD negatif kesisim")
-            used_indicators.append("macd")
-        elif macd_hist < 0 and macd_worsening:
-            sell_score += 0.15 * macd_w
-            reasons.append("MACD zayifliyor")
-            used_indicators.append("macd")
-        elif macd_hist > 0 and macd_worsening:
-            sell_score += 0.10 * macd_w
-
-        if ema_cross == "bullish":
-            buy_score += 0.15 * ema_w
-        else:
-            sell_score += 0.15 * ema_w
-        used_indicators.append("ema")
-
-        if bb_pct < 0.1:
-            buy_score += 0.15 * bb_w
-            reasons.append("BB alt banda yakin")
-            used_indicators.append("bb")
-        elif bb_pct < 0:
-            buy_score += 0.20 * bb_w
-            reasons.append("BB alt bandinda")
-            used_indicators.append("bb")
-        elif bb_pct > 0.9:
-            sell_score += 0.15 * bb_w
-            reasons.append("BB ust banda yakin")
-            used_indicators.append("bb")
-        elif bb_pct > 1:
-            sell_score += 0.20 * bb_w
-            reasons.append("BB ust bandinda")
-            used_indicators.append("bb")
-
-        if vol_ratio > 2.0 and buy_score > sell_score:
-            buy_score += 0.15 * vol_w
-            reasons.append(f"Hacim cok yuksek ({vol_ratio}x)")
-            used_indicators.append("vol")
-        elif vol_ratio > 1.5 and buy_score > sell_score:
-            buy_score += 0.10 * vol_w
-            reasons.append(f"Hacim destekli ({vol_ratio}x)")
-            used_indicators.append("vol")
-        elif vol_ratio > 2.0 and sell_score > buy_score:
-            sell_score += 0.15 * vol_w
-            reasons.append(f"Hacim cok yuksek ({vol_ratio}x)")
-            used_indicators.append("vol")
-        elif vol_ratio > 1.5 and sell_score > buy_score:
-            sell_score += 0.10 * vol_w
-            reasons.append(f"Hacim destekli ({vol_ratio}x)")
-            used_indicators.append("vol")
-
-        if breakout_up > 0:
-            buy_score += 0.30 * breakout_w
-            reasons.append("Yukari breakout")
-            used_indicators.append("breakout")
-        if breakout_down > 0:
-            sell_score += 0.30 * breakout_w
-            reasons.append("Asagi breakout")
-            used_indicators.append("breakout")
-
-        if -2.0 < ema_dist < 0 and ema_cross == "bullish":
-            buy_score += 0.20 * ema_w
-            reasons.append("EMA'ya pullback")
-        if 0 < ema_dist < 2.0 and ema_cross == "bearish":
-            sell_score += 0.20 * ema_w
-            reasons.append("EMA'ya pullback")
-
-        if price_change_5 > 0.3 and vol_ratio > 1.2:
-            buy_score += 0.15 * momentum_w
-            reasons.append(f"Hizli yukselis %{price_change_5}")
-            used_indicators.append("momentum")
-        if price_change_5 < -0.3 and vol_ratio > 1.2:
-            sell_score += 0.15 * momentum_w
-            reasons.append(f"Hizli dusus %{price_change_5}")
-            used_indicators.append("momentum")
-
-        rsi_change = teknik_analiz.get("rsi", 50) - teknik_analiz.get("rsi_prev", 50)
-        if rsi_change > 3:
-            buy_score += 0.10 * rsi_w
-            reasons.append(f"RSI gucleniyor (+{rsi_change:.1f})")
-            used_indicators.append("rsi")
-        elif rsi_change < -3:
-            sell_score += 0.10 * rsi_w
-            reasons.append(f"RSI zayifliyor ({rsi_change:.1f})")
-            used_indicators.append("rsi")
-
-        if ob_ratio > 1.5:
-            buy_score += 0.20 * ob_w
-            reasons.append(f"Orderbook guclu alis ({ob_ratio})")
-            used_indicators.append("orderbook")
-        elif ob_sinyal == "alis_baskisi":
-            buy_score += 0.10 * ob_w
-            reasons.append(f"Orderbook alis ({ob_ratio})")
-            used_indicators.append("orderbook")
-        elif ob_ratio < 0.6:
-            sell_score += 0.20 * ob_w
-            reasons.append(f"Orderbook guclu satis ({ob_ratio})")
-            used_indicators.append("orderbook")
-        elif ob_sinyal == "satis_baskisi":
-            sell_score += 0.10 * ob_w
-            reasons.append(f"Orderbook satis ({ob_ratio})")
-            used_indicators.append("orderbook")
-
-        haber_sentiment = 0.0
-        for haber in internet_ve_haberler:
-            if haber.get("sentiment") == "pozitif":
-                haber_sentiment += 0.05
-            elif haber.get("sentiment") == "negatif":
-                haber_sentiment -= 0.05
-
-        if haber_sentiment > 0:
-            buy_score += haber_sentiment
-        elif haber_sentiment < 0:
-            sell_score += abs(haber_sentiment)
-
-        ai_influence = (ai_prob - 0.5) * 2 * ai_conf * 0.5
-        if ai_influence > 0:
-            buy_score += ai_influence
-            if ai_conf > 0.3:
-                reasons.append(f"AI yukselis (%{ai_prob:.0%})")
-        elif ai_influence < 0:
-            sell_score += abs(ai_influence)
-            if ai_conf > 0.3:
-                reasons.append(f"AI dusus (%{(1-ai_prob):.0%})")
-
-        if not acik_pozisyon:
-            if buy_score >= min_confidence and buy_score > sell_score:
-                direction = "BUY"
-                confidence = min(buy_score, 1.0)
-
+            if combined_confidence >= min_confidence:
                 sl_price = round(fiyat - 1.5 * atr, 2)
                 tp_price = round(fiyat + 3 * atr, 2)
-
-                size_pct = min(max(confidence * 95, 5), 95)
+                size_pct = min(max(combined_confidence * 95, 5), 95)
 
                 self.state["son_sinyal"] = {
                     "action": "BUY",
                     "price": fiyat,
                     "time": datetime.now().isoformat(),
                     "indicators": used_indicators,
-                    "buy_score": round(buy_score, 3),
-                    "sell_score": round(sell_score, 3),
+                    "consensus_votes": {k: v["action"] for k, v in votes.items()},
+                    "buy_score": consensus_result["buy_score"],
+                    "sell_score": consensus_result["sell_score"],
                     "rsi": rsi,
                 }
 
+                system_log = f"CONSENSUS_BUY|{consensus_result['buy_count']}/5|AI:{ai_prob:.0%}|{details}"
+
                 memory_update = {
-                    "aktif_strateji_notu": f"ALIS: {', '.join(reasons[:2])}",
+                    "aktif_strateji_notu": f"ALIS: {consensus_result['buy_count']}/5 ajan onayladı",
                     "risk_seviyesi_ayari": risk_seviyesi
                 }
 
+                self._save_state()
+                self._save_agent_states()
+
                 return {
                     "action": "BUY",
-                    "confidence_score": round(confidence, 2),
+                    "confidence_score": round(combined_confidence, 2),
                     "execution": {
                         "size_percentage": size_pct,
                         "stop_loss": sl_price,
@@ -357,32 +231,41 @@ class QuantAgent:
                     "system_log": system_log
                 }
 
-        else:
+        elif consensus_ok and consensus_action == "SELL" and acik_pozisyon:
+            # AI veto kontrolü (satış için ters)
+            if ai_prob > 0.65 and ai_conf > 0.3:
+                system_log = f"CONSENSUS_SELL_VETOED|AI:{ai_prob:.0%}|{details}"
+                print(f"  [VETO] Konsensüs SAT dedi ama XGBoost yükseliş öngörüyor ({ai_prob:.0%})")
+                return self._hold_karar(risk_seviyesi, "AI Veto (Yükseliş)", system_log)
+
             mevcut_kar = (fiyat - giris_fiyati) / giris_fiyati * 100 if giris_fiyati > 0 else 0
+            combined_confidence = consensus_confidence * 0.50 + (1 - ai_prob) * 0.30 + (signal.get("short_score", 0) / 5 * 0.20)
+            combined_confidence = max(combined_confidence, consensus_confidence * 0.7)
 
-            if sell_score > buy_score and sell_score >= min_confidence:
-                direction = "SELL"
-                confidence = min(sell_score, 1.0)
-
-                mevcut_kar = (fiyat - giris_fiyati) / giris_fiyati * 100 if giris_fiyati > 0 else 0
-
+            if combined_confidence >= min_confidence:
                 self.state["son_sinyal"] = {
                     "action": "SELL",
                     "price": fiyat,
                     "time": datetime.now().isoformat(),
                     "indicators": used_indicators,
-                    "buy_score": round(buy_score, 3),
-                    "sell_score": round(sell_score, 3),
+                    "consensus_votes": {k: v["action"] for k, v in votes.items()},
+                    "buy_score": consensus_result["buy_score"],
+                    "sell_score": consensus_result["sell_score"],
                 }
 
+                system_log = f"CONSENSUS_SELL|{consensus_result['sell_count']}/5|AI:{ai_prob:.0%}|{details}"
+
                 memory_update = {
-                    "aktif_strateji_notu": f"SATIS: {', '.join(reasons[:2])} (Kar: %{mevcut_kar:+.2f})" if abs(mevcut_kar) > 0 else f"SATIS: {', '.join(reasons[:2])}",
+                    "aktif_strateji_notu": f"SATIS: {consensus_result['sell_count']}/5 ajan (Kar: %{mevcut_kar:+.2f})" if abs(mevcut_kar) > 0 else f"SATIS: {consensus_result['sell_count']}/5 ajan",
                     "risk_seviyesi_ayari": risk_seviyesi
                 }
 
+                self._save_state()
+                self._save_agent_states()
+
                 return {
                     "action": "SELL",
-                    "confidence_score": round(confidence, 2),
+                    "confidence_score": round(combined_confidence, 2),
                     "execution": {
                         "size_percentage": 100,
                         "stop_loss": 0,
@@ -392,7 +275,9 @@ class QuantAgent:
                     "system_log": system_log
                 }
 
-        return self._hold_karar(risk_seviyesi, "Net sinyal yok", system_log)
+        # Konsensüs sağlanamadı → HOLD
+        system_log = f"NO_CONSENSUS|AL:{consensus_result['buy_count']}|SAT:{consensus_result['sell_count']}|BEKLE:{consensus_result['hold_count']}|{details}"
+        return self._hold_karar(risk_seviyesi, "Konsensüs yok", system_log)
 
     def _hold_karar(self, risk_seviyesi, strateji_notu, system_log=""):
         return {
@@ -420,10 +305,14 @@ class QuantAgent:
             self.state["ardisik_kayip"] += 1
         self.state["son_islem_kar_zarar"] = round(kar_zarar, 4)
 
+        # Konsensüs ajanlarına sonucu bildir
         son_sinyal = self.state.get("son_sinyal", {})
-        indicators = son_sinyal.get("indicators", [])
-        action = son_sinyal.get("action", "")
+        predicted_action = son_sinyal.get("action", "HOLD")
+        actual_profitable = kar_zarar > 0
+        consensus.record_result_all(predicted_action, actual_profitable)
 
+        # Eski ağırlık sistemi de güncelle (geriye uyumluluk)
+        indicators = son_sinyal.get("indicators", [])
         if indicators:
             hits = self.state["weight_hits"]
             misses = self.state["weight_misses"]
@@ -445,9 +334,14 @@ class QuantAgent:
             self.state["weights"] = w
 
         self._save_state()
+        self._save_agent_states()
 
     def get_state(self):
         return self.state
+
+    def get_consensus_state(self):
+        """Panel'de göstermek için konsensüs durumunu döndür."""
+        return consensus.get_all_states()
 
 
 quant_agent = QuantAgent()

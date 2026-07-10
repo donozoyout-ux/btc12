@@ -10,6 +10,7 @@ from src.quant_agent import quant_agent
 from src.database import db
 from src.telegram import tg
 from src.ai_model import ai_model
+from src.agents import consensus
 
 
 class Bot:
@@ -164,6 +165,24 @@ class Bot:
                     if ok:
                         ai_state = ai_model.get_state()
                         print(f"[AI] Egitildi: dogruluk=%{ai_state['accuracy']*100:.0f} tahmin={ai_state['prediction_count']}")
+                    # --- 5 Ajan Eğitimi ---
+                    try:
+                        prices = df["close"].values
+                        agent_training_data = []
+                        for i in range(len(teknik_listesi) - 1):
+                            t = teknik_listesi[i]
+                            future_return = (prices[min(i+1, len(prices)-1)] - prices[i]) / prices[i] * 100
+                            if future_return > 0.15:
+                                label = 2  # BUY
+                            elif future_return < -0.15:
+                                label = 0  # SELL
+                            else:
+                                label = 1  # HOLD
+                            agent_training_data.append((t, label))
+                        if len(agent_training_data) > 15:
+                            consensus.train_all(agent_training_data)
+                    except Exception as e:
+                        print(f"[CONSENSUS] Ajan egitim hatasi: {e}")
             except:
                 pass
 

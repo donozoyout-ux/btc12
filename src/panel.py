@@ -123,7 +123,7 @@ body {
       <h1 class="text-lg font-extrabold tracking-tight text-white flex items-center gap-2">
         BTC AI TRADING <span class="text-xs px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">PRO</span>
       </h1>
-      <p class="text-[10px] text-gray-500 font-mono tracking-wider">VERSION 2.4.0 • SYSTEM ACTIVE</p>
+      <p class="text-[10px] text-gray-500 font-mono tracking-wider">VERSION 3.0.0 • 5-AGENT AI CONSENSUS</p>
     </div>
   </div>
 
@@ -189,6 +189,22 @@ body {
     <div class="glass p-4 rounded-xl border border-blue-500/20 flex flex-col justify-between">
       <span class="text-[10px] text-blue-400 font-bold uppercase tracking-wider">AI MODEL DOĞRULUK</span>
       <h2 class="text-sm font-extrabold font-mono text-blue-400 mt-1" id="sAiAccuracy">---</h2>
+    </div>
+  </section>
+
+  <!-- 5 AI AJAN KONSENSÜS PANELİ -->
+  <section class="glass rounded-2xl p-5 glass-glow border border-purple-500/10" data-purpose="ai-consensus-panel">
+    <div class="border-b border-white/5 pb-3 mb-4 flex items-center justify-between">
+      <h3 class="text-sm font-bold text-white flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></span> 5 AI Ajan Konsensüs Sistemi
+      </h3>
+      <div class="flex items-center gap-3">
+        <span class="text-[10px] font-mono text-purple-400 font-bold" id="consensusRate">---</span>
+        <span id="consensusBadge" class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-slate-500/10 text-slate-400 border border-white/10">BEKLE</span>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-5 gap-3" id="agentCards">
+      <div class="text-slate-500 italic text-center py-6 text-xs col-span-5">Ajan verileri yükleniyor...</div>
     </div>
   </section>
 
@@ -276,6 +292,19 @@ body {
         </div>
         <div class="overflow-x-auto py-2" id="dailyPnlChart">
           <div class="text-slate-500 italic text-center py-4 text-xs">Yükleniyor...</div>
+        </div>
+      </section>
+
+      <!-- Konsensüs İstatistikleri -->
+      <section class="glass rounded-2xl flex flex-col p-5 border border-purple-500/10">
+        <div class="border-b border-white/5 pb-3 mb-3 flex justify-between items-center">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2">
+            <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Ajan Doğruluk Sıralaması
+          </h3>
+          <span class="text-[10px] font-mono text-purple-400">AI PERFORMANS</span>
+        </div>
+        <div class="space-y-2" id="agentRanking">
+          <div class="text-slate-500 italic text-center py-4 text-xs">Hesaplanıyor...</div>
         </div>
       </section>
 
@@ -581,15 +610,122 @@ function updateDailyPnl() {
   }).catch(() => {});
 }
 
+function updateAgents() {
+  fetch('/api/agents').then(r => r.json()).then(d => {
+    var cards = document.getElementById('agentCards');
+    var ranking = document.getElementById('agentRanking');
+    var badge = document.getElementById('consensusBadge');
+    var rateEl = document.getElementById('consensusRate');
+    if (!cards) return;
+
+    var agentNames = {
+      'trend': {label: 'Trend & Momentum', icon: '📈', gradient: 'from-blue-600 to-cyan-500'},
+      'volatility': {label: 'Volatilite & RSI', icon: '📊', gradient: 'from-amber-500 to-orange-500'},
+      'volume': {label: 'Hacim & Orderbook', icon: '📦', gradient: 'from-emerald-500 to-green-500'},
+      'level': {label: 'Kırılım & Seviye', icon: '🎯', gradient: 'from-rose-500 to-pink-500'},
+      'sentiment': {label: 'Duygu & Haber', icon: '🧠', gradient: 'from-purple-500 to-violet-500'}
+    };
+
+    var votes = d._last_votes || {};
+    var coord = d._coordinator || {};
+
+    // Konsensüs oranı
+    if (coord.total_decisions > 0) {
+      rateEl.textContent = 'KONSENSÜS ORANI: %' + (coord.consensus_rate * 100).toFixed(0) + ' (' + coord.total_decisions + ' karar)';
+    }
+
+    // Konsensüs badge
+    var buyVotes = 0, sellVotes = 0;
+    Object.values(votes).forEach(function(v) {
+      if (v.action === 'BUY') buyVotes++;
+      if (v.action === 'SELL') sellVotes++;
+    });
+    if (buyVotes >= 3) {
+      badge.textContent = '🟢 AL (' + buyVotes + '/5)';
+      badge.className = 'px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse';
+    } else if (sellVotes >= 3) {
+      badge.textContent = '🔴 SAT (' + sellVotes + '/5)';
+      badge.className = 'px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse';
+    } else {
+      badge.textContent = '⚪ BEKLE';
+      badge.className = 'px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-slate-500/10 text-slate-400 border border-white/10';
+    }
+
+    // Ajan kartları
+    var h = '';
+    var agentList = [];
+    ['trend', 'volatility', 'volume', 'level', 'sentiment'].forEach(function(key) {
+      var info = agentNames[key];
+      var agent = d[key] || {};
+      var vote = votes[key] || {};
+      var vAction = vote.action || 'HOLD';
+      var vConf = vote.confidence || 0;
+      var vWeight = vote.weight || 1.0;
+
+      var actionColor = vAction === 'BUY' ? 'text-emerald-400' : (vAction === 'SELL' ? 'text-rose-400' : 'text-slate-400');
+      var actionBg = vAction === 'BUY' ? 'bg-emerald-500/15 border-emerald-500/30' : (vAction === 'SELL' ? 'bg-rose-500/15 border-rose-500/30' : 'bg-slate-500/10 border-white/10');
+      var confBarColor = vAction === 'BUY' ? 'bg-emerald-500' : (vAction === 'SELL' ? 'bg-rose-500' : 'bg-slate-500');
+      var confPct = Math.round(vConf * 100);
+      var accPct = Math.round((agent.accuracy || 0) * 100);
+      var trainBadge = agent.is_trained ? '<span class="text-[8px] px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">AI</span>' : '<span class="text-[8px] px-1 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">KURAL</span>';
+
+      h += '<div class="glass rounded-xl p-3 border ' + (vAction !== 'HOLD' ? (vAction === 'BUY' ? 'border-emerald-500/20' : 'border-rose-500/20') : 'border-white/5') + ' transition-all duration-300 hover:scale-[1.02]">';
+      h += '  <div class="flex items-center justify-between mb-2">';
+      h += '    <span class="text-sm">' + info.icon + '</span>';
+      h += '    ' + trainBadge;
+      h += '  </div>';
+      h += '  <h4 class="text-[10px] font-bold text-slate-300 mb-1">' + info.label + '</h4>';
+      h += '  <div class="flex items-center justify-between mb-2">';
+      h += '    <span class="text-sm font-extrabold ' + actionColor + '">' + (vAction === 'BUY' ? 'AL' : (vAction === 'SELL' ? 'SAT' : 'BEKLE')) + '</span>';
+      h += '    <span class="text-[10px] font-mono font-bold ' + actionColor + '">' + confPct + '%</span>';
+      h += '  </div>';
+      h += '  <div class="w-full bg-surface-lowest rounded-full h-1.5 mb-2">';
+      h += '    <div class="' + confBarColor + ' h-1.5 rounded-full transition-all duration-500" style="width:' + Math.max(confPct, 3) + '%"></div>';
+      h += '  </div>';
+      h += '  <div class="flex justify-between text-[9px] text-slate-500">';
+      h += '    <span>Doğruluk: ' + accPct + '%</span>';
+      h += '    <span>Ağırlık: ' + (agent.weight || 1.0).toFixed(1) + 'x</span>';
+      h += '  </div>';
+      h += '</div>';
+
+      agentList.push({name: info.label, icon: info.icon, accuracy: agent.accuracy || 0, weight: agent.weight || 1.0, correct: agent.correct_predictions || 0, total: agent.total_predictions || 0});
+    });
+    cards.innerHTML = h;
+
+    // Ranking
+    if (ranking) {
+      agentList.sort(function(a, b) { return b.accuracy - a.accuracy; });
+      var rh = '';
+      agentList.forEach(function(a, idx) {
+        var barW = Math.max(a.accuracy * 100, 5);
+        var barColor = a.accuracy > 0.6 ? 'bg-emerald-500' : (a.accuracy > 0.4 ? 'bg-amber-500' : 'bg-rose-500');
+        rh += '<div class="flex items-center gap-2 py-1.5">';
+        rh += '  <span class="text-[10px] text-slate-500 w-4 font-bold">#' + (idx+1) + '</span>';
+        rh += '  <span class="text-sm w-5">' + a.icon + '</span>';
+        rh += '  <span class="text-[10px] text-slate-300 font-bold w-24 truncate">' + a.name + '</span>';
+        rh += '  <div class="flex-1 bg-surface-lowest rounded-full h-1.5">';
+        rh += '    <div class="' + barColor + ' h-1.5 rounded-full transition-all" style="width:' + barW + '%"></div>';
+        rh += '  </div>';
+        rh += '  <span class="text-[10px] font-mono font-bold ' + (a.accuracy > 0.5 ? 'text-emerald-400' : 'text-slate-400') + ' w-10 text-right">%' + (a.accuracy * 100).toFixed(0) + '</span>';
+        rh += '  <span class="text-[9px] text-slate-500 w-10 text-right">' + a.correct + '/' + a.total + '</span>';
+        rh += '</div>';
+      });
+      ranking.innerHTML = rh;
+    }
+  }).catch(() => {});
+}
+
 // Initial updates
 updateStatus();
 updateDecisions();
 updateDailyPnl();
+updateAgents();
 
 // Polling intervals
 setInterval(updateStatus, 5000);
 setInterval(updateDecisions, 5000);
 setInterval(updateDailyPnl, 10000);
+setInterval(updateAgents, 5000);
 </script>
 </body>
 </html>"""
@@ -710,6 +846,11 @@ def api_decisions():
 def api_daily_pnl():
     from src.database import db
     return jsonify(db.get_daily_pnl(14))
+
+@app.route('/api/agents')
+def api_agents():
+    """5 AI ajanının durumlarını ve oylarını döndür."""
+    return jsonify(quant_agent.get_consensus_state())
 
 @app.route('/api/keepalive')
 def api_keepalive():

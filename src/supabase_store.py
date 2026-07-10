@@ -244,6 +244,36 @@ def load_agent_state():
     return None
 
 
+def save_consensus_states(data):
+    """5 AI ajanının durumlarını (ağırlıklar, doğruluklar) kaydet."""
+    c = _client()
+    if not c:
+        return
+    try:
+        existing = c.table("consensus_states").select("*").limit(1).execute()
+        payload = {"states": data, "updated_at": datetime.now().isoformat()}
+        if existing.data and len(existing.data) > 0:
+            c.table("consensus_states").update(payload).eq("id", existing.data[0]["id"]).execute()
+        else:
+            c.table("consensus_states").insert(payload).execute()
+    except Exception as e:
+        print(f"[SUPABASE] save_consensus_states hatasi: {e}")
+
+
+def load_consensus_states():
+    """5 AI ajanının durumlarını Supabase'den yükle."""
+    c = _client()
+    if not c:
+        return None
+    try:
+        result = c.table("consensus_states").select("*").limit(1).execute()
+        if result.data and len(result.data) > 0:
+            return result.data[0].get("states")
+    except Exception as e:
+        print(f"[SUPABASE] load_consensus_states hatasi: {e}")
+    return None
+
+
 def delete_old_scans():
     """Supabase'deki eski scan kayitlarini temizle"""
     c = _client()
@@ -298,6 +328,11 @@ def create_tables():
     CREATE TABLE agent_state (
         id BIGSERIAL PRIMARY KEY,
         state JSONB,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE consensus_states (
+        id BIGSERIAL PRIMARY KEY,
+        states JSONB,
         updated_at TIMESTAMPTZ DEFAULT NOW()
     );
     """)
