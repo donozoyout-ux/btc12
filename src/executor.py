@@ -16,29 +16,30 @@ class Executor:
         self._sim_balance = 100000.0
         self._sim_btc = 0.0
         self._sim_entry = 0.0
-        self._bybit_error = None
+        self._binance_error = None
         self._load_state()
 
-        if settings.executor_mode == "bybit" and settings.bybit_api_key and settings.bybit_secret_key:
+        if settings.executor_mode == "binance" and settings.binance_api_key and settings.binance_secret_key:
             try:
-                self._init_bybit()
-                print(f"[EXECUTOR] Bybit baglantisi basarili (testnet={settings.bybit_testnet})")
+                self._init_binance()
+                print(f"[EXECUTOR] Binance baglantisi basarili (testnet={settings.binance_testnet})")
             except Exception as e:
-                print(f"[EXECUTOR] UYARI: Bybit baglanti hatasi (gecici olabilir): {e}")
-                self._bybit_error = str(e)
+                print(f"[EXECUTOR] UYARI: Binance baglanti hatasi (gecici olabilir): {e}")
+                self._binance_error = str(e)
         else:
-            print("[EXECUTOR] SIM modu (Bybit key yok veya mode != bybit)")
+            print("[EXECUTOR] SIM modu (Binance key yok veya mode != binance)")
             settings.executor_mode = "sim"
 
-    def _init_bybit(self):
-        self._client = ccxt.bybit({
-            'apiKey': settings.bybit_api_key,
-            'secret': settings.bybit_secret_key,
+    def _init_binance(self):
+        self._client = ccxt.binance({
+            'apiKey': settings.binance_api_key,
+            'secret': settings.binance_secret_key,
             'enableRateLimit': True,
             'options': {'defaultType': 'spot'},
         })
-        if settings.bybit_testnet:
+        if settings.binance_testnet:
             self._client.set_sandbox_mode(True)
+        # Piyasa bilgilerini yukle (precision limitleri icin)
         try:
             self._client.load_markets()
         except Exception as e:
@@ -80,12 +81,12 @@ class Executor:
             print(f"[EXECUTOR] State kaydetme hatasi: {e}")
 
     def get_account(self):
-        if settings.executor_mode == "bybit":
+        if settings.executor_mode == "binance":
             if not self._client:
                 try:
-                    self._init_bybit()
+                    self._init_binance()
                 except Exception as e:
-                    print(f"[EXECUTOR] Bybit baslatilamadi: {e}")
+                    print(f"[EXECUTOR] Binance baslatilamadi: {e}")
                     return self._dry_account()
             try:
                 balance = self._client.fetch_balance()
@@ -100,15 +101,15 @@ class Executor:
                     "btc": round(btc_balance, 6),
                 }
             except Exception as e:
-                print(f"[EXECUTOR] Bybit bakiye hatasi (gecici): {e}")
+                print(f"[EXECUTOR] Binance bakiye hatasi (gecici): {e}")
                 return self._dry_account()
         return self._dry_account()
 
     def get_position(self):
-        if settings.executor_mode == "bybit":
+        if settings.executor_mode == "binance":
             if not self._client:
                 try:
-                    self._init_bybit()
+                    self._init_binance()
                 except:
                     return self._dry_position()
             try:
@@ -116,6 +117,7 @@ class Executor:
                 btc_qty = float(balance['free'].get('BTC', 0.0))
                 price = trader.get_price()
 
+                # Eger elimizde kayda deger miktarda BTC varsa (ornegin > 1 USDT degerinde) pozisyon var sayilir
                 if btc_qty * price > 1.0:
                     mv = round(btc_qty * price, 2)
                     entry = self._sim_entry if self._sim_entry > 0 else price
@@ -129,37 +131,37 @@ class Executor:
                     }
                 return None
             except Exception as e:
-                print(f"[EXECUTOR] Bybit pozisyon hatasi (gecici): {e}")
+                print(f"[EXECUTOR] Binance pozisyon hatasi (gecici): {e}")
                 return self._dry_position()
         return self._dry_position()
 
     def buy(self, size_pct=100, amount_usd=None):
-        if settings.executor_mode == "bybit":
+        if settings.executor_mode == "binance":
             if not self._client:
                 try:
-                    self._init_bybit()
+                    self._init_binance()
                 except Exception as e:
-                    print(f"[EXECUTOR] Bybit baslatilamadi: {e}")
+                    print(f"[EXECUTOR] Binance baslatilamadi: {e}")
                     return self._dry_buy(size_pct, amount_usd)
             try:
-                return self._bybit_buy(size_pct, amount_usd)
+                return self._binance_buy(size_pct, amount_usd)
             except Exception as e:
-                print(f"[EXECUTOR] Bybit alim hatasi (gecici): {e}")
+                print(f"[EXECUTOR] Binance alim hatasi (gecici): {e}")
                 return self._dry_buy(size_pct, amount_usd)
         return self._dry_buy(size_pct, amount_usd)
 
     def sell(self):
-        if settings.executor_mode == "bybit":
+        if settings.executor_mode == "binance":
             if not self._client:
                 try:
-                    self._init_bybit()
+                    self._init_binance()
                 except Exception as e:
-                    print(f"[EXECUTOR] Bybit baslatilamadi: {e}")
+                    print(f"[EXECUTOR] Binance baslatilamadi: {e}")
                     return self._dry_sell()
             try:
-                return self._bybit_sell()
+                return self._binance_sell()
             except Exception as e:
-                print(f"[EXECUTOR] Bybit satis hatasi (gecici): {e}")
+                print(f"[EXECUTOR] Binance satis hatasi (gecici): {e}")
                 return self._dry_sell()
         return self._dry_sell()
 
@@ -217,24 +219,38 @@ class Executor:
         self._save_state()
         return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": "dry_sell", "mode": "SIM"}
 
-    def _bybit_buy(self, size_pct=100, amount_usd=None):
+    def _binance_buy(self, size_pct=100, amount_usd=None):
         price = trader.get_price()
         invest_amount = amount_usd if amount_usd is not None else settings.position_size_usd * (size_pct / 100)
 
+        # Free USDT kontrol et
         balance = self._client.fetch_balance()
         free_usdt = float(balance['free'].get('USDT', 0.0))
-        invest_amount = min(invest_amount, free_usdt * 0.99)
+        invest_amount = min(invest_amount, free_usdt * 0.99) # %1 komisyon/slippage payi birak
 
-        if invest_amount < 1.0:
-            print(f"[BYBIT] HATA: Alim tutari cok dusuk: ${invest_amount:.2f}")
+        if invest_amount < 10.0:
+            print(f"[BINANCE] HATA: Alim tutari minimum Spot limiti olan 10 USDT'den az: ${invest_amount:.2f}")
             return None
 
-        print(f"[BYBIT] Market Buy gonderiliyor: Tutar = {invest_amount:.2f} USDT")
+        print(f"[BINANCE] Market Buy gonderiliyor: Tutar = {invest_amount:.2f} USDT")
 
-        # Bybit spot market buy - miktar BTC cinsinden
-        qty = invest_amount / price
-        qty_prec = float(self._client.amount_to_precision(SYMBOL, qty))
-        order = self._client.create_market_buy_order(SYMBOL, qty_prec)
+        order = None
+        try:
+            # USDT tutari ile alis yapmak icin quoteOrderQty parametresini kullaniyoruz
+            order = self._client.create_order(
+                symbol=SYMBOL,
+                type='market',
+                side='buy',
+                amount=invest_amount,
+                price=None,
+                params={'quoteOrderQty': self._client.cost_to_precision(SYMBOL, invest_amount)}
+            )
+        except Exception as e:
+            print(f"[BINANCE] quoteOrderQty hatasi, fallback yapiliyor: {e}")
+            # Fallback: miktar hesaplayarak BTC adet bazli market buy
+            qty = invest_amount / price
+            qty_prec = float(self._client.amount_to_precision(SYMBOL, qty))
+            order = self._client.create_market_buy_order(SYMBOL, qty_prec)
 
         filled_qty = float(order.get('filled', 0.0))
         cost = float(order.get('cost', 0.0))
@@ -242,7 +258,7 @@ class Executor:
 
         if filled_qty == 0.0:
             try:
-                time.sleep(1)
+                time.sleep(0.5)
                 order_info = self._client.fetch_order(order['id'], SYMBOL)
                 filled_qty = float(order_info.get('filled', 0.0))
                 cost = float(order_info.get('cost', 0.0))
@@ -252,9 +268,8 @@ class Executor:
                 pass
 
         if filled_qty == 0.0:
-            filled_qty = qty_prec
+            filled_qty = round(invest_amount / price, 6)
             avg_price = price
-            cost = invest_amount
 
         self._sim_entry = avg_price
         self._sim_btc = filled_qty
@@ -262,21 +277,23 @@ class Executor:
         settings.last_entry_price = avg_price
         self._save_state()
 
-        print(f"[BYBIT] ALIS basarili: {filled_qty:.6f} BTC @ ${avg_price:,.2f} (cost: ${cost:.2f})")
-        return {"price": avg_price, "qty": round(filled_qty, 6), "order_id": str(order.get('id', 'bybit_buy')), "mode": "REAL"}
+        print(f"[BINANCE] ALIS basarili: {filled_qty:.6f} BTC @ ${avg_price:,.2f} (cost: ${cost:.2f})")
+        return {"price": avg_price, "qty": round(filled_qty, 6), "order_id": str(order.get('id', 'binance_buy')), "mode": "REAL"}
 
-    def _bybit_sell(self):
+    def _binance_sell(self):
         balance = self._client.fetch_balance()
         btc_qty = float(balance['free'].get('BTC', 0.0))
         price = trader.get_price()
 
-        if btc_qty * price < 1.0:
-            print(f"[BYBIT] HATA: Satilacak BTC degeri cok dusuk: ${btc_qty * price:.2f}")
+        # Binance min tutar kontrolu (min 10 USDT degeri olan BTC olmali)
+        if btc_qty * price < 10.0:
+            print(f"[BINANCE] HATA: Satilacak BTC degeri minimum 10 USDT Spot limitinin altinda: ${btc_qty * price:.2f}")
             return None
 
+        # BTC miktarini borsanin hassasiyetine yuvarla
         qty_prec = float(self._client.amount_to_precision(SYMBOL, btc_qty))
 
-        print(f"[BYBIT] Market Sell gonderiliyor: Miktar = {qty_prec:.6f} BTC")
+        print(f"[BINANCE] Market Sell gonderiliyor: Miktar = {qty_prec:.6f} BTC")
         order = self._client.create_market_sell_order(SYMBOL, qty_prec)
 
         filled_qty = float(order.get('filled', 0.0)) if order.get('filled') else qty_prec
@@ -285,7 +302,7 @@ class Executor:
 
         if filled_qty == 0.0:
             try:
-                time.sleep(1)
+                time.sleep(0.5)
                 order_info = self._client.fetch_order(order['id'], SYMBOL)
                 filled_qty = float(order_info.get('filled', 0.0))
                 cost = float(order_info.get('cost', 0.0))
@@ -303,8 +320,8 @@ class Executor:
         self._sim_balance = float(balance['free'].get('USDT', 0.0)) + cost
         self._save_state()
 
-        print(f"[BYBIT] SATIS basarili: {filled_qty:.6f} BTC @ ${avg_price:,.2f} (PNL: ${pnl:+.2f})")
-        return {"qty": round(filled_qty, 6), "pl": round(pnl, 2), "price": avg_price, "order_id": str(order.get('id', 'bybit_sell')), "mode": "REAL"}
+        print(f"[BINANCE] SATIS basarili: {filled_qty:.6f} BTC @ ${avg_price:,.2f} (PNL: ${pnl:+.2f})")
+        return {"qty": round(filled_qty, 6), "pl": round(pnl, 2), "price": avg_price, "order_id": str(order.get('id', 'binance_sell')), "mode": "REAL"}
 
 
 executor = Executor()
