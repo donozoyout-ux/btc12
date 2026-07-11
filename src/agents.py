@@ -919,14 +919,28 @@ class ConsensusCoordinator:
         return states
 
     def save_states(self):
-        """Tüm ajan durumlarını döndür (Supabase'e kaydetmek için)."""
+        """Tüm ajan durumlarını ve eğitilmiş modelleri döndür (Supabase'e kaydetmek için)."""
         data = {}
+        import base64
+        import pickle
         for name, agent in self.agents.items():
+            model_bytes = ""
+            scaler_bytes = ""
+            if agent.is_trained and agent.model is not None:
+                try:
+                    model_bytes = base64.b64encode(pickle.dumps(agent.model)).decode("utf-8")
+                    scaler_bytes = base64.b64encode(pickle.dumps(agent.scaler)).decode("utf-8")
+                except Exception as e:
+                    print(f"[CONSENSUS] {name} serialize hatasi: {e}")
+            
             data[name] = {
                 "weight": agent.weight,
                 "total_predictions": agent.total_predictions,
                 "correct_predictions": agent.correct_predictions,
                 "accuracy": agent.accuracy,
+                "is_trained": agent.is_trained,
+                "model_pkl": model_bytes,
+                "scaler_pkl": scaler_bytes,
             }
         data["_coordinator"] = {
             "total_decisions": self.total_decisions,
@@ -935,12 +949,29 @@ class ConsensusCoordinator:
         return data
 
     def load_states(self, data):
-        """Supabase'den yüklenen durumları geri yükle."""
+        """Supabase'den yüklenen durumları ve modelleri geri yükle."""
         if not data:
             return
+        import base64
+        import pickle
         for name, agent in self.agents.items():
             if name in data:
-                agent.load_state(data[name])
+                item = data[name]
+                agent.weight = item.get("weight", 1.0)
+                agent.total_predictions = item.get("total_predictions", 0)
+                agent.correct_predictions = item.get("correct_predictions", 0)
+                agent.accuracy = item.get("accuracy", 0.0)
+                agent.is_trained = item.get("is_trained", False)
+                
+                model_pkl = item.get("model_pkl", "")
+                scaler_pkl = item.get("scaler_pkl", "")
+                if model_pkl and scaler_pkl:
+                    try:
+                        agent.model = pickle.loads(base64.b64decode(model_pkl.encode("utf-8")))
+                        agent.scaler = pickle.loads(base64.b64decode(scaler_pkl.encode("utf-8")))
+                        print(f"[CONSENSUS] {name} model pkl basariyla yuklendi ✓ (Accuracy: %{agent.accuracy*100:.0f})")
+                    except Exception as e:
+                        print(f"[CONSENSUS] {name} model pkl yukleme hatasi: {e}")
         coord = data.get("_coordinator", {})
         self.total_decisions = coord.get("total_decisions", 0)
         self.consensus_reached = coord.get("consensus_reached", 0)

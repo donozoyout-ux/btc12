@@ -236,8 +236,12 @@ class Bot:
         # --- Karar Kaydetme ---
         karar_sistemi = karar.get("system_log", "")
         strategy_action = karar.get("action", "HOLD")
-        strategy_score = karar.get("long_score", 0) if strategy_action == "BUY" else karar.get("short_score", 0)
-        strategy_reason = karar.get("reason", "")
+        strategy_score = karar.get("confidence_score", 0.0)
+        strategy_reason = karar.get("memory_update", {}).get("aktif_strateji_notu", "")
+        if not strategy_reason:
+            strategy_reason = "Konsensüs oylaması yapıldı"
+        final_reason = karar_sistemi
+
         ai_prob = 0.5
         ai_veto = False
         executed = False
@@ -282,12 +286,12 @@ class Bot:
 
         db.save_decision(
             strategy_action=strategy_action,
-            strategy_score=round(strategy_score, 1),
+            strategy_score=round(strategy_score, 2),
             strategy_reason=strategy_reason,
             ai_prob=round(ai_prob, 3),
             ai_veto=ai_veto,
             final_action=action,
-            final_reason=strategy_reason,
+            final_reason=final_reason,
             price=price,
             executed=executed
         )
