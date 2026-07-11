@@ -43,18 +43,26 @@ class QuantAgent:
             except:
                 pass
         
+        if not local_state:
+            sb_state = supabase_store.load_agent_state()
+            if sb_state:
+                print("[QUANT_AGENT] Agent state Supabase'den yuklendi.")
+                try:
+                    with open(self.state_file, "w") as f:
+                        json.dump(sb_state, f, indent=2, default=str)
+                except:
+                    pass
+                local_state = sb_state
+
         if local_state:
+            # Eksik sermaye yönetimi alanlarını enjekte et (Geriye Dönük Uyumluluk)
+            if "free_cash" not in local_state:
+                local_state["free_cash"] = 0.0
+            if "consecutive_wins" not in local_state:
+                local_state["consecutive_wins"] = 0
+            if "active_pool_size" not in local_state:
+                local_state["active_pool_size"] = 1000.0
             return local_state
-            
-        sb_state = supabase_store.load_agent_state()
-        if sb_state:
-            print("[QUANT_AGENT] Agent state Supabase'den yuklendi.")
-            try:
-                with open(self.state_file, "w") as f:
-                    json.dump(sb_state, f, indent=2, default=str)
-            except:
-                pass
-            return sb_state
             
         return {
             "son_islem_kar_zarar": 0.0,
@@ -62,6 +70,9 @@ class QuantAgent:
             "aktif_strateji_notu": "",
             "risk_seviyesi_ayari": "normal",
             "ardisik_kayip": 0,
+            "consecutive_wins": 0,
+            "free_cash": 0.0,
+            "active_pool_size": 1000.0,
             "son_sinyal": None,
             "toplam_islem": 0,
             "kazanma": 0,
@@ -86,6 +97,56 @@ class QuantAgent:
             supabase_store.save_agent_state(self.state)
         except Exception as e:
             print(f"[QUANT_AGENT] Supabase state kaydetme hatasi: {e}")
+
+    def calculate_order_size(self, price, support, resistance):
+        """
+        Dinamik Emir Büyüklüğü Fonksiyonu (Order Size Scaling)
+        Anlık fiyat, destek/direnç noktaları ve serbest nakdi girdi olarak alıp
+        ideal alım/satım miktarını (size_usd) hesaplar.
+        """
+        free_cash = self.state.get("free_cash", 0.0)
+        active_pool = self.state.get("active_pool_size", 1000.0)
+
+        # Fiyatın destek/direnç aralığındaki yeri (0 = Destek, 1 = Direnç)
+        if resistance > support:
+            range_pos = (price - support) / (resistance - support)
+        else:
+            range_pos = 0.5
+            
+        range_pos = max(0.0, min(1.0, range_pos))
+        
+        # 1. Kural: Emir büyüklüğü fiyatın destek/direnç konumuna göre esnesin
+        # Fiyat desteğe yaklaştıkça çarpan artar (1.5x'e kadar). Dirençteyse çarpan küçülür (0.2x).
+        price_multiplier = 1.5 - 1.3 * range_pos
+        
+        # Fiyat direnç sınırındaysa (%90+), alımı tamamen durdur
+        if range_pos > 0.90:
+            price_multiplier = 0.0
+            
+        # 4. Kural: Grid/Kademe koruması (Kilitlenmeyi önlemek için havuzu 3 parçaya böl)
+        max_parts = 3
+        base_grid_size = active_pool / max_parts
+        
+        # Emir büyüklüğü hesaplama
+        order_size = base_grid_size * price_multiplier
+        
+        # 2. Kural: Serbest nakit kullanımı (Dip Avcılığı)
+        # Fiyat desteğe çok yakın veya altındaysa (derin düşüş), serbest nakdin %30'unu cephane olarak ekle
+        dip_budget = 0.0
+        if range_pos < 0.15 and free_cash > 5.0:
+            dip_budget = min(free_cash * 0.30, 300.0) # Serbest nakdin %30'unu veya maks 300$ kullan
+            order_size += dip_budget
+            
+        # Havuz ve serbest nakit limitlerini aşmamalı
+        order_size = min(order_size, active_pool + free_cash)
+        order_size = max(0.0, order_size)
+        
+        # Loglama
+        print(f"[CAPITAL_MGMT] Fiyat: ${price:,.2f} | Destek: ${support:,.2f} | Direnc: ${resistance:,.2f} | Range Pos: %{range_pos*100:.1f}")
+        print(f"[CAPITAL_MGMT] Aktif Havuz: ${active_pool:.2f} | Serbest Nakit: ${free_cash:.2f}")
+        print(f"[CAPITAL_MGMT] Hesaplanan Siparis Boyutu: ${order_size:.2f} (Baz Grid: ${base_grid_size:.2f}, Carpan: {price_multiplier:.2f}x, Dip Katkısı: ${dip_budget:.2f})")
+        
+        return round(order_size, 2)
 
     def analyze(self, teknik_analiz, internet_ve_haberler, mevcut_portfoy, gecmis_hafiza):
         hata_var = False
@@ -123,13 +184,20 @@ class QuantAgent:
         signal = signal_strategy.analyze(teknik_analiz)
         if signal.get("strict_signal") and signal["action"] in ("BUY", "SELL"):
             if signal["action"] == "BUY" and ai_prob >= 0.4 and not acik_pozisyon:
+                support = teknik_analiz.get("support", fiyat * 0.95)
+                resistance = teknik_analiz.get("resistance", fiyat * 1.05)
+                order_size_usd = self.calculate_order_size(fiyat, support, resistance)
+                if order_size_usd <= 10.0:
+                    return self._hold_karar(risk_seviyesi, "Strict BUY iptal: Dirençe çok yakın veya bütçe yetersiz", "STRICT_BUY_SHRUNK")
+
                 self.state["son_sinyal"] = {"action": "BUY", "source": "STRICT", "ai_prob": ai_prob}
                 self._save_state()
                 return {
                     "action": "BUY",
                     "confidence_score": round(max(ai_prob, 0.7), 2),
                     "execution": {
-                        "size_percentage": 95,
+                        "size_percentage": 100,
+                        "amount_usd": order_size_usd,
                         "stop_loss": signal.get("stop_loss", 0),
                         "take_profit": signal.get("target_profit", 0),
                     },
@@ -137,7 +205,7 @@ class QuantAgent:
                         "aktif_strateji_notu": signal["reason"],
                         "risk_seviyesi_ayari": risk_seviyesi,
                     },
-                    "system_log": f"STRICT+AI:{ai_prob:.0%}"
+                    "system_log": f"STRICT+AI:{ai_prob:.0%}|Size:${order_size_usd:.2f}"
                 }
             if signal["action"] == "SELL" and ai_prob <= 0.6 and acik_pozisyon:
                 self.state["son_sinyal"] = {"action": "SELL", "source": "STRICT", "ai_prob": ai_prob}
@@ -197,7 +265,13 @@ class QuantAgent:
             if combined_confidence >= min_confidence:
                 sl_price = round(fiyat - 1.5 * atr, 2)
                 tp_price = round(fiyat + 3 * atr, 2)
-                size_pct = min(max(combined_confidence * 95, 5), 95)
+                
+                # Dynamic order size
+                support = teknik_analiz.get("support", fiyat * 0.95)
+                resistance = teknik_analiz.get("resistance", fiyat * 1.05)
+                order_size_usd = self.calculate_order_size(fiyat, support, resistance)
+                if order_size_usd <= 10.0:
+                    return self._hold_karar(risk_seviyesi, "Consensus BUY iptal: Dirençe çok yakın veya bütçe yetersiz", "CONSENSUS_BUY_SHRUNK")
 
                 self.state["son_sinyal"] = {
                     "action": "BUY",
@@ -210,7 +284,7 @@ class QuantAgent:
                     "rsi": rsi,
                 }
 
-                system_log = f"CONSENSUS_BUY|{consensus_result['buy_count']}/5|AI:{ai_prob:.0%}|{details}"
+                system_log = f"CONSENSUS_BUY|{consensus_result['buy_count']}/5|AI:{ai_prob:.0%}|Size:${order_size_usd:.2f}|{details}"
 
                 memory_update = {
                     "aktif_strateji_notu": f"ALIS: {consensus_result['buy_count']}/5 ajan onayladı",
@@ -224,7 +298,8 @@ class QuantAgent:
                     "action": "BUY",
                     "confidence_score": round(combined_confidence, 2),
                     "execution": {
-                        "size_percentage": size_pct,
+                        "size_percentage": 100,
+                        "amount_usd": order_size_usd,
                         "stop_loss": sl_price,
                         "take_profit": tp_price,
                     },
@@ -298,21 +373,55 @@ class QuantAgent:
 
     def islem_sonucu_kaydet(self, kar_zarar):
         self.state["toplam_islem"] += 1
+        self.state["son_islem_kar_zarar"] = round(kar_zarar, 4)
+        
+        # Kar/Zarar durumuna gore ardisik galibiyet ve maglubiyetleri hesapla
         if kar_zarar > 0:
             self.state["kazanma"] += 1
+            self.state["consecutive_wins"] = self.state.get("consecutive_wins", 0) + 1
             self.state["ardisik_kayip"] = 0
+            
+            # Kar realizasyonu ve Serbest Nakit ayirma (%30 kar stashing)
+            hoard_pct = 0.30
+            hoarded = round(kar_zarar * hoard_pct, 2)
+            self.state["free_cash"] = round(self.state.get("free_cash", 0.0) + hoarded, 2)
+            print(f"[CASH_HOARDING] Karlı islem! Kar: ${kar_zarar:.2f} | Serbest Nakde aktarılan (%30): ${hoarded:.2f} | Toplam Serbest Nakit: ${self.state['free_cash']:.2f}")
         elif kar_zarar < 0:
             self.state["kaybetme"] += 1
-            self.state["ardisik_kayip"] += 1
-        self.state["son_islem_kar_zarar"] = round(kar_zarar, 4)
+            self.state["ardisik_kayip"] = self.state.get("ardisik_kayip", 0) + 1
+            self.state["consecutive_wins"] = 0
+            print(f"[CASH_HOARDING] Zararlı islem! Zarar: ${kar_zarar:.2f} | Ardisik Kayip: {self.state['ardisik_kayip']}")
+        else:
+            pass
 
-        # Konsensüs ajanlarına sonucu bildir
+        # Esnek Butce ve Havuz Olcekleme (Pool Scaling)
+        # Baslangic/Baz havuz boyutu 1000$
+        # Win-streak durumunda butceyi esnet (Maksimum 2000$)
+        # Lose-streak durumunda butceyi kis (Minimum 500$)
+        base_pool = 1000.0
+        wins = self.state.get("consecutive_wins", 0)
+        losses = self.state.get("ardisik_kayip", 0)
+
+        if wins >= 2:
+            new_pool = min(2000.0, base_pool + (wins - 1) * 250.0)
+            self.state["active_pool_size"] = round(new_pool, 2)
+            print(f"[POOL_SCALING] Basarılı trend! Havuz esnetildi: ${self.state['active_pool_size']:.2f} (Ardisik Galibiyet: {wins})")
+        elif losses >= 2:
+            new_pool = max(500.0, base_pool - losses * 200.0)
+            self.state["active_pool_size"] = round(new_pool, 2)
+            print(f"[POOL_SCALING] Riskli piyasa! Havuz kucultuldu: ${self.state['active_pool_size']:.2f} (Ardisik Kayip: {losses})")
+        else:
+            # Stabil/normal durum
+            self.state["active_pool_size"] = base_pool
+            print(f"[POOL_SCALING] Havuz stabil seviyede: ${self.state['active_pool_size']:.2f}")
+
+        # Konsensus ajanlarına sonucu bildir
         son_sinyal = self.state.get("son_sinyal", {})
         predicted_action = son_sinyal.get("action", "HOLD")
         actual_profitable = kar_zarar > 0
         consensus.record_result_all(predicted_action, actual_profitable)
 
-        # Eski ağırlık sistemi de güncelle (geriye uyumluluk)
+        # Eski agırlık sistemi de guncelle (geriye uyumluluk)
         indicators = son_sinyal.get("indicators", [])
         if indicators:
             hits = self.state["weight_hits"]

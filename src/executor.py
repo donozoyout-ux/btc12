@@ -200,10 +200,16 @@ class Executor:
             qty = round(self._sim_balance / price, 6)
             qty = max(qty, 0.0001)
             cost = price * qty
+        old_btc = self._sim_btc
         self._sim_balance -= cost
         self._sim_btc += qty
-        self._sim_entry = price
-        settings.last_entry_price = price
+        
+        if old_btc > 0.0001:
+            self._sim_entry = round(((self._sim_entry * old_btc) + (price * qty)) / self._sim_btc, 2)
+        else:
+            self._sim_entry = price
+            
+        settings.last_entry_price = self._sim_entry
         self._save_state()
         return {"price": price, "qty": round(qty, 6), "order_id": "dry_buy", "mode": "SIM"}
 

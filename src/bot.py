@@ -348,8 +348,9 @@ class Bot:
 
     def _alisi_gerceklestir(self, karar):
         try:
-            size_pct = karar["execution"]["size_percentage"]
-            result = executor.buy(size_pct)
+            size_pct = karar["execution"].get("size_percentage", 100)
+            amount_usd = karar["execution"].get("amount_usd", None)
+            result = executor.buy(size_pct, amount_usd=amount_usd)
             if result:
                 db.save_trade("BUY", result["price"], result["qty"], 0, "AI sinyali", result["price"], result.get("mode", "SIM"))
                 quant_agent.state["son_giris_fiyati"] = result["price"]
@@ -359,7 +360,8 @@ class Bot:
                 self._son_alis_saati = time.time()
                 is_sim = result.get("mode", "SIM") == "SIM"
                 tag = "SIMULASYON " if is_sim else ""
-                print(f"[BOT] {tag}ALIS: {result['qty']:.6f} BTC @ ${result['price']:,.2f}")
+                tutar_str = f"Tutar: ${amount_usd:.2f}" if amount_usd else f"Boyut: %{size_pct}"
+                print(f"[BOT] {tag}ALIS: {result['qty']:.6f} BTC @ ${result['price']:,.2f} ({tutar_str})")
                 tg.send_islem_sonucu("BUY", result["price"], result["qty"])
         except Exception as e:
             self.son_hata = f"ALIS: {str(e)[:100]}"
