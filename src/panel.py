@@ -671,7 +671,7 @@ function updateAgents() {
       var accPct = Math.round((agent.accuracy || 0) * 100);
       var trainBadge = agent.is_trained ? '<span class="text-[8px] px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">AI</span>' : '<span class="text-[8px] px-1 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">KURAL</span>';
 
-      h += '<div class="glass rounded-xl p-3 border ' + (vAction !== 'HOLD' ? (vAction === 'BUY' ? 'border-emerald-500/20' : 'border-rose-500/20') : 'border-white/5') + ' transition-all duration-300 hover:scale-[1.02] hover:border-purple-500/40 cursor-pointer" onclick="showAgentDetail(\'' + key + '\')">';
+      h += '<div class="glass rounded-xl p-3 border ' + (vAction !== 'HOLD' ? (vAction === 'BUY' ? 'border-emerald-500/20' : 'border-rose-500/20') : 'border-white/5') + ' transition-all duration-300 hover:scale-[1.02] hover:border-purple-500/40 cursor-pointer" onclick="showAgentDetail(`' + key + '`)">';
       h += '  <div class="flex items-center justify-between mb-2">';
       h += '    <span class="text-sm">' + info.icon + '</span>';
       h += '    ' + trainBadge;
