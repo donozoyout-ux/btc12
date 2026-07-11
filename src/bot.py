@@ -149,7 +149,9 @@ class Bot:
         if anomaly["is_anomaly"]:
             print(f"  [ANOMALI] Skor: {anomaly['anomaly_score']}")
 
-        if self.total_scans % 50 == 0 and not df.empty:
+        # Modeller egitilmemisse ilk taramada, sonrasinda her 50 taramada bir egit
+        is_any_agent_untrained = not consensus.agents["trend"].is_trained
+        if (self.total_scans % 50 == 0 or (self.total_scans == 1 and is_any_agent_untrained)) and not df.empty:
             try:
                 teknik_listesi = []
                 teknik_listesi_5m = []
