@@ -610,8 +610,10 @@ function updateDailyPnl() {
   }).catch(() => {});
 }
 
+var _agentsData = null;
 function updateAgents() {
   fetch('/api/agents').then(r => r.json()).then(d => {
+    _agentsData = d;
     var cards = document.getElementById('agentCards');
     var ranking = document.getElementById('agentRanking');
     var badge = document.getElementById('consensusBadge');
@@ -669,7 +671,7 @@ function updateAgents() {
       var accPct = Math.round((agent.accuracy || 0) * 100);
       var trainBadge = agent.is_trained ? '<span class="text-[8px] px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">AI</span>' : '<span class="text-[8px] px-1 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">KURAL</span>';
 
-      h += '<div class="glass rounded-xl p-3 border ' + (vAction !== 'HOLD' ? (vAction === 'BUY' ? 'border-emerald-500/20' : 'border-rose-500/20') : 'border-white/5') + ' transition-all duration-300 hover:scale-[1.02]">';
+      h += '<div class="glass rounded-xl p-3 border ' + (vAction !== 'HOLD' ? (vAction === 'BUY' ? 'border-emerald-500/20' : 'border-rose-500/20') : 'border-white/5') + ' transition-all duration-300 hover:scale-[1.02] hover:border-purple-500/40 cursor-pointer" onclick="showAgentDetail(\'' + key + '\')">';
       h += '  <div class="flex items-center justify-between mb-2">';
       h += '    <span class="text-sm">' + info.icon + '</span>';
       h += '    ' + trainBadge;
@@ -686,6 +688,7 @@ function updateAgents() {
       h += '    <span>Doğruluk: ' + accPct + '%</span>';
       h += '    <span>Ağırlık: ' + (agent.weight || 1.0).toFixed(1) + 'x</span>';
       h += '  </div>';
+      h += '  <div class="text-center mt-1"><span class="text-[8px] text-slate-600">Detay için tıkla ▸</span></div>';
       h += '</div>';
 
       agentList.push({name: info.label, icon: info.icon, accuracy: agent.accuracy || 0, weight: agent.weight || 1.0, correct: agent.correct_predictions || 0, total: agent.total_predictions || 0});
@@ -726,7 +729,209 @@ setInterval(updateStatus, 5000);
 setInterval(updateDecisions, 5000);
 setInterval(updateDailyPnl, 10000);
 setInterval(updateAgents, 5000);
+// ==========================================
+// AJAN DETAY MODALI
+// ==========================================
+function showAgentDetail(key) {
+  if (!_agentsData) return;
+  var modal = document.getElementById('agentDetailModal');
+  var title = document.getElementById('modalTitle');
+  var body = document.getElementById('modalBody');
+  var scanData = _agentsData._last_scan_data || {};
+  var news = _agentsData._last_news || [];
+  var agent = _agentsData[key] || {};
+  var vote = (_agentsData._last_votes || {})[key] || {};
+
+  var names = {
+    'trend': {label: 'Trend & Momentum', icon: '📈', ai: 'Random Forest Classifier'},
+    'volatility': {label: 'Volatilite & RSI', icon: '📊', ai: 'SVM + KNN Ensemble'},
+    'volume': {label: 'Hacim & Orderbook', icon: '📦', ai: 'Logistic Regression'},
+    'level': {label: 'Kırılım & Seviye', icon: '🎯', ai: 'Gradient Boosting'},
+    'sentiment': {label: 'Duygu & Haber', icon: '🧠', ai: 'VaderSentiment NLP + Decision Tree'}
+  };
+  var info = names[key] || {label: key, icon: '🤖', ai: '?'};
+
+  title.innerHTML = info.icon + ' ' + info.label;
+
+  var vAction = vote.action || 'HOLD';
+  var vConf = Math.round((vote.confidence || 0) * 100);
+  var acColor = vAction === 'BUY' ? '#34d399' : (vAction === 'SELL' ? '#fb7185' : '#94a3b8');
+  var acText = vAction === 'BUY' ? 'AL' : (vAction === 'SELL' ? 'SAT' : 'BEKLE');
+
+  var html = '';
+  // Üst başlık bilgisi
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding:12px;background:rgba(255,255,255,0.03);border-radius:12px;border:1px solid rgba(255,255,255,0.06)">';
+  html += '  <div>';
+  html += '    <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:1px">YAPAY ZEKA MOTORU</div>';
+  html += '    <div style="font-size:13px;color:#e2e8f0;font-weight:800;margin-top:2px">' + info.ai + '</div>';
+  html += '  </div>';
+  html += '  <div style="text-align:right">';
+  html += '    <div style="font-size:10px;color:#64748b;font-weight:700">KARAR</div>';
+  html += '    <div style="font-size:18px;font-weight:900;color:' + acColor + '">' + acText + ' <span style="font-size:12px">%' + vConf + '</span></div>';
+  html += '  </div>';
+  html += '</div>';
+
+  // Ajan Detay Tablosu
+  html += '<div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">📋 ANALİZ EDİLEN VERİLER</div>';
+  html += '<div style="background:rgba(255,255,255,0.02);border-radius:10px;border:1px solid rgba(255,255,255,0.05);overflow:hidden">';
+
+  if (key === 'trend') {
+    var rows = [
+      ['EMA 8', (scanData.ema8 || 0).toFixed(2)],
+      ['EMA 21', (scanData.ema21 || 0).toFixed(2)],
+      ['EMA Kesişim', scanData.ema_cross || 'yok'],
+      ['EMA Mesafesi', (scanData.ema_dist || 0).toFixed(2) + '%'],
+      ['MACD Histogram', (scanData.macd_hist || 0).toFixed(2)],
+      ['MACD Önceki', (scanData.macd_hist_prev || 0).toFixed(2)],
+      ['Fiyat Değişim (5bar)', (scanData.price_change_5 || 0).toFixed(2) + '%'],
+      ['Hacim Oranı', (scanData.vol_ratio || 0).toFixed(2) + 'x'],
+      ['ATR %', (scanData.atr_pct || 0).toFixed(2) + '%'],
+    ];
+    rows.forEach(function(r,i) {
+      var bg = i % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent';
+      html += '<div style="display:flex;justify-content:space-between;padding:8px 12px;background:' + bg + ';border-bottom:1px solid rgba(255,255,255,0.03)">';
+      html += '  <span style="color:#94a3b8;font-size:11px">' + r[0] + '</span>';
+      html += '  <span style="color:#e2e8f0;font-weight:700;font-size:11px;font-family:monospace">' + r[1] + '</span>';
+      html += '</div>';
+    });
+  } else if (key === 'volatility') {
+    var rows = [
+      ['RSI (14)', (scanData.rsi || 0).toFixed(1)],
+      ['RSI Önceki', (scanData.rsi_prev || 0).toFixed(1)],
+      ['StochRSI', (scanData.stoch_rsi || 0).toFixed(1)],
+      ['StochRSI Önceki', (scanData.stoch_rsi_prev || 0).toFixed(1)],
+      ['Bollinger %B', (scanData.bb_pct || 0).toFixed(3)],
+      ['BB Üst', '$' + (scanData.bb_upper || 0).toFixed(0)],
+      ['BB Alt', '$' + (scanData.bb_lower || 0).toFixed(0)],
+      ['ATR', '$' + (scanData.atr || 0).toFixed(2)],
+      ['ATR %', (scanData.atr_pct || 0).toFixed(2) + '%'],
+    ];
+    rows.forEach(function(r,i) {
+      var bg = i % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent';
+      var valColor = '#e2e8f0';
+      if (r[0] === 'RSI (14)') {
+        var rv = scanData.rsi || 50;
+        if (rv < 30) valColor = '#34d399';
+        else if (rv > 70) valColor = '#fb7185';
+      }
+      html += '<div style="display:flex;justify-content:space-between;padding:8px 12px;background:' + bg + ';border-bottom:1px solid rgba(255,255,255,0.03)">';
+      html += '  <span style="color:#94a3b8;font-size:11px">' + r[0] + '</span>';
+      html += '  <span style="color:' + valColor + ';font-weight:700;font-size:11px;font-family:monospace">' + r[1] + '</span>';
+      html += '</div>';
+    });
+  } else if (key === 'volume') {
+    var ob = scanData.orderbook || {};
+    var rows = [
+      ['Hacim Oranı', (scanData.vol_ratio || 0).toFixed(2) + 'x'],
+      ['Alıcı/Satıcı Oranı', (ob.bid_ask_ratio || 0).toFixed(3)],
+      ['Orderbook Sinyali', ob.bid_ask_sinyal || 'notr'],
+      ['Spread', '$' + (ob.spread || 0).toFixed(2)],
+      ['Fiyat Değişim (5bar)', (scanData.price_change_5 || 0).toFixed(2) + '%'],
+    ];
+    rows.forEach(function(r,i) {
+      var bg = i % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent';
+      html += '<div style="display:flex;justify-content:space-between;padding:8px 12px;background:' + bg + ';border-bottom:1px solid rgba(255,255,255,0.03)">';
+      html += '  <span style="color:#94a3b8;font-size:11px">' + r[0] + '</span>';
+      html += '  <span style="color:#e2e8f0;font-weight:700;font-size:11px;font-family:monospace">' + r[1] + '</span>';
+      html += '</div>';
+    });
+  } else if (key === 'level') {
+    var rows = [
+      ['Fiyat', '$' + (scanData.price || 0).toFixed(2)],
+      ['Destek', '$' + (scanData.support || 0).toFixed(2)],
+      ['Direnç', '$' + (scanData.resistance || 0).toFixed(2)],
+      ['Yukarı Kırılım', scanData.breakout_up ? '🟢 EVET' : '❌ Hayır'],
+      ['Aşağı Kırılım', scanData.breakout_down ? '🔴 EVET' : '❌ Hayır'],
+      ['BB Üst', '$' + (scanData.bb_upper || 0).toFixed(0)],
+      ['BB Alt', '$' + (scanData.bb_lower || 0).toFixed(0)],
+    ];
+    rows.forEach(function(r,i) {
+      var bg = i % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent';
+      html += '<div style="display:flex;justify-content:space-between;padding:8px 12px;background:' + bg + ';border-bottom:1px solid rgba(255,255,255,0.03)">';
+      html += '  <span style="color:#94a3b8;font-size:11px">' + r[0] + '</span>';
+      html += '  <span style="color:#e2e8f0;font-weight:700;font-size:11px;font-family:monospace">' + r[1] + '</span>';
+      html += '</div>';
+    });
+  } else if (key === 'sentiment') {
+    var sentAgent = _agentsData.sentiment || {};
+    var fgVal = sentAgent.fear_greed || 50;
+    var fgLabel = fgVal < 25 ? 'Aşırı Korku 😱' : (fgVal < 45 ? 'Korku 😰' : (fgVal < 55 ? 'Nötr 😐' : (fgVal < 75 ? 'Açgözlülük 🤑' : 'Aşırı Açgözlülük 🤯')));
+    var fgColor = fgVal < 25 ? '#fb7185' : (fgVal < 45 ? '#f59e0b' : (fgVal < 55 ? '#94a3b8' : (fgVal < 75 ? '#34d399' : '#22d3ee')));
+
+    html += '<div style="display:flex;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,0.01);border-bottom:1px solid rgba(255,255,255,0.03)">';
+    html += '  <span style="color:#94a3b8;font-size:11px">Sentiment Skoru</span>';
+    html += '  <span style="color:#e2e8f0;font-weight:700;font-size:11px;font-family:monospace">' + (sentAgent.last_sentiment || 0).toFixed(3) + '</span>';
+    html += '</div>';
+    html += '<div style="display:flex;justify-content:space-between;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.03)">';
+    html += '  <span style="color:#94a3b8;font-size:11px">Fear & Greed Index</span>';
+    html += '  <span style="color:' + fgColor + ';font-weight:700;font-size:11px;font-family:monospace">' + fgVal + ' - ' + fgLabel + '</span>';
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Haberler (sadece sentiment için değil, hepsinde göster)
+  if (key === 'sentiment' && news.length > 0) {
+    html += '<div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px">📰 SON HABERLER (' + news.length + ')</div>';
+    html += '<div style="max-height:220px;overflow-y:auto;background:rgba(255,255,255,0.02);border-radius:10px;border:1px solid rgba(255,255,255,0.05)">';
+    news.forEach(function(n, i) {
+      var sent = n.sentiment || 'notr';
+      var sIcon = sent === 'pozitif' ? '🟢' : (sent === 'negatif' ? '🔴' : '⚪');
+      var sColor = sent === 'pozitif' ? '#34d399' : (sent === 'negatif' ? '#fb7185' : '#94a3b8');
+      var bg = i % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent';
+      html += '<div style="padding:8px 12px;background:' + bg + ';border-bottom:1px solid rgba(255,255,255,0.03);display:flex;gap:8px;align-items:flex-start">';
+      html += '  <span style="font-size:12px;flex-shrink:0;margin-top:1px">' + sIcon + '</span>';
+      html += '  <div style="flex:1;min-width:0">';
+      html += '    <div style="font-size:11px;color:#cbd5e1;line-height:1.4;word-break:break-word">' + (n.baslik || n.title || 'Başlıksız') + '</div>';
+      html += '    <div style="font-size:9px;color:' + sColor + ';font-weight:700;margin-top:2px">' + sent.toUpperCase() + '</div>';
+      html += '  </div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  } else if (key === 'sentiment' && news.length === 0) {
+    html += '<div style="margin-top:12px;text-align:center;color:#475569;font-size:11px;padding:16px">Henüz haber taraması yapılmadı. Bot çalışmaya başlayınca haberler burada listelenecek.</div>';
+  }
+
+  // Ajan performansı
+  html += '<div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px">📊 AJAN PERFORMANSI</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">';
+  html += '  <div style="background:rgba(255,255,255,0.02);border-radius:8px;padding:10px;text-align:center;border:1px solid rgba(255,255,255,0.05)">';
+  html += '    <div style="font-size:9px;color:#64748b">Doğruluk</div>';
+  html += '    <div style="font-size:16px;font-weight:900;color:#e2e8f0;font-family:monospace">%' + Math.round((agent.accuracy || 0) * 100) + '</div>';
+  html += '  </div>';
+  html += '  <div style="background:rgba(255,255,255,0.02);border-radius:8px;padding:10px;text-align:center;border:1px solid rgba(255,255,255,0.05)">';
+  html += '    <div style="font-size:9px;color:#64748b">Ağırlık</div>';
+  html += '    <div style="font-size:16px;font-weight:900;color:#e2e8f0;font-family:monospace">' + (agent.weight || 1.0).toFixed(2) + 'x</div>';
+  html += '  </div>';
+  html += '  <div style="background:rgba(255,255,255,0.02);border-radius:8px;padding:10px;text-align:center;border:1px solid rgba(255,255,255,0.05)">';
+  html += '    <div style="font-size:9px;color:#64748b">Tahmin</div>';
+  html += '    <div style="font-size:16px;font-weight:900;color:#e2e8f0;font-family:monospace">' + (agent.correct_predictions || 0) + '/' + (agent.total_predictions || 0) + '</div>';
+  html += '  </div>';
+  html += '</div>';
+
+  body.innerHTML = html;
+  modal.style.display = 'flex';
+  setTimeout(function() { modal.classList.add('modal-visible'); }, 10);
+}
+
+function closeAgentModal() {
+  var modal = document.getElementById('agentDetailModal');
+  modal.classList.remove('modal-visible');
+  setTimeout(function() { modal.style.display = 'none'; }, 200);
+}
+
 </script>
+
+<!-- AJAN DETAY MODALI -->
+<div id="agentDetailModal" onclick="if(event.target===this)closeAgentModal()" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;justify-content:center;align-items:center;opacity:0;transition:opacity 0.2s ease">
+  <div style="background:linear-gradient(135deg,#0f172a 0%,#1e1b4b 100%);border-radius:20px;border:1px solid rgba(255,255,255,0.1);max-width:520px;width:90%;max-height:85vh;overflow-y:auto;padding:24px;box-shadow:0 25px 50px rgba(0,0,0,0.5)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 id="modalTitle" style="font-size:18px;font-weight:900;color:white;margin:0"></h3>
+      <button onclick="closeAgentModal()" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#94a3b8;font-size:16px;width:32px;height:32px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">✕</button>
+    </div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+<style>.modal-visible{opacity:1!important}</style>
 </body>
 </html>"""
 
@@ -850,7 +1055,11 @@ def api_daily_pnl():
 @app.route('/api/agents')
 def api_agents():
     """5 AI ajanının durumlarını ve oylarını döndür."""
-    return jsonify(quant_agent.get_consensus_state())
+    state = quant_agent.get_consensus_state()
+    from src.bot import bot
+    state["_last_scan_data"] = bot.last_scan_data if hasattr(bot, 'last_scan_data') else {}
+    state["_last_news"] = bot.last_news if hasattr(bot, 'last_news') else []
+    return jsonify(state)
 
 @app.route('/api/keepalive')
 def api_keepalive():

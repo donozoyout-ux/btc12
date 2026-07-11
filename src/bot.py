@@ -24,6 +24,8 @@ class Bot:
         self.bekleyen_satis = None
         self.son_hata = None
         self._son_alis_saati = 0
+        self.last_scan_data = {}
+        self.last_news = []
 
     def start(self, mesaj_gonder=True):
         if self.running:
@@ -187,7 +189,7 @@ class Bot:
                 pass
 
         price = teknik["price"]
-        haberler = news_fetcher.fetch_bitcoin_news(3)
+        haberler = news_fetcher.fetch_bitcoin_news(8)
 
         account = executor.get_account()
         pos = executor.get_position()
@@ -220,6 +222,8 @@ class Bot:
         karar = quant_agent.analyze(teknik, haberler, portfoy, hafiza)
         action = karar["action"]
         confidence = karar["confidence_score"]
+        self.last_scan_data = teknik
+        self.last_news = haberler
 
         haber_sentiment = sum(1 for h in haberler if h.get("sentiment") == "pozitif") - sum(1 for h in haberler if h.get("sentiment") == "negatif")
         db.save_scan(
