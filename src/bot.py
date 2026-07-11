@@ -113,7 +113,7 @@ class Bot:
         print(f"\n[SCAN #{self.total_scans}] {self.last_scan}")
 
         try:
-            df = trader.get_bars(100)
+            df = trader.get_bars(500)
             df_5m = None
             try:
                 df_5m = trader.get_bars(100, '5m')
@@ -154,41 +154,69 @@ class Bot:
         if (self.total_scans % 50 == 0 or (self.total_scans == 1 and is_any_agent_untrained)) and not df.empty:
             try:
                 teknik_listesi = []
-                teknik_listesi_5m = []
-                for i in range(min(50, len(df))):
-                    temp_df = df.iloc[max(0, i):i+30]
-                    if len(temp_df) >= 30:
+                # Analiz motorunun en az 50 bar istemesi sebebiyle dilimleri 60 barlik yapiyoruz
+                for i in range(len(df) - 60):
+                    temp_df = df.iloc[i : i + 60]
+                    if len(temp_df) >= 60:
                         t = analyzer.analyze(temp_df)
                         if t:
                             t["orderbook"] = teknik.get("orderbook", {})
                             teknik_listesi.append(t)
-                            if teknik_5m:
-                                teknik_listesi_5m.append(teknik_5m)
                 if len(teknik_listesi) > 10:
-                    ok = ai_model.train(df, teknik_listesi, teknik_listesi_5m if teknik_listesi_5m else None)
+                    ok = ai_model.train(df, teknik_listesi, None)
                     if ok:
                         ai_state = ai_model.get_state()
                         print(f"[AI] Egitildi: dogruluk=%{ai_state['accuracy']*100:.0f} tahmin={ai_state['prediction_count']}")
-                    # --- 5 Ajan Eğitimi ---
+                    # --- 5 Ajan Egitimi ---
                     try:
-                        prices = df["close"].values
-                        agent_training_data = []
-                        for i in range(len(teknik_listesi) - 1):
-                            t = teknik_listesi[i]
-                            future_return = (prices[min(i+1, len(prices)-1)] - prices[i]) / prices[i] * 100
-                            if future_return > 0.15:
-                                label = 2  # BUY
-                            elif future_return < -0.15:
-                                label = 0  # SELL
-                            else:
-                                label = 1  # HOLD
-                            agent_training_data.append((t, label))
-                        if len(agent_training_data) > 15:
-                            consensus.train_all(agent_training_data)
+                        closes = df["close"].values
+                        N = len(closes)
+                        LOOK_AHEAD = 5  # 5 bar ileriye bak
+
+                        # Her dilim icin gelecek getiriyi hesapla
+                        returns = []
+                        for i in range(len(teknik_listesi)):
+                            bar_idx = min(i + 59, N - 1)
+                            future_idx = min(bar_idx + LOOK_AHEAD, N - 1)
+                            cur_price = closes[bar_idx]
+                            fut_price = closes[future_idx]
+                            ret = (fut_price - cur_price) / cur_price * 100
+                            returns.append(ret)
+
+                        # Dinamik threshold: ust/alt %33 dilim BUY/SELL, orta %34 HOLD
+                        import numpy as np
+                        if len(returns) > 30:
+                            sorted_ret = sorted(returns)
+                            n = len(sorted_ret)
+                            low_thresh  = sorted_ret[int(n * 0.33)]
+                            high_thresh = sorted_ret[int(n * 0.67)]
+
+                            agent_training_data = []
+                            for i, ret in enumerate(returns):
+                                t = teknik_listesi[i]
+                                if ret >= high_thresh:
+                                    label = 2  # BUY
+                                elif ret <= low_thresh:
+                                    label = 0  # SELL
+                                else:
+                                    label = 1  # HOLD
+                                agent_training_data.append((t, label))
+
+                            counts = {0: 0, 1: 0, 2: 0}
+                            for _, lbl in agent_training_data:
+                                counts[lbl] = counts.get(lbl, 0) + 1
+                            print(f"[TRAINING] Egitim seti: BUY={counts[2]} HOLD={counts[1]} SELL={counts[0]} (Toplam:{len(agent_training_data)})")
+
+                            if len(agent_training_data) > 15:
+                                consensus.train_all(agent_training_data)
                     except Exception as e:
                         print(f"[CONSENSUS] Ajan egitim hatasi: {e}")
-            except:
-                pass
+                        import traceback
+                        traceback.print_exc()
+            except Exception as e:
+                print(f"[TRAINING] Ana egitim adiminda hata: {e}")
+                import traceback
+                traceback.print_exc()
 
         price = teknik["price"]
         haberler = news_fetcher.fetch_bitcoin_news(8)

@@ -165,8 +165,9 @@ class QuantAgent:
         votes = consensus_result["votes"]
         details = consensus_result["details"]
 
-        print(f"  [CONSENSUS] {details}")
-        print(f"  [CONSENSUS] Karar: {consensus_action} | Güven: {consensus_confidence:.0%} | Konsensüs: {'✓' if consensus_ok else '✗'}")
+        details_clean = details.replace("🟢", "[BUY]").replace("🔴", "[SELL]").replace("⚪", "[HOLD]")
+        print(f"  [CONSENSUS] {details_clean}")
+        print(f"  [CONSENSUS] Karar: {consensus_action} | Güven: {consensus_confidence:.0%} | Konsensüs: {'EVET' if consensus_ok else 'HAYIR'}")
         print(f"  [CONSENSUS] AL:{consensus_result['buy_count']} SAT:{consensus_result['sell_count']} BEKLE:{consensus_result['hold_count']}")
 
         # Ardışık kayıp durumunda güven eşiğini yükselt

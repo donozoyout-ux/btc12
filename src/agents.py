@@ -109,6 +109,7 @@ class BaseAgent:
         label: 0=SELL, 1=HOLD, 2=BUY
         """
         if len(training_data) < 30:
+            print(f"[{self.name}] Egitim iptal: Veri sayisi yetersiz ({len(training_data)} < 30)")
             return False
 
         try:
@@ -121,6 +122,7 @@ class BaseAgent:
                     y_list.append(label)
 
             if len(X_list) < 20:
+                print(f"[{self.name}] Egitim iptal: Gecerli ozellik cikarilan veri sayisi az ({len(X_list)} < 20)")
                 return False
 
             X = np.array(X_list)
@@ -132,7 +134,9 @@ class BaseAgent:
                 y = np.hstack([np.array(self._memory_y[-500:]), y])
 
             # En az 2 sınıf gerekli
-            if len(np.unique(y)) < 2:
+            unique_classes = np.unique(y)
+            if len(unique_classes) < 2:
+                print(f"[{self.name}] Egitim iptal: Yetersiz sinif sayisi (Sadece {unique_classes} var, en az 2 gerekli)")
                 return False
 
             self.scaler.fit(X)
@@ -159,6 +163,8 @@ class BaseAgent:
             return True
         except Exception as e:
             print(f"[{self.name}] Eğitim hatası: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def record_result(self, predicted_action, actual_profitable):
@@ -640,7 +646,7 @@ class SentimentAgent(BaseAgent):
         try:
             from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
             self._vader = SentimentIntensityAnalyzer()
-            print("[SENTIMENT] VaderSentiment NLP yüklendi ✓")
+            print("[SENTIMENT] VaderSentiment NLP yuklendi")
         except ImportError:
             print("[SENTIMENT] VaderSentiment yüklenemedi, kural tabanlı çalışacak")
 
@@ -969,7 +975,7 @@ class ConsensusCoordinator:
                     try:
                         agent.model = pickle.loads(base64.b64decode(model_pkl.encode("utf-8")))
                         agent.scaler = pickle.loads(base64.b64decode(scaler_pkl.encode("utf-8")))
-                        print(f"[CONSENSUS] {name} model pkl basariyla yuklendi ✓ (Accuracy: %{agent.accuracy*100:.0f})")
+                        print(f"[CONSENSUS] {name} model pkl basariyla yuklendi (Accuracy: %{agent.accuracy*100:.0f})")
                     except Exception as e:
                         print(f"[CONSENSUS] {name} model pkl yukleme hatasi: {e}")
         coord = data.get("_coordinator", {})
