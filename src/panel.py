@@ -1305,6 +1305,8 @@ def api_manual_buy():
         if amount <= 0:
             return jsonify({"success": False, "message": "Geçersiz miktar"})
         result = executor.buy(amount_usd=amount)
+        if result and result.get("error") == "PERMISSION":
+            return jsonify({"success": False, "message": result.get("message", "Binance işlem yetkisi yok")})
         if result:
             db.save_trade("BUY", result["price"], result["qty"], 0, "Manuel Islem", result["price"], result.get("mode", "SIM"))
             tg.send(f"🟢 <b>MANUEL ALIS GERCEKLESTIRILDI</b>\n\nFiyat: <code>${result['price']:,.2f}</code>\nMiktar: <code>{result['qty']:.6f} BTC</code>\nTutar: <code>${amount:.2f}</code>\nMod: <b>{result.get('mode', 'SIM')}</b>")
@@ -1321,6 +1323,8 @@ def api_manual_sell():
         from src.executor import executor
         # Sells the entire BTC position
         result = executor.sell()
+        if result and result.get("error") == "PERMISSION":
+            return jsonify({"success": False, "message": result.get("message", "Binance işlem yetkisi yok")})
         if result:
             pl = result.get("pl", 0)
             mode = result.get("mode", "SIM")

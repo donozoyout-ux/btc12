@@ -57,6 +57,25 @@ class Executor:
         except Exception as e:
             print(f"[EXECUTOR] load_markets hatasi: {e}")
 
+    @staticmethod
+    def _binance_err(e):
+        """Binance hatalarini anlasilir Turkce mesaja cevirir."""
+        s = str(e)
+        if "-2015" in s or "Invalid API-key" in s or "permissions for action" in s:
+            return ("Binance -2015: API key gecersiz / IP izni yok / ISLEM YETKISI verilmemis. "
+                    "Cozum: Binance > API Yonetimi > ilgili anahtara 'Spot & Margin Trading' "
+                    "yetkisi verin; 'IP erisim kisitlamasi' aciksa sunucu IP'nizi ekleyin veya "
+                    "kisitlamayi kaldirin. (Bakiye goruntuleme calisir, sadece ISLEM yapilamaz.)")
+        if "API-key" in s or "permission" in s.lower():
+            return "Binance API key / yetki hatasi: " + s[:200]
+        if "IP" in s:
+            return "Binance IP izni hatasi: " + s[:200]
+        return s[:300]
+
+    def _is_permission_error(self, e):
+        s = str(e)
+        return "-2015" in s or "Invalid API-key" in s or "permissions for action" in s
+
     def set_mode(self, mode):
         """Modu degistir: 'sim' veya 'binance'"""
         mode = mode.lower()
@@ -204,6 +223,11 @@ class Executor:
             try:
                 return self._binance_buy(size_pct, amount_usd)
             except Exception as e:
+                if self._is_permission_error(e):
+                    msg = self._binance_err(e)
+                    print(f"[EXECUTOR] Binance alim YETKI HATASI: {msg}")
+                    self._binance_error = msg
+                    return {"error": "PERMISSION", "message": msg, "mode": "BINANCE"}
                 print(f"[EXECUTOR] Binance alim hatasi (gecici): {e}")
                 return self._dry_buy(size_pct, amount_usd)
         return self._dry_buy(size_pct, amount_usd)
@@ -219,6 +243,11 @@ class Executor:
             try:
                 return self._binance_sell()
             except Exception as e:
+                if self._is_permission_error(e):
+                    msg = self._binance_err(e)
+                    print(f"[EXECUTOR] Binance satis YETKI HATASI: {msg}")
+                    self._binance_error = msg
+                    return {"error": "PERMISSION", "message": msg, "mode": "BINANCE"}
                 print(f"[EXECUTOR] Binance satis hatasi (gecici): {e}")
                 return self._dry_sell()
         return self._dry_sell()
