@@ -109,14 +109,23 @@ class Executor:
         return {"success": True, "message": f"Simülasyon sermayesi ${amount:.2f} olarak ayarlandi", "balance": amount}
 
     def reset_sim(self):
-        """Simülasyonu başlangıç sermayesine sıfırlar (pozisyon kapanır, geçmiş silinmez)."""
+        """Simülasyonu BAŞTAN sona sıfırlar. SADECE simüle edilmiş durum; Binance'e hiç dokunmaz.
+        Binance modundaysa otomatik SIM'e geçer ki sıfırlama görünür olsun."""
+        switched = False
+        if settings.executor_mode != "sim":
+            settings.executor_mode = "sim"
+            switched = True
         amount = settings.sim_starting_capital
         self._sim_balance = amount
         self._sim_btc = 0.0
         self._sim_entry = 0.0
         settings.last_entry_price = 0
         self._save_state()
-        return {"success": True, "message": f"Simülasyon sıfırlandı (başlangıç: ${amount:.2f})", "balance": amount, "starting_capital": amount}
+        msg = f"Simülasyon sıfırlandı (başlangıç sermaye: ${amount:.2f}, pozisyon kapandı)"
+        if switched:
+            msg += " — Binance modundan SIM'e geçildi (Binance bakiyenize dokunulmadı)"
+        return {"success": True, "message": msg, "balance": amount,
+                "starting_capital": amount, "switched_to_sim": switched}
 
     def test_binance_connection(self):
         """Binance baglantisini test et ve gercek bakiyeyi döndür."""

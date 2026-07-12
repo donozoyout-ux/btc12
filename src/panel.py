@@ -535,12 +535,12 @@ function setSimCapital() {
 }
 
 function resetSim() {
-  if (!confirm('Simülasyon sıfırlansın mı? Bakiye başlangıç sermayesine döner, pozisyon kapanır. (İşlem geçmişi KAYDEDİLİR, silinmez)')) return;
+  if (!confirm('Simülasyon BAŞTAN SONA sıfırlansın mı? Bakiye başlangıç sermayesine döner, açık pozisyon kapanır, istatistikler sıfırlanır. (Bu işlem SADECE simülasyonu etkiler; Binance hesabınıza dokunmaz)')) return;
   fetch('/api/reset_sim', {method: 'POST'}).then(r => r.json()).then(d => {
     if (d.success) {
       showNotification(d.message, 'success');
       document.getElementById('simCapital').value = d.starting_capital;
-      setTimeout(function() { updateStatus(); updateDecisions(); updateDailyPnl(); }, 1000);
+      setTimeout(function() { updateModeUI(); updateStatus(); updateDecisions(); updateDailyPnl(); updateGoal(); }, 1000);
     } else {
       showNotification('Hata: ' + d.message, 'error');
     }
@@ -1430,18 +1430,30 @@ def api_reset_sim():
     result = executor.reset_sim()
     if result.get('success'):
         try:
+            # Simülasyon istatistiklerini de sıfırla (kazanma/kaybetme sayacı)
+            from src import quant_agent
+            for k in ("toplam_islem", "kazanma", "kaybetme", "ardisik_kayip",
+                      "son_islem_kar_zarar", "son_giris_fiyati", "son_sl", "son_tp"):
+                if k in quant_agent.state:
+                    quant_agent.state[k] = 0
+            quant_agent._save_state()
+        except Exception as e:
+            print(f"[RESET] istatistik sifirlama hatasi: {e}")
+        try:
             from src.database import db
             from src.trader import trader
             price = trader.get_price() if settings.executor_mode == "binance" else 0
             db.save_decision(
                 strategy_action="RESET", strategy_score=0.0,
-                strategy_reason="Simülasyon başlangıç sermayesine sıfırlandı",
+                strategy_reason="Simülasyon baştan sona sıfırlandı (sermaye+pozisyon+istatistik)",
                 ai_prob=0.0, ai_veto=False, final_action="RESET",
                 final_reason="Kullanıcı simülasyonu sıfırladı", price=price, executed=0,
             )
         except Exception as e:
             print(f"[RESET] kayit hatasi: {e}")
-        return jsonify({"success": True, "message": result.get('message'), "starting_capital": result.get('starting_capital')})
+        return jsonify({"success": True, "message": result.get('message'),
+                        "starting_capital": result.get('starting_capital'),
+                        "switched_to_sim": result.get('switched_to_sim', False)})
     return jsonify({"success": False, "message": result.get('message', 'Sıfırlanamadı')})
 
 

@@ -76,8 +76,63 @@ class Analyzer:
 
         ema_dist = (close.iloc[-1] - ema21.iloc[-1]) / ema21.iloc[-1] * 100
 
+        # --- Ek Göstergeler (sistem kendisi deneye-yanıla öğrensin diye zengin veri) ---
+        adx = ta.trend.ADXIndicator(high, low, close, window=14).adx().iloc[-1]
+        di_plus = ta.trend.ADXIndicator(high, low, close, window=14).adx_pos().iloc[-1]
+        di_minus = ta.trend.ADXIndicator(high, low, close, window=14).adx_neg().iloc[-1]
+
+        cci = ta.trend.CCIIndicator(close, window=20).cci().iloc[-1]
+
+        williams_r = ta.momentum.WilliamsRIndicator(high, low, close, lbp=14).wr().iloc[-1]
+
+        obv = ta.volume.OnBalanceVolumeIndicator(close, volume).on_balance_volume()
+        obv_sma = obv.rolling(20).mean().iloc[-1]
+        obv_signal = 1.0 if obv.iloc[-1] > obv_sma else (-1.0 if obv.iloc[-1] < obv_sma else 0.0)
+
+        mfi = ta.volume.MFIIndicator(high, low, close, volume, window=14).money_flow_index().iloc[-1]
+
+        roc = ta.momentum.ROCIndicator(close, window=12).roc().iloc[-1]
+
+        # VWAP (tipik fiyat ağırlıklı)
+        tp = (high + low + close) / 3
+        vwap_cum = (tp * volume).rolling(20).sum().iloc[-1]
+        vol_cum = volume.rolling(20).sum().iloc[-1]
+        vwap = vwap_cum / vol_cum if vol_cum > 0 else price
+        vwap_dist = (price - vwap) / vwap * 100 if vwap > 0 else 0
+
+        # Donchian kanalı (20)
+        donchian_high = high.rolling(20).max().iloc[-1]
+        donchian_low = low.rolling(20).min().iloc[-1]
+        donchian_mid = (donchian_high + donchian_low) / 2
+        donchian_pos = (price - donchian_low) / (donchian_high - donchian_low) if donchian_high > donchian_low else 0.5
+
+        # Bileşik momentum skoru (-100..+100)
+        mom_score = 0.0
+        mom_score += 30 if ema_cross == "bullish" else -30
+        mom_score += np.sign(macd_hist) * min(abs(macd_hist) * 200, 25)
+        mom_score += (rsi - 50) * 0.4
+        mom_score += (williams_r + 50) * 0.2
+        mom_score = max(-100, min(100, mom_score))
+
+        market_regime = "strong_trend" if (not pd.isna(adx) and adx > 25) else ("ranging" if (not pd.isna(adx) and adx < 20) else "undefined")
+
         return {
             "price": round(price, 2),
+            "adx": round(adx, 1) if not pd.isna(adx) else 0,
+            "di_plus": round(di_plus, 1) if not pd.isna(di_plus) else 0,
+            "di_minus": round(di_minus, 1) if not pd.isna(di_minus) else 0,
+            "cci": round(cci, 1) if not pd.isna(cci) else 0,
+            "williams_r": round(williams_r, 1) if not pd.isna(williams_r) else -50,
+            "obv_signal": obv_signal,
+            "mfi": round(mfi, 1) if not pd.isna(mfi) else 50,
+            "roc": round(roc, 2) if not pd.isna(roc) else 0,
+            "vwap": round(vwap, 2),
+            "vwap_dist": round(vwap_dist, 2),
+            "donchian_high": round(donchian_high, 2),
+            "donchian_low": round(donchian_low, 2),
+            "donchian_pos": round(donchian_pos, 3),
+            "momentum_score": round(mom_score, 1),
+            "market_regime": market_regime,
             "rsi": round(rsi, 1),
             "rsi_prev": round(rsi_prev, 1),
             "ema8": round(ema8.iloc[-1], 2),
