@@ -11,7 +11,7 @@ services:
       - key: BINANCE_SECRET_KEY
         sync: false
       - key: BINANCE_TESTNET
-        value: "true"
+        value: "false"
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID
@@ -20,5 +20,11 @@ services:
         sync: false
       - key: SUPABASE_KEY
         sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SYMBOL
+        value: "BTC/USDT"
+      - key: EXECUTOR_MODE
+        value: "binance"
       - key: PYTHON_VERSION
         value: 3.12.0

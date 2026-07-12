@@ -61,6 +61,7 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
 .glass {
   background: rgba(14, 20, 36, 0.45);
@@ -109,6 +110,22 @@ body {
   background: rgba(255, 255, 255, 0.03);
   transform: translateX(2px);
 }
+/* === MOBILE RESPONSIVE === */
+@media (max-width: 768px) {
+  main { padding: 12px !important; }
+  header { padding: 10px 12px !important; flex-direction: column !important; gap: 10px; }
+  .glass { padding: 10px !important; }
+  section[data-purpose="top-stats-cards"] { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+  section[data-purpose="ai-consensus-panel"] .grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .tradingview-widget-container { height: 260px !important; }
+  #tradeAmount { width: 60px !important; }
+  .gemini-brain-grid { grid-template-columns: 1fr !important; }
+}
+@media (max-width: 480px) {
+  section[data-purpose="top-stats-cards"] { grid-template-columns: 1fr 1fr !important; }
+  section[data-purpose="ai-consensus-panel"] .grid { grid-template-columns: 1fr 1fr !important; }
+  h2 { font-size: 16px !important; }
+}
 </style>
 </head>
 <body class="font-sans antialiased pb-12">
@@ -132,10 +149,22 @@ body {
       <span class="w-2 h-2 rounded-full bg-trading-buy"></span><span>SİNYAL BEKLENİYOR</span>
     </div>
 
+    <!-- MOD SEÇİMİ: SİMÜLASYON / BINANCE -->
+    <div class="flex items-center gap-1 bg-surface-lowest border border-white/10 rounded-lg p-1" data-purpose="mode-toggle">
+      <button id="btnSim" onclick="setMode('sim')" class="btn text-[10px] font-extrabold px-3 py-1.5 rounded-md bg-amber-500/20 text-amber-400 border border-amber-500/30">🟡 SİMÜLASYON</button>
+      <button id="btnBinance" onclick="setMode('binance')" class="btn text-[10px] font-extrabold px-3 py-1.5 rounded-md text-gray-400 hover:text-white">🔵 BINANCE HESAP</button>
+    </div>
+
     <!-- Manuel İşlem Modülü -->
     <div class="flex items-center bg-surface-low rounded-lg border border-white/10 px-3 py-1" data-purpose="manuel-islem-paneli">
       <span class="text-[9px] text-gray-500 mr-2 font-bold tracking-wider">MİKTAR (USDT)</span>
       <input id="tradeAmount" class="bg-transparent border-none text-sm font-mono text-white w-20 p-0 focus:ring-0 focus:outline-none placeholder-gray-600" placeholder="500.00" type="number" min="0" step="10"/>
+    </div>
+    <!-- Simülasyon Sermayesi -->
+    <div class="flex items-center bg-surface-low rounded-lg border border-white/10 px-3 py-1" data-purpose="sim-capital-paneli">
+      <span class="text-[9px] text-gray-500 mr-2 font-bold tracking-wider">SIM. SERMAYE</span>
+      <input id="simCapital" class="bg-transparent border-none text-sm font-mono text-white w-20 p-0 focus:ring-0 focus:outline-none placeholder="500" type="number" min="10" step="10" value="500"/>
+      <button onclick="setSimCapital()" class="btn bg-slate-600 hover:bg-slate-500 text-white text-[9px] font-bold px-2 py-0.5 rounded ml-1">AYARLA</button>
     </div>
     <div class="flex items-center gap-2">
       <button onclick="manualBuy()" class="btn bg-trading-buy hover:bg-emerald-600 text-white text-xs font-extrabold px-3 py-2 rounded-lg shadow-lg shadow-emerald-500/20">
@@ -156,6 +185,16 @@ body {
     </div>
 
     <div class="font-mono text-sm text-slate-400 bg-surface-lowest px-3 py-1.5 border border-white/5 rounded-lg" id="clock">--:--:--</div>
+
+    <!-- Binance Bağlantı Durumu -->
+    <div id="binanceStatusBadge" class="flex items-center gap-2 px-3 py-1.5 bg-slate-500/10 border border-white/10 rounded-lg text-[10px] font-bold text-slate-400 cursor-pointer" onclick="testBinance()" title="Binance bağlantısını test et">
+      <span class="w-2 h-2 rounded-full bg-slate-500"></span><span id="binanceStatusText">BINANCE: ?</span>
+    </div>
+
+    <!-- Günlük Hedef %1 Takipçisi -->
+    <div id="goalBadge" class="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-[10px] font-bold text-indigo-300" title="Günlük %1 hedefi">
+      <span>🎯 HEDEF</span><span id="goalText">--</span>
+    </div>
   </div>
 </header>
 
@@ -189,6 +228,28 @@ body {
     <div class="glass p-4 rounded-xl border border-blue-500/20 flex flex-col justify-between">
       <span class="text-[10px] text-blue-400 font-bold uppercase tracking-wider">AI MODEL DOĞRULUK</span>
       <h2 class="text-sm font-extrabold font-mono text-blue-400 mt-1" id="sAiAccuracy">---</h2>
+    </div>
+  </section>
+
+  <!-- 🧠 GEMINi 5-BEYiN AI TARTIŞMA PANELi -->
+  <section class="glass rounded-2xl p-5 border border-cyan-500/15" data-purpose="gemini-debate-panel" id="geminiSection">
+    <div class="border-b border-white/5 pb-3 mb-4 flex items-center justify-between">
+      <h3 class="text-sm font-bold text-white flex items-center gap-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 animate-pulse"></span>
+        🧠 Gemini 5-Beyin AI Tartışma Paneli
+      </h3>
+      <div class="flex items-center gap-3">
+        <button onclick="openBrainsEditor()" class="btn text-[9px] font-bold px-2.5 py-1 rounded-md bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/25">⚙️ AI BEYİNLERİNİ DÜZENLE</button>
+        <span class="text-[9px] font-mono text-cyan-400 font-bold" id="geminiStatus">BAĞLANIYOR...</span>
+        <span id="geminiFinalBadge" class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-slate-500/10 text-slate-400 border border-white/10">---</span>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 gemini-brain-grid" id="geminiBrainCards">
+      <div class="text-slate-500 italic text-center py-6 text-xs col-span-5">Gemini API bağlanıyor...</div>
+    </div>
+    <div class="mt-3 p-3 bg-surface-lowest/60 rounded-xl border border-white/5" id="geminiSummaryBox" style="display:none">
+      <span class="text-[9px] text-slate-500 font-bold uppercase tracking-wider">GENEL DEĞERLENDİRME</span>
+      <p class="text-xs text-slate-300 mt-1 leading-relaxed" id="geminiSummaryText"></p>
     </div>
   </section>
 
@@ -428,6 +489,120 @@ function showNotification(msg, type) {
   }, 3500);
 }
 
+function setMode(mode) {
+  fetch('/api/set_mode', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode: mode})})
+    .then(r => r.json()).then(d => {
+      if (d.success) {
+        showNotification(d.message, 'success');
+        updateModeUI();
+        updateStatus();
+      } else {
+        showNotification('Hata: ' + d.message, 'error');
+        updateModeUI();
+      }
+    }).catch(() => showNotification('Sunucu bağlantı hatası', 'error'));
+}
+
+function updateModeUI() {
+  fetch('/api/status').then(r => r.json()).then(d => {
+    var m = d.executor_mode || 'sim';
+    var btnSim = document.getElementById('btnSim');
+    var btnBin = document.getElementById('btnBinance');
+    if (m === 'binance') {
+      btnBin.className = 'btn text-[10px] font-extrabold px-3 py-1.5 rounded-md bg-blue-500/20 text-blue-400 border border-blue-500/30';
+      btnSim.className = 'btn text-[10px] font-extrabold px-3 py-1.5 rounded-md text-gray-400 hover:text-white';
+    } else {
+      btnSim.className = 'btn text-[10px] font-extrabold px-3 py-1.5 rounded-md bg-amber-500/20 text-amber-400 border border-amber-500/30';
+      btnBin.className = 'btn text-[10px] font-extrabold px-3 py-1.5 rounded-md text-gray-400 hover:text-white';
+    }
+  }).catch(() => {});
+}
+
+function setSimCapital() {
+  var inp = document.getElementById('simCapital');
+  var val = parseFloat(inp.value);
+  if (!val || val < 10) {
+    alert('Simülasyon sermayesi en az 10 olmalı.');
+    return;
+  }
+  fetch('/api/set_sim_capital', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({amount: val})})
+    .then(r => r.json()).then(d => {
+      if (d.success) showNotification(d.message, 'success');
+      else showNotification('Hata: ' + d.message, 'error');
+      setTimeout(updateStatus, 1000);
+    }).catch(() => showNotification('Sunucu bağlantı hatası', 'error'));
+}
+
+function testBinance() {
+  var badge = document.getElementById('binanceStatusBadge');
+  var txt = document.getElementById('binanceStatusText');
+  txt.textContent = 'BINANCE: TEST...';
+  badge.className = 'flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-[10px] font-bold text-amber-400 cursor-pointer';
+  fetch('/api/binance_status').then(r => r.json()).then(d => {
+    if (d.connected) {
+      var q = d.balance.quote, b = d.balance.base;
+      txt.textContent = 'BINANCE: ✅ ' + Number(q).toLocaleString(undefined,{maximumFractionDigits:2});
+      badge.className = 'flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-[10px] font-bold text-emerald-400 cursor-pointer';
+      showNotification('Binance bağlandı! Bakiye: ' + q.toFixed(2) + ' ' + (d.quote_asset||'USDT'), 'success');
+    } else {
+      txt.textContent = 'BINANCE: ❌ HATA';
+      badge.className = 'flex items-center gap-2 px-3 py-1.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-[10px] font-bold text-rose-400 cursor-pointer';
+      showNotification('Binance bağlantı hatası: ' + (d.error||'bilinmiyor'), 'error');
+    }
+  }).catch(() => {
+    txt.textContent = 'BINANCE: ❌ BAĞLANTI';
+    badge.className = 'flex items-center gap-2 px-3 py-1.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-[10px] font-bold text-rose-400 cursor-pointer';
+    showNotification('Sunucu bağlantı hatası', 'error');
+  });
+}
+
+function openBrainsEditor() {
+  fetch('/api/brains').then(r => r.json()).then(d => {
+    var html = '';
+    Object.keys(d).forEach(function(key) {
+      var b = d[key];
+      html += '<div style="margin-bottom:18px">';
+      html += '  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
+      html += '    <label style="font-size:13px;font-weight:800;color:#e2e8f0">' + (b.icon||'🤖') + ' ' + (b.label||key) + '</label>';
+      html += '    <label style="font-size:10px;color:#94a3b8;cursor:pointer"><input type="checkbox" id="enb_' + key + '" ' + (b.enabled!==false?'checked':'') + ' style="margin-right:4px">Aktif</label>';
+      html += '  </div>';
+      html += '  <textarea id="br_' + key + '" rows="4" style="width:100%;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#e2e8f0;font-size:12px;padding:10px;resize:vertical;font-family:Inter,sans-serif">' + (b.instruction||'') + '</textarea>';
+      html += '</div>';
+    });
+    document.getElementById('brainsModalBody').innerHTML = html;
+    var modal = document.getElementById('brainsModal');
+    modal.style.display = 'flex';
+    setTimeout(function() { modal.classList.add('modal-visible'); }, 10);
+  }).catch(() => showNotification('Beyin verileri alınamadı', 'error'));
+}
+
+function saveBrains() {
+  fetch('/api/brains').then(r => r.json()).then(function(base) {
+    var payload = {};
+    Object.keys(base).forEach(function(key) {
+      payload[key] = {
+        instruction: document.getElementById('br_' + key).value,
+        enabled: document.getElementById('enb_' + key).checked
+      };
+    });
+    fetch('/api/brains', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})
+      .then(r => r.json()).then(d => {
+        if (d.success) {
+          showNotification('AI beyin talimatları kaydedildi ✅', 'success');
+          closeBrainsModal();
+        } else {
+          showNotification('Kaydetme hatası: ' + d.message, 'error');
+        }
+      }).catch(() => showNotification('Sunucu bağlantı hatası', 'error'));
+  });
+}
+
+function closeBrainsModal() {
+  var modal = document.getElementById('brainsModal');
+  modal.classList.remove('modal-visible');
+  setTimeout(function() { modal.style.display = 'none'; }, 200);
+}
+
 function updateStatus() {
   fetch('/api/status').then(r => r.json()).then(d => {
     var badge = document.getElementById('statusBadge');
@@ -571,6 +746,30 @@ function updateDecisions() {
       h += '</div>';
     });
     dl.innerHTML = h;
+  }).catch(() => {});
+}
+
+function updateGoal() {
+  fetch('/api/status').then(r => r.json()).then(st => {
+    var pv = st.portfolio_value || 0;
+    fetch('/api/daily_pnl').then(r => r.json()).then(d => {
+      var today = new Date().toISOString().slice(0, 10);
+      var todays = (d || []).filter(function(g) { return g.date === today; });
+      var pnl = todays.reduce(function(s, g) { return s + g.pnl; }, 0);
+      var target = pv * 0.01;
+      var pct = pv > 0 ? (pnl / pv * 100) : 0;
+      var el = document.getElementById('goalText');
+      var badge = document.getElementById('goalBadge');
+      var sign = pnl >= 0 ? '+' : '';
+      el.textContent = sign + pnl.toFixed(2) + '$ / HDF:' + target.toFixed(2) + '$ (' + pct.toFixed(2) + '%)';
+      if (pct >= 1.0) {
+        badge.className = 'flex items-center gap-2 px-3 py-1.5 bg-emerald-500/15 border border-emerald-500/30 rounded-lg text-[10px] font-bold text-emerald-300';
+      } else if (pnl < 0) {
+        badge.className = 'flex items-center gap-2 px-3 py-1.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-[10px] font-bold text-rose-300';
+      } else {
+        badge.className = 'flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-[10px] font-bold text-indigo-300';
+      }
+    }).catch(() => {});
   }).catch(() => {});
 }
 
@@ -720,6 +919,9 @@ function updateAgents() {
 
 // Initial updates
 updateStatus();
+updateModeUI();
+testBinance();
+updateGoal();
 updateDecisions();
 updateDailyPnl();
 updateAgents();
@@ -728,7 +930,98 @@ updateAgents();
 setInterval(updateStatus, 5000);
 setInterval(updateDecisions, 5000);
 setInterval(updateDailyPnl, 10000);
+setInterval(updateGoal, 15000);
 setInterval(updateAgents, 5000);
+
+// ==========================================
+// GEMINI 5-BRAIN DEBATE PANEL
+// ==========================================
+var _geminiData = null;
+function updateGemini() {
+  fetch('/api/gemini_debate').then(r => r.json()).then(d => {
+    _geminiData = d;
+    var cards = document.getElementById('geminiBrainCards');
+    var badge = document.getElementById('geminiFinalBadge');
+    var statusEl = document.getElementById('geminiStatus');
+    var summBox = document.getElementById('geminiSummaryBox');
+    var summText = document.getElementById('geminiSummaryText');
+    if (!cards) return;
+
+    if (!d || !d.brains) {
+      statusEl.textContent = 'API KEY GEREKLI';
+      statusEl.className = 'text-[9px] font-mono text-amber-400 font-bold';
+      cards.innerHTML = '<div class="text-slate-500 italic text-center py-6 text-xs col-span-5">Gemini API anahtarı .env dosyasına GEMINI_API_KEY olarak ekleyin</div>';
+      return;
+    }
+
+    statusEl.textContent = 'CANLI DEBATE';
+    statusEl.className = 'text-[9px] font-mono text-cyan-400 font-bold';
+
+    var brainIcons = {'TREND': '📈', 'VOLATİLİTE': '📊', 'HACIM': '📦', 'SEVİYE': '🎯', 'DUYGU': '🧠'};
+    var brainColors = {
+      'TREND': 'from-blue-600 to-cyan-500',
+      'VOLATİLİTE': 'from-amber-500 to-orange-500',
+      'HACIM': 'from-emerald-500 to-green-500',
+      'SEVİYE': 'from-rose-500 to-pink-500',
+      'DUYGU': 'from-purple-500 to-violet-500'
+    };
+
+    // Final badge
+    var fd = d.final_decision || 'HOLD';
+    if (fd === 'BUY') {
+      badge.textContent = '🟢 AL (' + (d.buy_count||0) + '/5)';
+      badge.className = 'px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse';
+    } else if (fd === 'SELL') {
+      badge.textContent = '🔴 SAT (' + (d.sell_count||0) + '/5)';
+      badge.className = 'px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse';
+    } else {
+      badge.textContent = '⚪ BEKLE';
+      badge.className = 'px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-slate-500/10 text-slate-400 border border-white/10';
+    }
+
+    // Brain cards
+    var h = '';
+    d.brains.forEach(function(b) {
+      var icon = brainIcons[b.name] || '🤖';
+      var vAction = b.vote || 'HOLD';
+      var vConf = Math.round((b.confidence || 0) * 100);
+      var actionColor = vAction === 'BUY' ? 'text-emerald-400' : (vAction === 'SELL' ? 'text-rose-400' : 'text-slate-400');
+      var actionBg = vAction === 'BUY' ? 'border-emerald-500/20' : (vAction === 'SELL' ? 'border-rose-500/20' : 'border-white/5');
+      var confBarColor = vAction === 'BUY' ? 'bg-emerald-500' : (vAction === 'SELL' ? 'bg-rose-500' : 'bg-slate-500');
+      var voteLabel = vAction === 'BUY' ? 'AL' : (vAction === 'SELL' ? 'SAT' : 'BEKLE');
+
+      h += '<div class="glass rounded-xl p-3 border ' + actionBg + ' transition-all duration-300 hover:scale-[1.02]">';
+      h += '  <div class="flex items-center justify-between mb-1.5">';
+      h += '    <span class="text-sm">' + icon + '</span>';
+      h += '    <span class="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">GEMINI</span>';
+      h += '  </div>';
+      h += '  <h4 class="text-[10px] font-bold text-slate-300 mb-1">' + b.name + '</h4>';
+      h += '  <div class="flex items-center justify-between mb-1.5">';
+      h += '    <span class="text-sm font-extrabold ' + actionColor + '">' + voteLabel + '</span>';
+      h += '    <span class="text-[10px] font-mono font-bold ' + actionColor + '">' + vConf + '%</span>';
+      h += '  </div>';
+      h += '  <div class="w-full bg-surface-lowest rounded-full h-1.5 mb-2">';
+      h += '    <div class="' + confBarColor + ' h-1.5 rounded-full transition-all duration-500" style="width:' + Math.max(vConf, 3) + '%"></div>';
+      h += '  </div>';
+      h += '  <p class="text-[9px] text-slate-400 leading-relaxed line-clamp-3">' + (b.argument || '') + '</p>';
+      h += '</div>';
+    });
+    cards.innerHTML = h;
+
+    // Summary
+    if (d.summary) {
+      summBox.style.display = 'block';
+      summText.textContent = d.summary;
+    }
+  }).catch(function() {
+    var statusEl = document.getElementById('geminiStatus');
+    if (statusEl) statusEl.textContent = 'BAĞLANTI HATASI';
+  });
+}
+
+updateGemini();
+setInterval(updateGemini, 8000);
+
 // ==========================================
 // AJAN DETAY MODALI
 // ==========================================
@@ -921,6 +1214,22 @@ function closeAgentModal() {
 
 </script>
 
+<!-- AI BEYİNLERİ DÜZENLEME MODALI -->
+<div id="brainsModal" onclick="if(event.target===this)closeBrainsModal()" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;justify-content:center;align-items:center;opacity:0;transition:opacity 0.2s ease">
+  <div style="background:linear-gradient(135deg,#0f172a 0%,#0c1a2e 100%);border-radius:20px;border:1px solid rgba(255,255,255,0.1);max-width:640px;width:92%;max-height:88vh;overflow-y:auto;padding:24px;box-shadow:0 25px 50px rgba(0,0,0,0.5)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h3 style="font-size:18px;font-weight:900;color:white;margin:0">🧠 AI Beyinlerini Düzenle</h3>
+      <button onclick="closeBrainsModal()" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#94a3b8;font-size:16px;width:32px;height:32px;cursor:pointer;display:flex;align-items:center;justify-content:center">✕</button>
+    </div>
+    <p style="font-size:11px;color:#64748b;margin-bottom:14px;line-height:1.4">Her analiz bölümü için AI'ın nasıl düşüneceğini yaz. Bu talimatlar Gemini 5-Beyin tartışmasında kullanılır. İstediğin bilgiyi sen yazabilirsin.</p>
+    <div id="brainsModalBody"></div>
+    <div style="display:flex;gap:10px;margin-top:18px">
+      <button onclick="saveBrains()" style="flex:1;background:linear-gradient(135deg,#06b6d4,#3b82f6);color:white;font-weight:800;font-size:13px;padding:12px;border-radius:12px;border:none;cursor:pointer">💾 KAYDET</button>
+      <button onclick="closeBrainsModal()" style="background:rgba(255,255,255,0.06);color:#94a3b8;font-weight:700;font-size:13px;padding:12px 18px;border-radius:12px;border:1px solid rgba(255,255,255,0.1);cursor:pointer">İPTAL</button>
+    </div>
+  </div>
+</div>
+
 <!-- AJAN DETAY MODALI -->
 <div id="agentDetailModal" onclick="if(event.target===this)closeAgentModal()" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;justify-content:center;align-items:center;opacity:0;transition:opacity 0.2s ease">
   <div style="background:linear-gradient(135deg,#0f172a 0%,#1e1b4b 100%);border-radius:20px;border:1px solid rgba(255,255,255,0.1);max-width:520px;width:90%;max-height:85vh;overflow-y:auto;padding:24px;box-shadow:0 25px 50px rgba(0,0,0,0.5)">
@@ -1064,6 +1373,69 @@ def api_agents():
 @app.route('/api/keepalive')
 def api_keepalive():
     return ("", 200)
+
+@app.route('/api/gemini_debate')
+def api_gemini_debate():
+    """Gemini 5-Brain AI tartışma sonucunu döndür."""
+    from src import llm_agent
+    debate = llm_agent.get_last_debate()
+    if debate:
+        return jsonify(debate)
+    return jsonify({})
+
+
+@app.route('/api/set_mode', methods=['POST'])
+def api_set_mode():
+    from src.executor import executor
+    data = request.get_json(silent=True) or {}
+    mode = data.get('mode', 'sim')
+    result = executor.set_mode(mode)
+    if result.get('success'):
+        return jsonify({"success": True, "message": result.get('message', 'Mod değişti'), "executor_mode": settings.executor_mode})
+    return jsonify({"success": False, "message": result.get('message', 'Mod değiştirilemedi')})
+
+
+@app.route('/api/set_sim_capital', methods=['POST'])
+def api_set_sim_capital():
+    from src.executor import executor
+    data = request.get_json(silent=True) or {}
+    amount = float(data.get('amount', 500))
+    result = executor.reset_sim_balance(amount)
+    if result.get('success'):
+        return jsonify({"success": True, "message": result.get('message'), "balance": result.get('balance')})
+    return jsonify({"success": False, "message": result.get('message', 'Ayarlanamadı')})
+
+
+@app.route('/api/binance_status')
+def api_binance_status():
+    from src.executor import executor
+    res = executor.test_binance_connection()
+    res['executor_mode'] = settings.executor_mode
+    res['quote_asset'] = settings.quote_asset
+    return jsonify(res)
+
+
+@app.route('/api/brains', methods=['GET'])
+def api_get_brains():
+    from src import ai_brains
+    return jsonify(ai_brains.load_brains())
+
+
+@app.route('/api/brains', methods=['POST'])
+def api_post_brains():
+    from src import ai_brains
+    data = request.get_json(silent=True) or {}
+    try:
+        for key, val in data.items():
+            ai_brains.update_brain(
+                key,
+                instruction=val.get('instruction'),
+                enabled=val.get('enabled'),
+                label=val.get('label'),
+            )
+        return jsonify({"success": True, "message": "Kaydedildi"})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
 
 
 if __name__ == '__main__':

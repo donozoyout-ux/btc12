@@ -7,12 +7,13 @@ load_dotenv()
 class Settings:
     binance_api_key = os.getenv("BINANCE_API_KEY", "")
     binance_secret_key = os.getenv("BINANCE_SECRET_KEY", "")
-    binance_testnet = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
+    binance_testnet = os.getenv("BINANCE_TESTNET", "false").lower() == "true"
 
     telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
 
-    symbol = "BTC/USDT"
+    symbol = os.getenv("SYMBOL", "BTC/USDT")
+    gemini_api_key = os.getenv("GEMINI_API_KEY", "")
     check_interval = int(os.getenv("CHECK_INTERVAL", "15"))
     position_size_usd = float(os.getenv("POSITION_SIZE_USD", "500"))
     risk_per_trade = float(os.getenv("RISK_PER_TRADE", "2"))
@@ -23,6 +24,20 @@ class Settings:
     stop_loss_pct = float(os.getenv("STOP_LOSS_PCT", "3"))
     last_entry_price = 0
     memory_file = "state.json"
+
+    # Simülasyon başlangıç sermayesi (kullanıcı ayarlayabilir)
+    sim_starting_capital = float(os.getenv("SIM_STARTING_CAPITAL", "500"))
+    # Binance erişilemiyorsa (bölge engeli vb.) proxy kullanımı
+    binance_proxy = os.getenv("BINANCE_PROXY", "")
+    binance_api_url = os.getenv("BINANCE_API_URL", "")
+
+    @property
+    def base_asset(self):
+        return self.symbol.split('/')[0] if '/' in self.symbol else 'BTC'
+
+    @property
+    def quote_asset(self):
+        return self.symbol.split('/')[1] if '/' in self.symbol else 'USDT'
 
 
 settings = Settings()
@@ -37,4 +52,5 @@ if settings.executor_mode == "binance":
         print("[CONFIG]   BINANCE_API_KEY = ...")
         print("[CONFIG]   BINANCE_SECRET_KEY = ...")
     else:
-        print(f"[CONFIG] Binance API anahtarlari mevcut, testnet={settings.binance_testnet} ile baglanilacak")
+        mode = "LIVE" if not settings.binance_testnet else "TESTNET"
+        print(f"[CONFIG] Binance API anahtarlari mevcut, {mode} modunda baglanilacak")

@@ -6,14 +6,30 @@ from src.config import settings
 from src.trader import trader
 from src import supabase_store
 
-SYMBOL = "BTC/USDT"
 STATE_FILE = "executor_state.json"
+
+
+def _binance_exchange_config():
+    cfg = {
+        'apiKey': settings.binance_api_key,
+        'secret': settings.binance_secret_key,
+        'enableRateLimit': True,
+        'options': {'defaultType': 'spot'},
+    }
+    if settings.binance_proxy:
+        cfg['proxies'] = {
+            'http': settings.binance_proxy,
+            'https': settings.binance_proxy,
+        }
+    if settings.binance_api_url:
+        cfg['urls'] = {'api': settings.binance_api_url}
+    return cfg
 
 
 class Executor:
     def __init__(self):
         self._client = None
-        self._sim_balance = 100000.0
+        self._sim_balance = settings.sim_starting_capital
         self._sim_btc = 0.0
         self._sim_entry = 0.0
         self._binance_error = None
@@ -22,35 +38,78 @@ class Executor:
         if settings.executor_mode == "binance" and settings.binance_api_key and settings.binance_secret_key:
             try:
                 self._init_binance()
-                print(f"[EXECUTOR] Binance baglantisi basarili (testnet={settings.binance_testnet})")
+                mode = "TESTNET" if settings.binance_testnet else "LIVE"
+                print(f"[EXECUTOR] Binance baglantisi basarili ({mode} modu)")
             except Exception as e:
-                print(f"[EXECUTOR] UYARI: Binance baglanti hatasi (gecici olabilir): {e}")
+                print(f"[EXECUTOR] UYARI: Binance baglanti hatasi: {e}")
                 self._binance_error = str(e)
+                settings.executor_mode = "sim"
         else:
             print("[EXECUTOR] SIM modu (Binance key yok veya mode != binance)")
             settings.executor_mode = "sim"
 
     def _init_binance(self):
-        self._client = ccxt.binance({
-            'apiKey': settings.binance_api_key,
-            'secret': settings.binance_secret_key,
-            'enableRateLimit': True,
-            'options': {'defaultType': 'spot'},
-        })
+        self._client = ccxt.binance(_binance_exchange_config())
         if settings.binance_testnet:
             self._client.set_sandbox_mode(True)
-        # Piyasa bilgilerini yukle (precision limitleri icin)
         try:
             self._client.load_markets()
         except Exception as e:
             print(f"[EXECUTOR] load_markets hatasi: {e}")
+
+    def set_mode(self, mode):
+        """Modu degistir: 'sim' veya 'binance'"""
+        mode = mode.lower()
+        if mode not in ("sim", "binance"):
+            return {"success": False, "message": "Gecersiz mod"}
+        if mode == "binance":
+            if not settings.binance_api_key or not settings.binance_secret_key:
+                return {"success": False, "message": "Binance API anahtarlari eksik! .env dosyasina BINANCE_API_KEY ve BINANCE_SECRET_KEY ekleyin."}
+            try:
+                self._init_binance()
+                bal = self._client.fetch_balance()
+                settings.executor_mode = "binance"
+                return {"success": True, "message": "BINANCE moduna gecildi", "balance": bal}
+            except Exception as e:
+                self._binance_error = str(e)
+                return {"success": False, "message": f"Binance baglanti hatasi: {str(e)[:200]}"}
+        else:
+            settings.executor_mode = "sim"
+            return {"success": True, "message": "SIMULASYON moduna gecildi"}
+
+    def reset_sim_balance(self, amount):
+        """Simülasyon başlangıç sermayesini ayarla (sıfırlar)."""
+        amount = float(amount)
+        if amount < 0:
+            return {"success": False, "message": "Sermaye 0'dan küçük olamaz"}
+        self._sim_balance = amount
+        self._sim_btc = 0.0
+        self._sim_entry = 0.0
+        settings.sim_starting_capital = amount
+        self._save_state()
+        return {"success": True, "message": f"Simülasyon sermayesi ${amount:.2f} olarak ayarlandi", "balance": amount}
+
+    def test_binance_connection(self):
+        """Binance baglantisini test et ve gercek bakiyeyi döndür."""
+        if not settings.binance_api_key or not settings.binance_secret_key:
+            return {"connected": False, "error": "API anahtari yok", "balance": None}
+        try:
+            client = ccxt.binance(_binance_exchange_config())
+            if settings.binance_testnet:
+                client.set_sandbox_mode(True)
+            bal = client.fetch_balance()
+            quote = float(bal['free'].get(settings.quote_asset, 0.0))
+            base = float(bal['free'].get(settings.base_asset, 0.0))
+            return {"connected": True, "error": None, "balance": {"quote": quote, "base": base}}
+        except Exception as e:
+            return {"connected": False, "error": str(e)[:300], "balance": None}
 
     def _load_state(self):
         try:
             if os.path.exists(STATE_FILE):
                 with open(STATE_FILE, "r") as f:
                     data = json.load(f)
-                self._sim_balance = data.get("balance", 100000.0)
+                self._sim_balance = data.get("balance", settings.sim_starting_capital)
                 self._sim_btc = data.get("btc", 0.0)
                 self._sim_entry = data.get("entry", 0.0)
                 print(f"[EXECUTOR] State yuklendi: bal=${self._sim_balance:.2f} btc={self._sim_btc:.6f}")
@@ -59,7 +118,7 @@ class Executor:
             pass
         sb_data = supabase_store.load_executor_state()
         if sb_data:
-            self._sim_balance = sb_data.get("balance", 100000.0)
+            self._sim_balance = sb_data.get("balance", settings.sim_starting_capital)
             self._sim_btc = sb_data.get("btc", 0.0)
             self._sim_entry = sb_data.get("entry", 0.0)
             print(f"[EXECUTOR] Supabase state yuklendi: bal=${self._sim_balance:.2f} btc={self._sim_btc:.6f}")
@@ -90,15 +149,15 @@ class Executor:
                     return self._dry_account()
             try:
                 balance = self._client.fetch_balance()
-                usdt_balance = float(balance['free'].get('USDT', 0.0))
-                btc_balance = float(balance['free'].get('BTC', 0.0))
+                quote_balance = float(balance['free'].get(settings.quote_asset, 0.0))
+                base_balance = float(balance['free'].get(settings.base_asset, 0.0))
                 price = trader.get_price()
-                portfolio_value = usdt_balance + (btc_balance * price)
+                portfolio_value = quote_balance + (base_balance * price)
                 return {
                     "portfolio_value": round(portfolio_value, 2),
-                    "cash": round(usdt_balance, 2),
-                    "buying_power": round(usdt_balance, 2),
-                    "btc": round(btc_balance, 6),
+                    "cash": round(quote_balance, 2),
+                    "buying_power": round(quote_balance, 2),
+                    "btc": round(base_balance, 6),
                 }
             except Exception as e:
                 print(f"[EXECUTOR] Binance bakiye hatasi (gecici): {e}")
@@ -114,16 +173,15 @@ class Executor:
                     return self._dry_position()
             try:
                 balance = self._client.fetch_balance()
-                btc_qty = float(balance['free'].get('BTC', 0.0))
+                btc_qty = float(balance['free'].get(settings.base_asset, 0.0))
                 price = trader.get_price()
 
-                # Eger elimizde kayda deger miktarda BTC varsa (ornegin > 1 USDT degerinde) pozisyon var sayilir
                 if btc_qty * price > 1.0:
                     mv = round(btc_qty * price, 2)
                     entry = self._sim_entry if self._sim_entry > 0 else price
                     pl = round(mv - btc_qty * entry, 2)
                     return {
-                        "symbol": SYMBOL,
+                        "symbol": settings.symbol,
                         "qty": round(btc_qty, 6),
                         "market_value": mv,
                         "avg_entry_price": entry,
@@ -182,7 +240,7 @@ class Executor:
             mv = round(self._sim_btc * price, 2)
             pl = round(mv - self._sim_btc * self._sim_entry, 2)
             return {
-                "symbol": SYMBOL,
+                "symbol": settings.symbol,
                 "qty": round(self._sim_btc, 6),
                 "market_value": mv,
                 "avg_entry_price": self._sim_entry,
@@ -203,12 +261,12 @@ class Executor:
         old_btc = self._sim_btc
         self._sim_balance -= cost
         self._sim_btc += qty
-        
+
         if old_btc > 0.0001:
             self._sim_entry = round(((self._sim_entry * old_btc) + (price * qty)) / self._sim_btc, 2)
         else:
             self._sim_entry = price
-            
+
         settings.last_entry_price = self._sim_entry
         self._save_state()
         return {"price": price, "qty": round(qty, 6), "order_id": "dry_buy", "mode": "SIM"}
@@ -229,20 +287,19 @@ class Executor:
         price = trader.get_price()
         invest_amount = amount_usd if amount_usd is not None else settings.position_size_usd * (size_pct / 100)
 
-        # Free USDT kontrol et
         balance = self._client.fetch_balance()
-        free_usdt = float(balance['free'].get('USDT', 0.0))
-        invest_amount = min(invest_amount, free_usdt * 0.99) # %1 komisyon/slippage payi birak
+        free_quote = float(balance['free'].get(settings.quote_asset, 0.0))
+        invest_amount = min(invest_amount, free_quote * 0.99)
 
         if invest_amount < 10.0:
-            print(f"[BINANCE] HATA: Alim tutari minimum Spot limiti olan 10 USDT'den az: ${invest_amount:.2f}")
+            print(f"[BINANCE] HATA: Alim tutari minimum Spot limitinin altinda: {invest_amount:.2f} {settings.quote_asset}")
             return None
 
-        print(f"[BINANCE] Market Buy gonderiliyor: Tutar = {invest_amount:.2f} USDT")
+        print(f"[BINANCE] Market Buy gonderiliyor: Tutar = {invest_amount:.2f} {settings.quote_asset}")
 
         order = None
+        SYMBOL = settings.symbol
         try:
-            # USDT tutari ile alis yapmak icin quoteOrderQty parametresini kullaniyoruz
             order = self._client.create_order(
                 symbol=SYMBOL,
                 type='market',
@@ -253,7 +310,6 @@ class Executor:
             )
         except Exception as e:
             print(f"[BINANCE] quoteOrderQty hatasi, fallback yapiliyor: {e}")
-            # Fallback: miktar hesaplayarak BTC adet bazli market buy
             qty = invest_amount / price
             qty_prec = float(self._client.amount_to_precision(SYMBOL, qty))
             order = self._client.create_market_buy_order(SYMBOL, qty_prec)
@@ -265,7 +321,7 @@ class Executor:
         if filled_qty == 0.0:
             try:
                 time.sleep(0.5)
-                order_info = self._client.fetch_order(order['id'], SYMBOL)
+                order_info = self._client.fetch_order(order['id'], settings.symbol)
                 filled_qty = float(order_info.get('filled', 0.0))
                 cost = float(order_info.get('cost', 0.0))
                 if order_info.get('average'):
@@ -279,27 +335,26 @@ class Executor:
 
         self._sim_entry = avg_price
         self._sim_btc = filled_qty
-        self._sim_balance = free_usdt - cost if free_usdt > cost else 0.0
+        self._sim_balance = free_quote - cost if free_quote > cost else 0.0
         settings.last_entry_price = avg_price
         self._save_state()
 
-        print(f"[BINANCE] ALIS basarili: {filled_qty:.6f} BTC @ ${avg_price:,.2f} (cost: ${cost:.2f})")
+        print(f"[BINANCE] ALIS basarili: {filled_qty:.6f} {settings.base_asset} @ {avg_price:,.2f} {settings.quote_asset} (cost: {cost:.2f})")
         return {"price": avg_price, "qty": round(filled_qty, 6), "order_id": str(order.get('id', 'binance_buy')), "mode": "REAL"}
 
     def _binance_sell(self):
+        SYMBOL = settings.symbol
         balance = self._client.fetch_balance()
-        btc_qty = float(balance['free'].get('BTC', 0.0))
+        btc_qty = float(balance['free'].get(settings.base_asset, 0.0))
         price = trader.get_price()
 
-        # Binance min tutar kontrolu (min 10 USDT degeri olan BTC olmali)
         if btc_qty * price < 10.0:
-            print(f"[BINANCE] HATA: Satilacak BTC degeri minimum 10 USDT Spot limitinin altinda: ${btc_qty * price:.2f}")
+            print(f"[BINANCE] HATA: Satilacak {settings.base_asset} degeri minimum Spot limitinin altinda: {btc_qty * price:.2f} {settings.quote_asset}")
             return None
 
-        # BTC miktarini borsanin hassasiyetine yuvarla
         qty_prec = float(self._client.amount_to_precision(SYMBOL, btc_qty))
 
-        print(f"[BINANCE] Market Sell gonderiliyor: Miktar = {qty_prec:.6f} BTC")
+        print(f"[BINANCE] Market Sell gonderiliyor: Miktar = {qty_prec:.6f} {settings.base_asset}")
         order = self._client.create_market_sell_order(SYMBOL, qty_prec)
 
         filled_qty = float(order.get('filled', 0.0)) if order.get('filled') else qty_prec
@@ -309,7 +364,7 @@ class Executor:
         if filled_qty == 0.0:
             try:
                 time.sleep(0.5)
-                order_info = self._client.fetch_order(order['id'], SYMBOL)
+                order_info = self._client.fetch_order(order['id'], settings.symbol)
                 filled_qty = float(order_info.get('filled', 0.0))
                 cost = float(order_info.get('cost', 0.0))
                 if order_info.get('average'):
@@ -323,10 +378,10 @@ class Executor:
 
         self._sim_entry = 0.0
         self._sim_btc = 0.0
-        self._sim_balance = float(balance['free'].get('USDT', 0.0)) + cost
+        self._sim_balance = float(balance['free'].get(settings.quote_asset, 0.0)) + cost
         self._save_state()
 
-        print(f"[BINANCE] SATIS basarili: {filled_qty:.6f} BTC @ ${avg_price:,.2f} (PNL: ${pnl:+.2f})")
+        print(f"[BINANCE] SATIS basarili: {filled_qty:.6f} {settings.base_asset} @ {avg_price:,.2f} {settings.quote_asset} (PNL: {pnl:+.2f})")
         return {"qty": round(filled_qty, 6), "pl": round(pnl, 2), "price": avg_price, "order_id": str(order.get('id', 'binance_sell')), "mode": "REAL"}
 
 

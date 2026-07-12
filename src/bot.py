@@ -11,6 +11,7 @@ from src.database import db
 from src.telegram import tg
 from src.ai_model import ai_model
 from src.agents import consensus
+from src import llm_agent
 
 
 class Bot:
@@ -26,6 +27,8 @@ class Bot:
         self._son_alis_saati = 0
         self.last_scan_data = {}
         self.last_news = []
+        self.last_gemini_debate = None
+        self._error_cooldown = 0
 
     def start(self, mesaj_gonder=True):
         if self.running:
@@ -254,6 +257,17 @@ class Bot:
         confidence = karar["confidence_score"]
         self.last_scan_data = teknik
         self.last_news = haberler
+
+        # ─── Gemini 5-Brain AI Debate ───
+        try:
+            ml_votes = consensus.last_votes if hasattr(consensus, 'last_votes') else {}
+            from src import ai_brains
+            brains_cfg = ai_brains.load_brains()
+            debate = llm_agent.run_debate(teknik, haberler, ml_votes, brains=brains_cfg)
+            if debate:
+                self.last_gemini_debate = debate
+        except Exception as e:
+            print(f"[GEMINI] Debate cagirma hatasi: {e}")
 
         haber_sentiment = sum(1 for h in haberler if h.get("sentiment") == "pozitif") - sum(1 for h in haberler if h.get("sentiment") == "negatif")
         db.save_scan(
@@ -490,9 +504,9 @@ class Bot:
             lines = ["<b>SON 5 ISLEM</b>\n"]
             for t in trades:
                 emoji = "🟢" if t["pnl"] >= 0 else "🔴"
+                pnl_str = f"K/Z: ${t['pnl']:+,.2f}" if t.get('pnl') else ""
                 lines.append(
-                    f"{emoji} {t['action']} ${t['price']:,.2f} | "
-                    f"{'K/Z: $' + t['pnl']:+,.2f' if t['pnl'] else ''}"
+                    f"{emoji} {t['action']} ${t['price']:,.2f} | {pnl_str}"
                 )
             tg.send("\n".join(lines))
         except Exception as e:
@@ -553,6 +567,10 @@ class Bot:
                 "ai_memory_size": ai_state.get("memory_size", 0),
                 "executor_mode": settings.executor_mode,
                 "sim_balance": executor._sim_balance if hasattr(executor, '_sim_balance') else 0,
+                "gemini_active": bool(settings.gemini_api_key),
+                "gemini_last_decision": self.last_gemini_debate.get("final_decision", "---") if self.last_gemini_debate else "---",
+                "symbol": settings.symbol,
+                "quote_asset": settings.quote_asset,
             }
         except Exception as e:
             return {"running": self.running, "error": str(e), "son_hata": self.son_hata}

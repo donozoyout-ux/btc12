@@ -15,6 +15,15 @@ from dotenv import load_dotenv
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
 
+from src.config import settings
+from src.trader import trader
+from src.executor import executor
+from src.quant_agent import quant_agent
+from src.analyzer import analyzer
+from src.news import news_fetcher
+from src.database import db
+from src import supabase_store
+
 load_dotenv()
 
 logging.basicConfig(
@@ -41,30 +50,6 @@ DEFAULT_MEMORY = {
     "risk_seviyesi_ayari": "normal",
 }
 
-LLM_SYSTEM_PROMPT = """You are a Quantitative Trading & Portfolio Management Agent for BTC/USDT.
-Your ONLY output must be valid JSON matching this schema:
-{
-    "action": "BUY" | "CLOSE" | "HOLD",
-    "confidence_score": 0.0,
-    "execution": {
-        "size_percentage": 0.0,
-        "stop_loss": 0.0,
-        "take_profit": 0.0
-    },
-    "memory_update": {
-        "aktif_strateji_notu": "market note for next cycle",
-        "risk_seviyesi_ayari": "normal" | "muhafazakar"
-    },
-    "system_log": ""
-}
-
-Rules:
-- If acik_pozisyon is false and conditions favor a long, output BUY with target_entry, stop_loss, take_profit as exact prices.
-- If acik_pozisyon is true, compare current price to stop_loss/take_profit. If hit, output CLOSE.
-- If consecutive losses in memory, raise confidence threshold and be more selective.
-- If data is incomplete or API error, output HOLD and note in system_log.
-- Never output anything outside this JSON. No explanation, no markdown."""
-
 
 def load_json(filepath: str, default=None):
     try:
@@ -83,309 +68,147 @@ def save_json(filepath: str, data: dict):
         logger.error(f"Failed to save {filepath}: {e}")
 
 
-def init_exchange(config: dict):
-    exchange_name = config.get("exchange", {}).get("name", "binance")
-    api_key = os.getenv("EXCHANGE_API_KEY") or config.get("exchange", {}).get("api_key", "")
-    secret = os.getenv("EXCHANGE_SECRET") or config.get("exchange", {}).get("secret", "")
-    is_paper = config.get("exchange", {}).get("paper", False)
-
-    if not api_key or not secret:
-        logger.warning("Exchange API keys not configured. Running in PAPER mode.")
-        return None
-
+def get_technical_indicators(symbol: str = "BTC/USDT", timeframe: str = "5m", limit: int = 100):
+    """Hem 5m hem 1h verilerini çek ve analiz et"""
     try:
-        exchange_class = getattr(ccxt, exchange_name)
-        exchange_params = {
-            "apiKey": api_key,
-            "secret": secret,
-            "options": {"defaultType": "spot"},
-            "enableRateLimit": True,
-        }
-
-        if exchange_name == "alpaca":
-            trader_url = "https://paper-api.alpaca.markets" if is_paper else "https://api.alpaca.markets"
-            exchange_params["urls"] = {
-                "api": {
-                    "trader": trader_url,
-                    "market": "https://data.alpaca.markets",
-                }
-            }
-            mode = "paper" if is_paper else "live"
-            logger.info(f"Alpaca {mode} trading mode enabled")
-
-        exchange = exchange_class(exchange_params)
-        exchange.load_markets()
-        logger.info(f"Connected to {exchange_name}")
-        return exchange
-    except Exception as e:
-        logger.error(f"Exchange init failed: {e}")
-        return None
-
-
-def get_technical_indicators(exchange, symbol: str, timeframe: str = "1h", limit: int = 100):
-    try:
-        ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
-        df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
-        for col in ["open", "high", "low", "close", "volume"]:
-            df[col] = df[col].astype(float)
-
-        current_price = float(df["close"].iloc[-1])
-        rsi = float(RSIIndicator(close=df["close"], window=14).rsi().iloc[-1])
-
-        ema12 = float(EMAIndicator(close=df["close"], window=12).ema_indicator().iloc[-1])
-        ema26 = float(EMAIndicator(close=df["close"], window=26).ema_indicator().iloc[-1])
-        ema_cross = "bullish" if ema12 > ema26 else "bearish"
-
-        avg_vol = float(df["volume"].tail(20).mean())
-        cur_vol = float(df["volume"].iloc[-1])
-        if cur_vol > avg_vol * 1.5:
-            hacim = "yuksek"
-        elif cur_vol > avg_vol * 0.8:
-            hacim = "normal"
-        else:
-            hacim = "dusuk"
-
-        recent_high = float(df["high"].tail(50).max())
-        recent_low = float(df["low"].tail(50).min())
-        support = recent_low
-        resistance = recent_high
-
-        return {
-            "fiyat": round(current_price, 2),
-            "rsi": round(rsi, 2),
-            "ema_cross": ema_cross,
-            "hacim": hacim,
-            "ema12": round(ema12, 2),
-            "ema26": round(ema26, 2),
-            "son_20_hacim_ort": round(avg_vol, 2),
-            "destek_seviyesi": round(support, 2),
-            "direnc_seviyesi": round(resistance, 2),
-        }
+        # 5m timeframe
+        ohlcv_5m = trader.get_bars(limit=limit, timeframe=timeframe)
+        teknik_5m = analyzer.analyze(ohlcv_5m) if ohlcv_5m is not None and len(ohlcv_5m) >= 50 else None
+        
+        # 1h timeframe (higher timeframe context)
+        ohlcv_1h = trader.get_bars(limit=100, timeframe='1h')
+        teknik_1h = analyzer.analyze(ohlcv_1h) if ohlcv_1h is not None and len(ohlcv_1h) >= 50 else None
+        
+        # Orderbook verisi
+        orderbook = trader.get_orderbook()
+        
+        # Birincil analiz (5m)
+        if teknik_5m:
+            teknik_5m["orderbook"] = orderbook
+            if teknik_1h:
+                teknik_5m["htf_trend"] = teknik_1h.get("ema_cross", "unknown")
+                teknik_5m["htf_rsi"] = teknik_1h.get("rsi", 50)
+        
+        return teknik_5m, teknik_1h
     except Exception as e:
         logger.error(f"Technical analysis failed: {e}")
-        return None
+        return None, None
 
 
-def get_news_sentiment(config: dict):
-    news_list = []
-    api_key = os.getenv("NEWS_API_KEY") or config.get("news", {}).get("api_key", "")
-
-    if api_key:
-        try:
-            source = config.get("news", {}).get("source", "cryptopanic")
-            if source == "cryptopanic":
-                resp = requests.get(
-                    "https://cryptopanic.com/api/v1/posts/",
-                    params={"auth_token": api_key, "currencies": "BTC", "kind": "news"},
-                    timeout=10,
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    for post in data.get("results", [])[:5]:
-                        title = post.get("title", "")
-                        votes = post.get("votes", {})
-                        positive = votes.get("positive", 0)
-                        negative = votes.get("negative", 0)
-                        if positive > negative:
-                            sentiment = "pozitif"
-                        elif negative > positive:
-                            sentiment = "negatif"
-                        else:
-                            sentiment = "notr"
-                        news_list.append({"baslik": title, "sentiment": sentiment})
-        except Exception as e:
-            logger.warning(f"News fetch failed: {e}")
-
-    if not news_list:
-        news_list.append({"baslik": "Harici haber kaynagi baglanamadi", "sentiment": "notr"})
-
-    return news_list
-
-
-def get_portfolio(exchange, symbol: str):
-    empty = {"usdt_bakiye": 0.0, "btc_bakiye": 0.0, "acik_pozisyon": False, "giris_fiyati": 0.0}
-    if not exchange:
-        return empty
-
+def get_news_sentiment():
+    """Haberleri çek ve sentiment analizi yap"""
     try:
-        balance = exchange.fetch_balance()
-        usdt = float(balance.get("USDT", {}).get("free", 0.0))
-        btc = float(balance.get("BTC", {}).get("free", 0.0))
+        haberler = news_fetcher.fetch_bitcoin_news(limit=5)
+        return haberler
+    except Exception as e:
+        logger.warning(f"News fetch failed: {e}")
+        return [{"baslik": "Harici haber kaynagi baglanamadi", "sentiment": "notr"}]
 
-        orders = exchange.fetch_open_orders(symbol)
-        acik = len(orders) > 0
-        giris = 0.0
-        if acik and orders[0].get("price"):
-            giris = float(orders[0]["price"])
 
+def get_portfolio():
+    """Gerçek portföy verilerini getir"""
+    try:
+        account = executor.get_account()
+        position = executor.get_position()
+        
         return {
-            "usdt_bakiye": round(usdt, 2),
-            "btc_bakiye": round(btc, 8),
-            "acik_pozisyon": acik,
-            "giris_fiyati": round(giris, 2),
+            "usdt_bakiye": account.get("cash", 0.0),
+            "btc_bakiye": account.get("btc", 0.0),
+            "acik_pozisyon": position is not None,
+            "giris_fiyati": position.get("avg_entry_price", 0.0) if position else 0.0,
+            "pozisyon_degeri": position.get("market_value", 0.0) if position else 0.0,
+            "kar_zarar": position.get("unrealized_pl", 0.0) if position else 0.0,
         }
     except Exception as e:
         logger.error(f"Portfolio fetch failed: {e}")
-        return empty
+        return {
+            "usdt_bakiye": 0.0,
+            "btc_bakiye": 0.0,
+            "acik_pozisyon": False,
+            "giris_fiyati": 0.0,
+            "pozisyon_degeri": 0.0,
+            "kar_zarar": 0.0,
+        }
 
 
-def call_llm(config: dict, user_prompt: str) -> dict:
-    api_key = os.getenv("LLM_API_KEY") or config.get("llm", {}).get("api_key", "")
-    api_url = config.get("llm", {}).get(
-        "api_url", "https://api.deepseek.com/v1/chat/completions"
-    )
-    model = config.get("llm", {}).get("model", "deepseek-chat")
-
-    if not api_key:
-        logger.error("LLM API key not configured")
-        return default_hold_decision("LLM API anahtari eksik")
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": LLM_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.2,
-        "max_tokens": 600,
-    }
-
-    try:
-        resp = requests.post(api_url, headers=headers, json=payload, timeout=45)
-        resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"].strip()
-
-        if content.startswith("```json"):
-            content = content.split("\n", 1)[-1]
-        if content.endswith("```"):
-            content = content.rsplit("```", 1)[0]
-        content = content.strip()
-
-        decision = json.loads(content)
-        validate_decision(decision)
-        return decision
-    except Exception as e:
-        logger.error(f"LLM call failed: {e}")
-        return default_hold_decision(f"LLM cagi hatasi: {str(e)}")
-
-
-def validate_decision(decision: dict):
-    assert "action" in decision and decision["action"] in ("BUY", "CLOSE", "HOLD")
-    assert "confidence_score" in decision and 0.0 <= decision["confidence_score"] <= 1.0
-    assert "execution" in decision
-    assert "memory_update" in decision
-    assert "system_log" in decision
-
-
-def default_hold_decision(reason: str) -> dict:
-    return {
-        "action": "HOLD",
-        "confidence_score": 0.0,
-        "execution": {"size_percentage": 0.0, "stop_loss": 0.0, "take_profit": 0.0},
-        "memory_update": {
-            "aktif_strateji_notu": f"HOLD due to error: {reason}",
-            "risk_seviyesi_ayari": "muhafazakar",
-        },
-        "system_log": reason,
-    }
-
-
-def execute_trade(exchange, decision: dict, portfolio: dict, current_price: float, config: dict):
+def execute_trade(decision: dict, portfolio: dict, current_price: float):
+    """Executor ile trade'i gerçekleştir"""
     action = decision["action"]
     if action == "HOLD":
         return
 
     exec_p = decision["execution"]
-    size_pct = exec_p.get("size_percentage", 0.0)
+    size_pct = exec_p.get("size_percentage", 100)
+    amount_usd = exec_p.get("amount_usd", None)
     sl = exec_p.get("stop_loss", 0.0)
     tp = exec_p.get("take_profit", 0.0)
 
-    min_notional = config.get("trading", {}).get("min_notional_usdt", 10)
-
     if action == "BUY":
-        usdt = portfolio.get("usdt_bakiye", 0.0)
-        amt_usdt = usdt * (size_pct / 100.0)
-        if amt_usdt < min_notional:
-            logger.warning(f"Trade too small: {amt_usdt:.2f} USDT < {min_notional}")
+        if executor.get_position() is not None:
+            logger.warning("Zaten açık pozisyon var, alım atlanıyor")
             return
-        btc_amt = amt_usdt / current_price
-        logger.info(f"BUY {btc_amt:.6f} BTC @ {current_price:.2f} | SL: {sl:.2f} TP: {tp:.2f}")
+        logger.info(f"BUY emri gonderiliyor... Size: {size_pct}%, Amount: ${amount_usd or settings.position_size_usd}")
+        result = executor.buy(size_pct=size_pct, amount_usd=amount_usd)
+        if result:
+            db.save_trade("BUY", result["price"], result["qty"], 0, decision.get("system_log", ""), result["price"], result.get("mode", "REAL"))
+            logger.info(f"ALIS BASARILI: {result}")
+        else:
+            logger.error("ALIS BASARISIZ")
 
-        if exchange:
-            try:
-                order = exchange.create_market_buy_order("BTC/USDT", btc_amt)
-                logger.info(f"Buy executed: {order.get('id')}")
-            except Exception as e:
-                logger.error(f"Buy failed: {e}")
-
-    elif action == "CLOSE":
-        btc = portfolio.get("btc_bakiye", 0.0)
-        if btc <= 0:
-            logger.warning("No BTC to sell")
+    elif action == "SELL":
+        pos = executor.get_position()
+        if not pos or pos.get("qty", 0) <= 0:
+            logger.warning("Satılacak BTC yok")
             return
-        logger.info(f"CLOSE {btc:.6f} BTC @ {current_price:.2f}")
-        if exchange:
-            try:
-                order = exchange.create_market_sell_order("BTC/USDT", btc)
-                logger.info(f"Sell executed: {order.get('id')}")
-            except Exception as e:
-                logger.error(f"Sell failed: {e}")
-
-
-def build_user_prompt(tek_analiz: dict, haberler: list, portfoy: dict, memory: dict) -> str:
-    data = {
-        "teknik_analiz": tek_analiz,
-        "internet_ve_haberler": haberler,
-        "mevcut_portfoy": portfoy,
-        "gecmis_hafiza": memory,
-    }
-    return json.dumps(data, ensure_ascii=False, indent=2)
+        logger.info(f"SELL emri gonderiliyor... Pozisyon: {pos['qty']} BTC")
+        result = executor.sell()
+        if result:
+            pnl = result.get("pl", 0.0)
+            db.save_trade("SELL", result["price"], result["qty"], pnl, decision.get("system_log", ""), pos.get("avg_entry_price", 0), result.get("mode", "REAL"))
+            # QuantAgent'e sonucu bildir
+            quant_agent.islem_sonucu_kaydet(pnl)
+            logger.info(f"SATIS BASARILI: {result} | PNL: ${pnl:+.2f}")
+        else:
+            logger.error("SATIS BASARISIZ")
 
 
 def main():
-    config = load_json(CONFIG_FILE, {})
-    if not config:
-        logger.error("config.json bulunamadi.")
-        sys.exit(1)
-
-    exchange = init_exchange(config)
-    symbol = config.get("exchange", {}).get("symbol", "BTC/USDT")
-    timeframe = config.get("exchange", {}).get("timeframe", "1h")
-    sleep_sec = config.get("trading", {}).get("sleep_hours", 1) * 3600
-    cooldown = config.get("trading", {}).get("cooldown_after_error", 30)
-
-    logger.info(f"Bot started | Symbol: {symbol} | Timeframe: {timeframe}")
+    logger.info(f"Bot started | Symbol: {settings.symbol} | Mode: {settings.executor_mode.upper()} | Testnet: {settings.binance_testnet}")
 
     while True:
         try:
             logger.info("--- New analysis cycle ---")
 
-            tek = get_technical_indicators(exchange, symbol, timeframe)
-            if not tek:
+            # Teknik analiz
+            teknik, teknik_1h = get_technical_indicators()
+            if not teknik:
                 logger.warning("Technical data unavailable -> HOLD")
-                decision = default_hold_decision("Teknik veri alinamadi")
-            else:
-                price = tek["fiyat"]
-                haber = get_news_sentiment(config)
-                portfoy = get_portfolio(exchange, symbol)
-                memory = load_json(MEMORY_FILE, dict(DEFAULT_MEMORY))
+                time.sleep(settings.check_interval)
+                continue
 
-                logger.info(f"Price: {price} | RSI: {tek['rsi']} | EMA: {tek['ema_cross']} | Portfolio: {portfoy['usdt_bakiye']:.2f} USDT / {portfoy['btc_bakiye']:.6f} BTC")
+            price = teknik["price"]
+            
+            # Haberler
+            haberler = get_news_sentiment()
+            
+            # Portföy
+            portfoy = get_portfolio()
+            
+            # Geçmiş hafıza
+            memory = load_json(MEMORY_FILE, dict(DEFAULT_MEMORY))
 
-                prompt = build_user_prompt(tek, haber, portfoy, memory)
-                decision = call_llm(config, prompt)
+            logger.info(f"Price: {price} | RSI: {teknik['rsi']} | EMA: {teknik['ema_cross']} | Portfolio: {portfoy['usdt_bakiye']:.2f} USDT / {portfoy['btc_bakiye']:.6f} BTC")
+
+            # QuantAgent analizi (5 ajan konsensüs + XGBoost + Sermaye Yönetimi)
+            decision = quant_agent.analyze(teknik, haberler, portfoy, memory)
 
             logger.info(f"Decision: {decision['action']} | Confidence: {decision['confidence_score']}")
 
-            if exchange and decision["action"] in ("BUY", "CLOSE"):
-                price_cur = (exchange.fetch_ticker(symbol)["last"] if exchange else 0)
-                portfoy = get_portfolio(exchange, symbol)
-                execute_trade(exchange, decision, portfoy, price_cur, config)
+            # Trade'i execute et
+            if decision["action"] in ("BUY", "SELL"):
+                execute_trade(decision, portfoy, price)
 
+            # Memory güncelle
             memory = load_json(MEMORY_FILE, dict(DEFAULT_MEMORY))
             mu = decision.get("memory_update", {})
             if mu.get("aktif_strateji_notu"):
@@ -393,13 +216,12 @@ def main():
             if mu.get("risk_seviyesi_ayari"):
                 memory["risk_seviyesi_ayari"] = mu["risk_seviyesi_ayari"]
             if decision.get("system_log"):
-                memory["son_hatalar"] = memory.get("son_hatalar", [])
-                memory["son_hatalar"].append(decision["system_log"])
+                memory.setdefault("son_hatalar", []).append(decision["system_log"])
                 memory["son_hatalar"] = memory["son_hatalar"][-5:]
             save_json(MEMORY_FILE, memory)
 
-            logger.info(f"Sleeping {sleep_sec}s until next cycle...")
-            time.sleep(sleep_sec)
+            logger.info(f"Sleeping {settings.check_interval}s until next cycle...")
+            time.sleep(settings.check_interval)
 
         except KeyboardInterrupt:
             logger.info("Bot stopped by user.")
@@ -410,8 +232,7 @@ def main():
             memory.setdefault("son_hatalar", []).append(str(e))
             memory["son_hatalar"] = memory["son_hatalar"][-5:]
             save_json(MEMORY_FILE, memory)
-            logger.info(f"Cooldown {cooldown}s...")
-            time.sleep(cooldown)
+            time.sleep(30)
 
 
 if __name__ == "__main__":
