@@ -108,6 +108,16 @@ class Executor:
         self._save_state()
         return {"success": True, "message": f"Simülasyon sermayesi ${amount:.2f} olarak ayarlandi", "balance": amount}
 
+    def reset_sim(self):
+        """Simülasyonu başlangıç sermayesine sıfırlar (pozisyon kapanır, geçmiş silinmez)."""
+        amount = settings.sim_starting_capital
+        self._sim_balance = amount
+        self._sim_btc = 0.0
+        self._sim_entry = 0.0
+        settings.last_entry_price = 0
+        self._save_state()
+        return {"success": True, "message": f"Simülasyon sıfırlandı (başlangıç: ${amount:.2f})", "balance": amount, "starting_capital": amount}
+
     def test_binance_connection(self):
         """Binance baglantisini test et ve gercek bakiyeyi döndür."""
         if not settings.binance_api_key or not settings.binance_secret_key:

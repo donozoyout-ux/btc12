@@ -165,6 +165,7 @@ body {
       <span class="text-[9px] text-gray-500 mr-2 font-bold tracking-wider">SIM. SERMAYE</span>
       <input id="simCapital" class="bg-transparent border-none text-sm font-mono text-white w-20 p-0 focus:ring-0 focus:outline-none placeholder="500" type="number" min="10" step="10" value="500"/>
       <button onclick="setSimCapital()" class="btn bg-slate-600 hover:bg-slate-500 text-white text-[9px] font-bold px-2 py-0.5 rounded ml-1">AYARLA</button>
+      <button onclick="resetSim()" class="btn bg-rose-600/80 hover:bg-rose-500 text-white text-[9px] font-bold px-2 py-0.5 rounded ml-1" title="Simülasyonu başlangıç sermayesine sıfırla">SIFIRLA</button>
     </div>
     <div class="flex items-center gap-2">
       <button onclick="manualBuy()" class="btn bg-trading-buy hover:bg-emerald-600 text-white text-xs font-extrabold px-3 py-2 rounded-lg shadow-lg shadow-emerald-500/20">
@@ -531,6 +532,19 @@ function setSimCapital() {
       else showNotification('Hata: ' + d.message, 'error');
       setTimeout(updateStatus, 1000);
     }).catch(() => showNotification('Sunucu bağlantı hatası', 'error'));
+}
+
+function resetSim() {
+  if (!confirm('Simülasyon sıfırlansın mı? Bakiye başlangıç sermayesine döner, pozisyon kapanır. (İşlem geçmişi KAYDEDİLİR, silinmez)')) return;
+  fetch('/api/reset_sim', {method: 'POST'}).then(r => r.json()).then(d => {
+    if (d.success) {
+      showNotification(d.message, 'success');
+      document.getElementById('simCapital').value = d.starting_capital;
+      setTimeout(function() { updateStatus(); updateDecisions(); updateDailyPnl(); }, 1000);
+    } else {
+      showNotification('Hata: ' + d.message, 'error');
+    }
+  }).catch(() => showNotification('Sunucu bağlantı hatası', 'error'));
 }
 
 function testBinance() {
@@ -1408,6 +1422,27 @@ def api_set_sim_capital():
     if result.get('success'):
         return jsonify({"success": True, "message": result.get('message'), "balance": result.get('balance')})
     return jsonify({"success": False, "message": result.get('message', 'Ayarlanamadı')})
+
+
+@app.route('/api/reset_sim', methods=['POST'])
+def api_reset_sim():
+    from src.executor import executor
+    result = executor.reset_sim()
+    if result.get('success'):
+        try:
+            from src.database import db
+            from src.trader import trader
+            price = trader.get_price() if settings.executor_mode == "binance" else 0
+            db.save_decision(
+                strategy_action="RESET", strategy_score=0.0,
+                strategy_reason="Simülasyon başlangıç sermayesine sıfırlandı",
+                ai_prob=0.0, ai_veto=False, final_action="RESET",
+                final_reason="Kullanıcı simülasyonu sıfırladı", price=price, executed=0,
+            )
+        except Exception as e:
+            print(f"[RESET] kayit hatasi: {e}")
+        return jsonify({"success": True, "message": result.get('message'), "starting_capital": result.get('starting_capital')})
+    return jsonify({"success": False, "message": result.get('message', 'Sıfırlanamadı')})
 
 
 @app.route('/api/binance_status')
