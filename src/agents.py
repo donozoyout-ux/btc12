@@ -227,6 +227,13 @@ class TrendAgent(BaseAgent):
             price_change_5 = teknik.get("price_change_5", 0)
             vol_ratio = teknik.get("vol_ratio", 1.0)
             atr_pct = teknik.get("atr_pct", 0)
+            adx = teknik.get("adx", 0)
+            di_plus = teknik.get("di_plus", 0)
+            di_minus = teknik.get("di_minus", 0)
+            momentum_score = teknik.get("momentum_score", 0)
+            vwap_dist = teknik.get("vwap_dist", 0)
+            donchian_pos = teknik.get("donchian_pos", 0.5)
+            roc = teknik.get("roc", 0)
 
             # EMA trend gücü
             ema_trend = 1.0 if ema8 > ema21 else -1.0
@@ -260,6 +267,12 @@ class TrendAgent(BaseAgent):
                 atr_pct / 100 if atr_pct < 100 else 1.0,
                 min(consecutive_green, 20) / 20.0,
                 min(consecutive_red, 20) / 20.0,
+                min(adx, 100) / 100,
+                1.0 if di_plus > di_minus else -1.0,
+                momentum_score / 100,
+                vwap_dist / 100 if abs(vwap_dist) < 100 else np.sign(vwap_dist),
+                donchian_pos,
+                roc / 100 if abs(roc) < 100 else np.sign(roc),
             ]
         except:
             return None
@@ -350,18 +363,26 @@ class VolatilityAgent(BaseAgent):
             atr_pct = teknik.get("atr_pct", 0)
             price = teknik["price"]
             vol_ratio = teknik.get("vol_ratio", 1.0)
+            cci = teknik.get("cci", 0)
+            williams_r = teknik.get("williams_r", -50)
+            mfi = teknik.get("mfi", 50)
+            donchian_pos = teknik.get("donchian_pos", 0.5)
 
             return [
                 rsi / 100,
-                (rsi - rsi_prev) / 100,  # RSI değişim hızı
+                (rsi - rsi_prev) / 100,
                 stoch_rsi / 100,
                 (stoch_rsi - stoch_rsi_prev) / 100,
                 bb_pct,
                 atr_pct / 100 if atr_pct < 100 else 1.0,
                 min(vol_ratio, 5.0) / 5.0,
-                1.0 if rsi < 30 else (0.0 if rsi > 70 else 0.5),  # Aşırı bölge flag
+                1.0 if rsi < 30 else (0.0 if rsi > 70 else 0.5),
                 1.0 if stoch_rsi < 20 else (0.0 if stoch_rsi > 80 else 0.5),
                 1.0 if bb_pct < 0 else (0.0 if bb_pct > 1 else bb_pct),
+                cci / 100 if abs(cci) < 200 else np.sign(cci),
+                williams_r / 100,
+                mfi / 100,
+                donchian_pos,
             ]
         except:
             return None
@@ -481,6 +502,9 @@ class VolumeAgent(BaseAgent):
         try:
             vol_ratio = teknik.get("vol_ratio", 1.0)
             price_change_5 = teknik.get("price_change_5", 0)
+            mfi = teknik.get("mfi", 50)
+            obv_signal = teknik.get("obv_signal", 0.0)
+            vwap_dist = teknik.get("vwap_dist", 0.0)
 
             ob = teknik.get("orderbook", {})
             ob_ratio = ob.get("bid_ask_ratio", 1.0)
@@ -497,8 +521,10 @@ class VolumeAgent(BaseAgent):
                 price_change_5 / 100,
                 vol_price_confirm,
                 1.0 if vol_ratio > 2.0 else (0.5 if vol_ratio > 1.5 else 0.0),
-                # Hacim anomalisi
                 1.0 if vol_ratio > 3.0 else 0.0,
+                mfi / 100,
+                obv_signal,
+                vwap_dist / 100 if abs(vwap_dist) < 100 else np.sign(vwap_dist),
             ]
         except:
             return None
@@ -567,6 +593,8 @@ class LevelAgent(BaseAgent):
             bb_lower = teknik.get("bb_lower", price)
             atr = teknik.get("atr", 0)
             vol_ratio = teknik.get("vol_ratio", 1.0)
+            donchian_pos = teknik.get("donchian_pos", 0.5)
+            vwap_dist = teknik.get("vwap_dist", 0.0)
 
             # Fiyatın destek/direnç arasındaki konumu
             sr_range = resistance - support if resistance > support else 1
@@ -589,8 +617,10 @@ class LevelAgent(BaseAgent):
                 min(dist_to_resistance, 5) / 5,
                 min(vol_ratio, 5.0) / 5.0,
                 atr / price if price > 0 else 0,
-                1.0 if price_position < 0.2 else 0.0,   # Destek yakını
-                1.0 if price_position > 0.8 else 0.0,   # Direnç yakını
+                1.0 if price_position < 0.2 else 0.0,
+                1.0 if price_position > 0.8 else 0.0,
+                donchian_pos,
+                vwap_dist / 100 if abs(vwap_dist) < 100 else np.sign(vwap_dist),
             ]
         except:
             return None
@@ -662,6 +692,8 @@ class SentimentAgent(BaseAgent):
             rsi = teknik.get("rsi", 50)
             vol_ratio = teknik.get("vol_ratio", 1.0)
             price_change_5 = teknik.get("price_change_5", 0)
+            momentum_score = teknik.get("momentum_score", 0)
+            adx = teknik.get("adx", 0)
 
             return [
                 self._last_sentiment_score,
@@ -669,6 +701,8 @@ class SentimentAgent(BaseAgent):
                 rsi / 100,
                 min(vol_ratio, 5.0) / 5.0,
                 price_change_5 / 100,
+                momentum_score / 100,
+                min(adx, 100) / 100,
                 1.0 if self._last_sentiment_score > 0.3 else 0.0,
                 1.0 if self._last_sentiment_score < -0.3 else 0.0,
             ]

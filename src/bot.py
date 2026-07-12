@@ -12,6 +12,7 @@ from src.telegram import tg
 from src.ai_model import ai_model
 from src.agents import consensus
 from src import llm_agent
+from src import self_improve
 
 
 class Bot:
@@ -221,11 +222,27 @@ class Bot:
                 import traceback
                 traceback.print_exc()
 
+        # Periyodik otonom öz-değerlendirme (her 50 taramada)
+        if self.total_scans % 50 == 0 and self.total_scans > 0:
+            try:
+                lesson = self_improve.review_and_adapt(db, consensus)
+                if lesson:
+                    print(f"[SELF-IMPROVE] periyodik: {lesson}")
+            except Exception as e:
+                print(f"[SELF-IMPROVE] periyodik hata: {e}")
+
         price = teknik["price"]
         haberler = news_fetcher.fetch_bitcoin_news(8)
 
         account = executor.get_account()
         pos = executor.get_position()
+
+        # Kendini geliştirme: konsensüs güven eşiğini öğrenilmiş değere çek
+        try:
+            _sp = self_improve.get_params()
+            consensus.min_weighted_conf = _sp["min_confidence_threshold"]
+        except Exception:
+            pass
 
         if pos:
             usdt_bakiye = account.get("cash", 0)
@@ -263,7 +280,8 @@ class Bot:
             ml_votes = consensus.last_votes if hasattr(consensus, 'last_votes') else {}
             from src import ai_brains
             brains_cfg = ai_brains.load_brains()
-            debate = llm_agent.run_debate(teknik, haberler, ml_votes, brains=brains_cfg)
+            lessons_cfg = self_improve.get_lessons(6)
+            debate = llm_agent.run_debate(teknik, haberler, ml_votes, brains=brains_cfg, lessons=lessons_cfg)
             if debate:
                 self.last_gemini_debate = debate
         except Exception as e:
@@ -313,6 +331,24 @@ class Bot:
                 quant_agent.state["son_sl"] = karar["execution"]["stop_loss"]
                 quant_agent.state["son_tp"] = karar["execution"]["take_profit"]
                 quant_agent._save_state()
+                # Sistem kendi işlem miktarına karar verir (dinamik boyut)
+                try:
+                    st = quant_agent.get_state()
+                    tot = st.get("kazanma", 0) + st.get("kaybetme", 0)
+                    wr = (st.get("kazanma", 0) / tot) if tot > 0 else 0.5
+                    eq = account.get("portfolio_value", 0) or account.get("cash", 0)
+                    try:
+                        dailies = db.get_daily_pnl(1)
+                        today_pnl = dailies[0]["pnl"] if dailies else 0
+                    except Exception:
+                        today_pnl = 0
+                    target = eq * 0.01
+                    dp = (today_pnl / target) if target > 0 else 0
+                    size = self_improve.decide_position_size(eq, confidence, wr, 0.0, dp)
+                    karar["execution"]["amount_usd"] = size
+                    print(f"  -> DINAMIK ISLEM MIKTARI: ${size:.2f} (equity=${eq:.0f}, guven=%{confidence:.0%}, WR=%{wr:.0%})")
+                except Exception as e:
+                    print(f"[SELF] boyut hesaplama hatasi: {e}")
                 self._alisi_gerceklestir(karar)
                 executed = True
 
@@ -396,6 +432,19 @@ class Bot:
                 mode = result.get("mode", "SIM")
                 quant_agent.islem_sonucu_kaydet(pl)
                 db.save_trade("SELL", result["price"], result["qty"], pl, sebep, quant_agent.state.get("son_giris_fiyati", 0), mode)
+                # Kapanan işlemi öğrenme döngüsüne bildir
+                try:
+                    n = self_improve.note_trade_closed()
+                    if n >= 5:
+                        lesson = self_improve.review_and_adapt(db, consensus)
+                        if lesson:
+                            print(f"[SELF-IMPROVE] {lesson}")
+                            try:
+                                tg.send("🧠 <b>OTONOM ÖĞRENME</b>\n\n" + lesson)
+                            except Exception:
+                                pass
+                except Exception as e:
+                    print(f"[SELF-IMPROVE] hata: {e}")
                 self.bekleyen_alis = None
                 self.bekleyen_satis = None
                 quant_agent.state["son_sl"] = 0

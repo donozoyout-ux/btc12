@@ -183,7 +183,7 @@ Son 5-bar Değişim: %{price_change_5:.2f}
     return ctx
 
 
-def run_debate(teknik, haberler=None, ml_votes=None, brains=None):
+def run_debate(teknik, haberler=None, ml_votes=None, brains=None, lessons=None):
     """
     5 Gemini beyinli tartışma yürüt.
     Returns: debate dict veya None (API yoksa/hata varsa)
@@ -205,8 +205,19 @@ def run_debate(teknik, haberler=None, ml_votes=None, brains=None):
 
     brain_instructions = _build_brain_instructions(brains)
 
+    lessons_text = ""
+    if lessons:
+        try:
+            lessons_text = "\n\n### SISTEMIN ÖĞRENDİĞİ DERSLER (geçmiş işlemlerden)\n"
+            for les in lessons[-6:]:
+                ls = les.get("lesson", "") if isinstance(les, dict) else str(les)
+                lessons_text += f"- {ls}\n"
+            lessons_text += "\nBu dersleri dikkate al: başarısız olan yaklaşımlardan kaçın, işe yarayanı güçlendir."
+        except Exception:
+            lessons_text = ""
+
     try:
-        prompt = f"{SYSTEM_PROMPT}{brain_instructions}\n\n{context}\n\nYukarıdaki verileri analiz et ve 5 uzman beyinin tartışmasını simüle et."
+        prompt = f"{SYSTEM_PROMPT}{brain_instructions}{lessons_text}\n\n{context}\n\nYukarıdaki verileri analiz et ve 5 uzman beyinin tartışmasını simüle et."
 
         response = model.generate_content(prompt)
         text = response.text.strip()

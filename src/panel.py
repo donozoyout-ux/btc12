@@ -370,6 +370,30 @@ body {
         </div>
       </section>
 
+      <!-- OTONOM ÖĞRENME -->
+      <section class="glass rounded-2xl flex flex-col p-5 border border-emerald-500/10">
+        <div class="border-b border-white/5 pb-3 mb-3 flex justify-between items-center">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 🧠 Otonom Öğrenme
+          </h3>
+          <span class="text-[10px] font-mono text-emerald-400">SİSTEM KENDİNİ GELİŞTİRİYOR</span>
+        </div>
+        <div class="grid grid-cols-2 gap-2 mb-3">
+          <div class="bg-surface-lowest/60 rounded-lg p-2 text-center">
+            <div class="text-[9px] text-slate-500 font-bold uppercase">İŞLEM AGR.</div>
+            <div class="text-sm font-extrabold font-mono text-emerald-400" id="siAgg">1.00x</div>
+          </div>
+          <div class="bg-surface-lowest/60 rounded-lg p-2 text-center">
+            <div class="text-[9px] text-slate-500 font-bold uppercase">GÜVEN EŞİĞİ</div>
+            <div class="text-sm font-extrabold font-mono text-cyan-400" id="siConf">0.45</div>
+          </div>
+        </div>
+        <div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">SON ÖĞRENİLEN DERSLER</div>
+        <div class="space-y-1.5 max-h-[160px] overflow-y-auto scrollbar text-[10px] font-mono" id="siLessons">
+          <div class="text-slate-500 italic text-center py-4">Henüz ders yok</div>
+        </div>
+      </section>
+
       <!-- Karar Günlükleri -->
       <section class="glass rounded-2xl flex flex-col p-5">
         <div class="border-b border-white/5 pb-3 mb-3 flex justify-between items-center">
@@ -787,6 +811,30 @@ function updateGoal() {
   }).catch(() => {});
 }
 
+function updateSelfImprove() {
+  fetch('/api/self_improve').then(r => r.json()).then(d => {
+    var p = d.params || {};
+    var aggEl = document.getElementById('siAgg');
+    var confEl = document.getElementById('siConf');
+    var lesEl = document.getElementById('siLessons');
+    if (!aggEl) return;
+    aggEl.textContent = (p.position_aggressiveness || 1).toFixed(2) + 'x';
+    confEl.textContent = (p.min_confidence_threshold || 0.45).toFixed(2);
+    var lessons = d.lessons || [];
+    if (lessons.length > 0) {
+      var h = '';
+      lessons.forEach(function(l) {
+        var txt = l.lesson || '';
+        var t = (l.time || '').substring(11, 19);
+        h += '<div class="bg-surface-lowest/50 rounded p-1.5 text-slate-300 border-l-2 border-emerald-500/40">' + (t ? '<span class="text-emerald-400">'+t+'</span> ' : '') + txt + '</div>';
+      });
+      lesEl.innerHTML = h;
+    } else {
+      lesEl.innerHTML = '<div class="text-slate-500 italic text-center py-4">Henüz ders yok</div>';
+    }
+  }).catch(() => {});
+}
+
 function updateDailyPnl() {
   fetch('/api/daily_pnl').then(r => r.json()).then(d => {
     var dt = document.getElementById('dailyPnlTotal');
@@ -936,6 +984,7 @@ updateStatus();
 updateModeUI();
 testBinance();
 updateGoal();
+updateSelfImprove();
 updateDecisions();
 updateDailyPnl();
 updateAgents();
@@ -945,6 +994,7 @@ setInterval(updateStatus, 5000);
 setInterval(updateDecisions, 5000);
 setInterval(updateDailyPnl, 10000);
 setInterval(updateGoal, 15000);
+setInterval(updateSelfImprove, 15000);
 setInterval(updateAgents, 5000);
 
 // ==========================================
@@ -1464,6 +1514,12 @@ def api_binance_status():
     res['executor_mode'] = settings.executor_mode
     res['quote_asset'] = settings.quote_asset
     return jsonify(res)
+
+
+@app.route('/api/self_improve')
+def api_self_improve():
+    from src import self_improve
+    return jsonify({"params": self_improve.get_params(), "lessons": self_improve.get_lessons(8)})
 
 
 @app.route('/api/brains', methods=['GET'])
