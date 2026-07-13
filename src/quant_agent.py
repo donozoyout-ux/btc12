@@ -148,7 +148,7 @@ class QuantAgent:
         
         return round(order_size, 2)
 
-    def analyze(self, teknik_analiz, internet_ve_haberler, mevcut_portfoy, gecmis_hafiza):
+    def analyze(self, teknik_analiz, internet_ve_haberler, mevcut_portfoy, gecmis_hafiza, gemini_debate=None):
         hata_var = False
         system_log = ""
 
@@ -226,7 +226,7 @@ class QuantAgent:
                 }
 
         # ─── 5 AI AJAN KONSENSÜS SİSTEMİ ───
-        consensus_result = consensus.vote(teknik_analiz, internet_ve_haberler)
+        consensus_result = consensus.vote(teknik_analiz, internet_ve_haberler, gemini=gemini_debate)
         consensus_action = consensus_result["action"]
         consensus_confidence = consensus_result["confidence"]
         consensus_ok = consensus_result["consensus"]

@@ -70,16 +70,26 @@ def decide_position_size(equity, confidence, win_rate=0.5, drawdown_pct=0.0, dai
     confidence: konsensüs güveni 0..1
     win_rate: son N işlemin kazanma oranı 0..1
     drawdown_pct: son zirveden düşüş yüzdesi (pozitif)
-    daily_progress: günlük %1 hedefine ulaşma oranı 0..1+ (1 = hedef tamam)
+    daily_progress: günlük hedefe ulaşma oranı 0..1+ (1 = hedef tamam)
     Döner: USDT cinsinden işlem miktarı
+
+    NOT: Varsayılan olarak sistem disiplinli ve SABIRLIDIR. Aç gözlülük modu
+    (AGGRESSIVE_MODE) kapalıyken işlem agresifliği asla otomatik artırılmaz ve
+    günlük hedefin gerisinde kalınınca "daha atak" davranılmaz.
     """
+    from src.config import settings
     cfg = load()
     agg = cfg["position_aggressiveness"]
     base_risk = 0.02  # sermayenin %2'si temel risk
 
     conf_factor = 0.5 + max(0.0, min(1.0, confidence))          # 0.5 .. 1.5
     perf_factor = 0.7 + win_rate                                # 0.7 .. 1.7
-    goal_factor = 1.0 + (0.25 if daily_progress < 0.5 else -0.1)  # hedefin gerisindeyse daha atak
+    # Hedefin gerisinde kalınınca "daha atak" davranmak YERİNE, varsayılan
+    # davranış nötrdür (goal_factor = 1.0). Sadece aç gözlülük modu açıksa
+    # ve bir günlük hedef tanımlıysa geri kalanı kapatmak için hafifçe esnek olur.
+    goal_factor = 1.0
+    if settings.aggressive_mode and settings.daily_goal_pct > 0 and daily_progress < 0.5:
+        goal_factor = 1.1  # en fazla %10 esneklik, asla agresif kaldıraç değil
     dd_factor = max(0.3, 1.0 - max(0.0, drawdown_pct) / 20.0)   # büyük düşüşte kısıtla
 
     risk = base_risk * conf_factor * perf_factor * agg * goal_factor * dd_factor
@@ -106,15 +116,21 @@ def review_and_adapt(db, consensus):
     win_rate = wins / len(recent)
     avg_pnl = sum(t["pnl"] for t in recent) / len(recent)
 
-    # İşlem agresifliğini ayarla
-    if win_rate > 0.6 and avg_pnl > 0:
-        cfg["position_aggressiveness"] = min(2.0, cfg["position_aggressiveness"] * 1.1)
-        lesson = f"Performans İYİ (kazanma %{win_rate*100:.0f}, ort. K/Z ${avg_pnl:+.2f}) → işlem agresifliği {cfg['position_aggressiveness']:.2f}x'e çıkarıldı."
-    elif win_rate < 0.4:
-        cfg["position_aggressiveness"] = max(0.4, cfg["position_aggressiveness"] * 0.9)
-        lesson = f"Performans ZAYIF (kazanma %{win_rate*100:.0f}) → işlem agresifliği {cfg['position_aggressiveness']:.2f}x'e düşürüldü, daha seçici olunacak."
+    # İşlem agresifliğini ayarla (varsayılan: kapalı / disiplinli)
+    from src.config import settings
+    if settings.aggressive_mode:
+        if win_rate > 0.6 and avg_pnl > 0:
+            cfg["position_aggressiveness"] = min(2.0, cfg["position_aggressiveness"] * 1.1)
+            lesson = f"Performans İYİ (kazanma %{win_rate*100:.0f}, ort. K/Z ${avg_pnl:+.2f}) → işlem agresifliği {cfg['position_aggressiveness']:.2f}x'e çıkarıldı."
+        elif win_rate < 0.4:
+            cfg["position_aggressiveness"] = max(0.4, cfg["position_aggressiveness"] * 0.9)
+            lesson = f"Performans ZAYIF (kazanma %{win_rate*100:.0f}) → işlem agresifliği {cfg['position_aggressiveness']:.2f}x'e düşürüldü, daha seçici olunacak."
+        else:
+            lesson = f"Performans NÖTR (kazanma %{win_rate*100:.0f}, ort. K/Z ${avg_pnl:+.2f}) → agresiflik korunuyor."
     else:
-        lesson = f"Performans NÖTR (kazanma %{win_rate*100:.0f}, ort. K/Z ${avg_pnl:+.2f}) → agresiflik korunuyor."
+        # Aç gözlülük modu kapalı: agresiflik sabit ve dengeli (1.0x) tutulur.
+        cfg["position_aggressiveness"] = 1.0
+        lesson = f"Performans (kazanma %{win_rate*100:.0f}, ort. K/Z ${avg_pnl:+.2f}) → agresiflik sabit {cfg['position_aggressiveness']:.2f}x (aç gözlülük modu kapalı)."
 
     # Konsensüs güven eşiğini ayarla
     if win_rate < 0.4:

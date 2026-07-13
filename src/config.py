@@ -25,9 +25,17 @@ class Settings:
     last_entry_price = 0
     memory_file = "state.json"
 
+    # Gemini 5-Brain konsensüs ağırlığı (0 = devre dışı, 1 = tam ajan gibi sayılır)
+    gemini_weight = float(os.getenv("GEMINI_WEIGHT", "1.0"))
+
+    # Aç gözlülük / atak modu: kapalıyken sistem disiplinli ve sabırlı kalır,
+    # işlem agresifliğini otomatik artırmaz, günlük sabit hedef peşinde koşmaz.
+    aggressive_mode = os.getenv("AGGRESSIVE_MODE", "false").lower() == "true"
+    # Günlük hedef (%). 0 = hedef yok (sadece risk yönetimi). >0 ise gerisindeyken
+    # daha sabırlı olunur, asla "daha atak" davranılmaz.
+    daily_goal_pct = float(os.getenv("DAILY_GOAL_PCT", "0"))
     # Simülasyon başlangıç sermayesi (kullanıcı ayarlayabilir)
     sim_starting_capital = float(os.getenv("SIM_STARTING_CAPITAL", "500"))
-    # Binance erişilemiyorsa (bölge engeli vb.) proxy kullanımı
     binance_proxy = os.getenv("BINANCE_PROXY", "")
     binance_api_url = os.getenv("BINANCE_API_URL", "")
 

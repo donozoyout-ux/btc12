@@ -81,9 +81,9 @@ class Analyzer:
         di_plus = ta.trend.ADXIndicator(high, low, close, window=14).adx_pos().iloc[-1]
         di_minus = ta.trend.ADXIndicator(high, low, close, window=14).adx_neg().iloc[-1]
 
-        cci = ta.trend.CCIIndicator(close, window=20).cci().iloc[-1]
+        cci = ta.trend.CCIIndicator(high, low, close, window=20).cci().iloc[-1]
 
-        williams_r = ta.momentum.WilliamsRIndicator(high, low, close, lbp=14).wr().iloc[-1]
+        williams_r = ta.momentum.WilliamsRIndicator(high, low, close, lbp=14).williams_r().iloc[-1]
 
         obv = ta.volume.OnBalanceVolumeIndicator(close, volume).on_balance_volume()
         obv_sma = obv.rolling(20).mean().iloc[-1]

@@ -794,12 +794,15 @@ function updateGoal() {
       var today = new Date().toISOString().slice(0, 10);
       var todays = (d || []).filter(function(g) { return g.date === today; });
       var pnl = todays.reduce(function(s, g) { return s + g.pnl; }, 0);
-      var target = pv * 0.01;
+      var target = pv * (st.daily_goal_pct && st.daily_goal_pct > 0 ? st.daily_goal_pct/100 : 0.01);
       var pct = pv > 0 ? (pnl / pv * 100) : 0;
       var el = document.getElementById('goalText');
       var badge = document.getElementById('goalBadge');
       var sign = pnl >= 0 ? '+' : '';
       el.textContent = sign + pnl.toFixed(2) + '$ / HDF:' + target.toFixed(2) + '$ (' + pct.toFixed(2) + '%)';
+      badge.title = (st.daily_goal_pct && st.daily_goal_pct > 0)
+        ? ('Günlük hedef: %' + st.daily_goal_pct + (st.aggressive_mode ? ' (aç gözlülük modu AÇIK)' : ' (disiplinli mod)'))
+        : 'Günlük sabit hedef yok (sadece risk yönetimi)' + (st.aggressive_mode ? ' • aç gözlülük modu AÇIK' : '');
       if (pct >= 1.0) {
         badge.className = 'flex items-center gap-2 px-3 py-1.5 bg-emerald-500/15 border border-emerald-500/30 rounded-lg text-[10px] font-bold text-emerald-300';
       } else if (pnl < 0) {

@@ -269,13 +269,8 @@ class Bot:
             "aktif_strateji_notu": state.get("aktif_strateji_notu", ""),
         }
 
-        karar = quant_agent.analyze(teknik, haberler, portfoy, hafiza)
-        action = karar["action"]
-        confidence = karar["confidence_score"]
-        self.last_scan_data = teknik
-        self.last_news = haberler
-
-        # ─── Gemini 5-Brain AI Debate ───
+        # ─── Gemini 5-Brain AI Debate (konsensüse bağlanacak) ───
+        # Konsensüs oylamasından ÖNCE çalıştırılır ki sonuç karara dahil olsun.
         try:
             ml_votes = consensus.last_votes if hasattr(consensus, 'last_votes') else {}
             from src import ai_brains
@@ -286,6 +281,12 @@ class Bot:
                 self.last_gemini_debate = debate
         except Exception as e:
             print(f"[GEMINI] Debate cagirma hatasi: {e}")
+
+        karar = quant_agent.analyze(teknik, haberler, portfoy, hafiza, gemini_debate=self.last_gemini_debate)
+        action = karar["action"]
+        confidence = karar["confidence_score"]
+        self.last_scan_data = teknik
+        self.last_news = haberler
 
         haber_sentiment = sum(1 for h in haberler if h.get("sentiment") == "pozitif") - sum(1 for h in haberler if h.get("sentiment") == "negatif")
         db.save_scan(
@@ -618,6 +619,8 @@ class Bot:
                 "sim_balance": executor._sim_balance if hasattr(executor, '_sim_balance') else 0,
                 "gemini_active": bool(settings.gemini_api_key),
                 "gemini_last_decision": self.last_gemini_debate.get("final_decision", "---") if self.last_gemini_debate else "---",
+                "daily_goal_pct": settings.daily_goal_pct,
+                "aggressive_mode": settings.aggressive_mode,
                 "symbol": settings.symbol,
                 "quote_asset": settings.quote_asset,
             }

@@ -10,6 +10,8 @@ import os
 import json
 from datetime import datetime
 
+from src.config import settings
+
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
@@ -847,7 +849,7 @@ class ConsensusCoordinator:
         self.total_decisions = 0
         self.consensus_reached = 0
 
-    def vote(self, teknik, haberler=None):
+    def vote(self, teknik, haberler=None, gemini=None):
         """
         Tüm ajanlardan oy topla.
         Returns: {
@@ -884,6 +886,26 @@ class ConsensusCoordinator:
         sell_weighted = sum(v["confidence"] * v["weight"] for v in votes.values() if v["action"] == "SELL")
         total_weight = sum(v["weight"] for v in votes.values())
 
+        details_parts = []
+
+        # --- Gemini 5-beyni konsensüse bağla (kullanıcının niyeti) ---
+        gemini_action = None
+        gemini_conf = 0.0
+        if gemini and gemini.get("final_decision") in ("BUY", "SELL"):
+            gemini_action = gemini["final_decision"]
+            gemini_conf = float(gemini.get("final_confidence", 0) or 0)
+            gw = settings.gemini_weight  # Gemini'in konsensüsteki ağırlığı (ayarlanabilir)
+            if gw <= 0:
+                pass  # 0 ise Gemini konsensüse etki etmez
+            elif gemini_action == "BUY":
+                buy_count += 1
+                buy_weighted += gemini_conf * gw
+            elif gemini_action == "SELL":
+                sell_count += 1
+                sell_weighted += gemini_conf * gw
+            total_weight += gw
+            details_parts.append(f"🧠gemini:{gemini_action}({gemini_conf:.0%})")
+
         buy_score = buy_weighted / total_weight if total_weight > 0 else 0
         sell_score = sell_weighted / total_weight if total_weight > 0 else 0
 
@@ -891,7 +913,6 @@ class ConsensusCoordinator:
         action = "HOLD"
         confidence = 0.0
         consensus = False
-        details_parts = []
 
         for name, v in votes.items():
             emoji = "🟢" if v["action"] == "BUY" else ("🔴" if v["action"] == "SELL" else "⚪")
@@ -920,6 +941,7 @@ class ConsensusCoordinator:
             "hold_count": hold_count,
             "buy_score": round(buy_score, 3),
             "sell_score": round(sell_score, 3),
+            "gemini": {"action": gemini_action, "confidence": round(gemini_conf, 3)},
             "details": details,
         }
 
