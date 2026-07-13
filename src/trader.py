@@ -88,6 +88,8 @@ class Trader:
         now = time.time()
         if self._usd_try and (now - self._usd_try_ts) < 300:
             return self._usd_try
+        rate = None
+        # 1) CoinGecko (USDT tabanlı, canlı)
         try:
             r = requests.get(
                 f"{_COINGECKO_REST}/simple/price?ids=tether&vs_currencies=try,usd",
@@ -98,11 +100,26 @@ class Trader:
                 try_rate = float(j.get("try"))
                 usd_rate = float(j.get("usd", 1))
                 if try_rate and usd_rate:
-                    self._usd_try = try_rate / usd_rate
-                    self._usd_try_ts = now
-                    return self._usd_try
+                    rate = try_rate / usd_rate
         except Exception:
             pass
+        # 2) Fallback: Frankfurter (ücretsiz, anahtar gerektirmez)
+        if not rate:
+            try:
+                r = requests.get(
+                    "https://api.frankfurter.app/latest?from=USD&to=TRY",
+                    timeout=10,
+                )
+                if r.status_code == 200:
+                    rr = r.json().get("rates", {}).get("TRY")
+                    if rr:
+                        rate = float(rr)
+            except Exception:
+                pass
+        if rate:
+            self._usd_try = rate
+            self._usd_try_ts = now
+            return rate
         return self._usd_try
 
     # ──────────────────────────────────────────────────────────────

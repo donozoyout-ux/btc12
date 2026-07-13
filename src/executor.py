@@ -32,7 +32,7 @@ def _binance_exchange_config():
 class Executor:
     def __init__(self):
         self._client = None
-        self._sim_balance = settings.sim_starting_capital
+        self._sim_balance = self._tl_to_usd(settings.sim_starting_capital_tl)
         self._sim_btc = 0.0
         self._sim_entry = 0.0
         self._binance_error = None
@@ -79,6 +79,15 @@ class Executor:
         s = str(e)
         return "-2015" in s or "Invalid API-key" in s or "permissions for action" in s
 
+    def _tl_to_usd(self, tl):
+        """₺ (TL) tutarini canlı USD/TRY kuruyla USD'ye çevirir."""
+        rate = trader.get_usd_try_rate() or 1.0
+        return float(tl) / rate if rate else float(tl)
+
+    def _usd_to_tl(self, usd):
+        """USD tutarini canlı USD/TRY kuruyla ₺'ye çevirir."""
+        return float(usd) * (trader.get_usd_try_rate() or 1.0)
+
     def set_mode(self, mode):
         """Modu degistir: 'sim' veya 'binance'"""
         mode = mode.lower()
@@ -100,16 +109,18 @@ class Executor:
             return {"success": True, "message": "SIMULASYON moduna gecildi"}
 
     def reset_sim_balance(self, amount):
-        """Simülasyon başlangıç sermayesini ayarla (sıfırlar)."""
+        """Simülasyon başlangıç sermayesini ayarla (sıfırlar). Tutar ₺ (TL) cinsindendir."""
         amount = float(amount)
         if amount < 0:
             return {"success": False, "message": "Sermaye 0'dan küçük olamaz"}
-        self._sim_balance = amount
+        usd = self._tl_to_usd(amount)
+        self._sim_balance = usd
         self._sim_btc = 0.0
         self._sim_entry = 0.0
-        settings.sim_starting_capital = amount
+        settings.sim_starting_capital = usd
+        settings.sim_starting_capital_tl = amount
         self._save_state()
-        return {"success": True, "message": f"Simülasyon sermayesi ${amount:.2f} olarak ayarlandi", "balance": amount}
+        return {"success": True, "message": f"Simülasyon sermayesi ₺{amount:.2f} olarak ayarlandi", "balance": usd}
 
     def reset_sim(self):
         """Simülasyonu BAŞTAN sona sıfırlar. SADECE simüle edilmiş durum; Binance'e hiç dokunmaz.
@@ -118,13 +129,13 @@ class Executor:
         if settings.executor_mode != "sim":
             settings.executor_mode = "sim"
             switched = True
-        amount = settings.sim_starting_capital
-        self._sim_balance = amount
+        amount = settings.sim_starting_capital_tl
+        self._sim_balance = self._tl_to_usd(amount)
         self._sim_btc = 0.0
         self._sim_entry = 0.0
         settings.last_entry_price = 0
         self._save_state()
-        msg = f"Simülasyon sıfırlandı (başlangıç sermaye: ${amount:.2f}, pozisyon kapandı)"
+        msg = f"Simülasyon sıfırlandı (başlangıç sermaye: ₺{amount:.2f}, pozisyon kapandı)"
         if switched:
             msg += " — Binance modundan SIM'e geçildi (Binance bakiyenize dokunulmadı)"
         return {"success": True, "message": msg, "balance": amount,
@@ -150,7 +161,7 @@ class Executor:
             if os.path.exists(STATE_FILE):
                 with open(STATE_FILE, "r") as f:
                     data = json.load(f)
-                self._sim_balance = data.get("balance", settings.sim_starting_capital)
+                self._sim_balance = data.get("balance", self._tl_to_usd(settings.sim_starting_capital_tl))
                 self._sim_btc = data.get("btc", 0.0)
                 self._sim_entry = data.get("entry", 0.0)
                 print(f"[EXECUTOR] State yuklendi: bal=${self._sim_balance:.2f} btc={self._sim_btc:.6f}")
@@ -159,7 +170,7 @@ class Executor:
             pass
         sb_data = supabase_store.load_executor_state()
         if sb_data:
-            self._sim_balance = sb_data.get("balance", settings.sim_starting_capital)
+            self._sim_balance = sb_data.get("balance", self._tl_to_usd(settings.sim_starting_capital_tl))
             self._sim_btc = sb_data.get("btc", 0.0)
             self._sim_entry = sb_data.get("entry", 0.0)
             print(f"[EXECUTOR] Supabase state yuklendi: bal=${self._sim_balance:.2f} btc={self._sim_btc:.6f}")

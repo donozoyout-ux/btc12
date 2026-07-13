@@ -52,7 +52,7 @@ def compute_stats(trades, starting_capital=None):
     # burada yapilmaz; 0 birakilir (gelecekte entry/SL ile zenginlestirilebilir).
     avg_r = 0.0
 
-    eq = equity_curve(trades, starting_capital or settings.sim_starting_capital)
+    eq = equity_curve(trades, starting_capital)
     max_dd = _max_drawdown(eq)
 
     return {

@@ -122,6 +122,11 @@ body {
 .tradingview-widget-container.tv-fs #tradingview_chart {
   height: 100vh !important;
 }
+.tradingview-widget-container.tv-fs iframe {
+  width: 100% !important;
+  height: 100% !important;
+  border: none !important;
+}
 .agent-inline-detail { animation: slideDown 0.25s ease; }
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-6px); }
@@ -525,6 +530,7 @@ function createChart(interval) {
     "enable_publishing": false,
     "hide_side_toolbar": false,
     "allow_symbol_change": true,
+    "autosize": true,
     "container_id": "tradingview_chart"
   });
   ['iv1', 'iv5', 'iv15'].forEach(function (id) {
@@ -539,6 +545,9 @@ function toggleChartFullscreen() {
   var c = document.getElementById('tradingviewWrap');
   if (c.classList.contains('tv-fs')) c.classList.remove('tv-fs');
   else c.classList.add('tv-fs');
+  // TradingView iframe'inin yeni boyuta uyum sağlaması için resize event'i tetikle
+  setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 50);
+  setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 350);
 }
 
 // ─── TREND kartına basınca açılan inline panel ───
@@ -1518,10 +1527,13 @@ def api_memory():
 @app.route('/api/analytics')
 def api_analytics():
     from src import analytics
+    from src.trader import trader
     trades = db.get_trade_history(200)
-    stats = analytics.compute_stats(trades, settings.sim_starting_capital)
-    eq = analytics.equity_curve(trades, settings.sim_starting_capital)
-    return jsonify({"stats": stats, "equity": eq, "starting_capital": settings.sim_starting_capital})
+    rate = trader.get_usd_try_rate() or 1.0
+    base_usd = settings.sim_starting_capital_tl / rate
+    stats = analytics.compute_stats(trades, base_usd)
+    eq = analytics.equity_curve(trades, base_usd)
+    return jsonify({"stats": stats, "equity": eq, "starting_capital": base_usd})
 
 
 @app.route('/api/start', methods=['POST'])
@@ -1566,9 +1578,10 @@ def api_manual_buy():
         if result and result.get("error") == "PERMISSION":
             return jsonify({"success": False, "message": result.get("message", "Binance işlem yetkisi yok")})
         if result:
+            invested = result.get("cost", amount)
             db.save_trade("BUY", result["price"], result["qty"], 0, "Manuel Islem", result["price"], result.get("mode", "SIM"))
-            tg.send(f"🟢 <b>MANUEL ALIS GERCEKLESTIRILDI</b>\n\nFiyat: <code>${result['price']:,.2f}</code>\nMiktar: <code>{result['qty']:.6f} BTC</code>\nTutar: <code>${amount:.2f}</code>\nMod: <b>{result.get('mode', 'SIM')}</b>")
-            return jsonify({"success": True, "message": f"{amount:.2f} USDT değerinde alım yapıldı ({result.get('mode', 'SIM')})"})
+            tg.send(f"🟢 <b>MANUEL ALIS GERCEKLESTIRILDI</b>\n\nFiyat: <code>${result['price']:,.2f}</code>\nMiktar: <code>{result['qty']:.6f} BTC</code>\nTutar: <code>${invested:,.2f}</code>\nMod: <b>{result.get('mode', 'SIM')}</b>")
+            return jsonify({"success": True, "message": f"{invested:,.2f} USDT değerinde alım yapıldı ({result.get('mode', 'SIM')})"})
         else:
             return jsonify({"success": False, "message": "Alım başarısız"})
     except Exception as e:

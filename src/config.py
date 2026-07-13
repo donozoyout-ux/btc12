@@ -51,7 +51,11 @@ class Settings:
     # Günlük hedef (%). 0 = hedef yok (sadece risk yönetimi). >0 ise gerisindeyken
     # daha sabırlı olunur, asla "daha atak" davranılmaz.
     daily_goal_pct = float(os.getenv("DAILY_GOAL_PCT", "1"))
-    # Simülasyon başlangıç sermayesi (kullanıcı ayarlayabilir)
+    # Simülasyon başlangıç sermayesi — TRY (₺) cinsinden. Sistem içi
+    # hesaplamalar USD üzerinden yürür; bu değer canlı USD/TRY kuruyla
+    # USD'ye çevrilir. Varsayılan: 500 ₺.
+    sim_starting_capital_tl = float(os.getenv("SIM_STARTING_CAPITAL_TL", "500"))
+    # Geriye dönük uyum için USD tabanlı eski alan (varsayılan 500 USD fallback).
     sim_starting_capital = float(os.getenv("SIM_STARTING_CAPITAL", "500"))
     binance_proxy = os.getenv("BINANCE_PROXY", "")
     binance_api_url = os.getenv("BINANCE_API_URL", "")
@@ -75,5 +79,5 @@ if settings.executor_mode == "binance":
     print("[CONFIG] Simulasyon moduna geciliyor (sahte para, canli veri CoinGecko).")
     settings.executor_mode = "sim"
 else:
-    print(f"[CONFIG] MOD: SIMULASYON (gercek islem YOK, sahte para). Baslangic sermaye: ${settings.sim_starting_capital:.0f}")
+    print(f"[CONFIG] MOD: SIMULASYON (gercek islem YOK, sahte para). Baslangic sermaye: ₺{settings.sim_starting_capital_tl:.0f}")
     print("[CONFIG] Canli veri kaynagi: CoinGecko -> sentetik fallback")
