@@ -198,19 +198,23 @@ class TelegramBot:
         )
         self.send(msg)
 
-    def send_islem_sonucu(self, tur, fiyat, miktar, kar_zarar=None):
+    def send_islem_sonucu(self, tur, fiyat, miktar, kar_zarar=None, yatirilan=None):
+        yatirilan_str = f"\nYatırılan: <code>${yatirilan:,.2f}</code>" if yatirilan else ""
         if tur == "BUY":
             msg = (
                 f"\U0001f7e2 <b>ALIS GERCEKLESTI</b>\n\n"
                 f"Miktar: <code>{miktar:.6f} BTC</code>\n"
-                f"Fiyat: <code>${fiyat:,.2f}</code>"
+                f"Fiyat: <code>${fiyat:,.2f}</code>{yatirilan_str}"
             )
         else:
             msg = (
                 f"\U0001f534 <b>SATIS GERCEKLESTI</b>\n\n"
                 f"Miktar: <code>{miktar:.6f} BTC</code>\n"
                 f"Fiyat: <code>${fiyat:,.2f}</code>\n"
-                f"K/Z: <code>${kar_zarar:+,.2f}</code>" if kar_zarar else ""
+                f"K/Z: <code>${kar_zarar:+,.2f}</code>{yatirilan_str}" if kar_zarar else
+                f"\U0001f534 <b>SATIS GERCEKLESTI</b>\n\n"
+                f"Miktar: <code>{miktar:.6f} BTC</code>\n"
+                f"Fiyat: <code>${fiyat:,.2f}</code>{yatirilan_str}"
             )
         self.send(msg)
 

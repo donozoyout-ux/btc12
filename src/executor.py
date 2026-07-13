@@ -320,7 +320,8 @@ class Executor:
 
         settings.last_entry_price = self._sim_entry
         self._save_state()
-        return {"price": price, "qty": round(qty, 6), "order_id": "dry_buy", "mode": "SIM"}
+        return {"price": price, "qty": round(qty, 6), "cost": round(cost, 2),
+                "order_id": "dry_buy", "mode": "SIM"}
 
     def _dry_sell(self):
         if self._sim_btc <= 0.0001:
@@ -328,11 +329,13 @@ class Executor:
         price = trader.get_price()
         sell_qty = self._sim_btc
         pnl = (price - self._sim_entry) * sell_qty
+        cost_basis = round(sell_qty * self._sim_entry, 2)
         self._sim_balance += price * sell_qty
         self._sim_btc = 0.0
         self._sim_entry = 0.0
         self._save_state()
-        return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price, "order_id": "dry_sell", "mode": "SIM"}
+        return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price,
+                "cost": cost_basis, "order_id": "dry_sell", "mode": "SIM"}
 
     def _binance_buy(self, size_pct=100, amount_usd=None):
         price = trader.get_price()

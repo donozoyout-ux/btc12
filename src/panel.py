@@ -363,6 +363,37 @@ body {
         </div>
       </section>
 
+      <!-- Analitik Performans -->
+      <section class="glass rounded-2xl flex flex-col p-5 border border-cyan-500/10">
+        <div class="border-b border-white/5 pb-3 mb-3 flex items-center justify-between">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2">
+            <span class="w-1.5 h-1.5 rounded-full bg-cyan-500"></span> Analitik Performans
+          </h3>
+          <span class="text-[10px] font-mono text-cyan-400">MATEMATİKSEL METRİK</span>
+        </div>
+        <div class="grid grid-cols-2 gap-2 mb-3">
+          <div class="bg-surface-lowest/60 rounded-lg p-2 text-center">
+            <div class="text-[9px] text-slate-500 font-bold uppercase">BEKLENTİ ($)</div>
+            <div class="text-base font-extrabold font-mono text-white" id="aExpectancy">--</div>
+          </div>
+          <div class="bg-surface-lowest/60 rounded-lg p-2 text-center">
+            <div class="text-[9px] text-slate-500 font-bold uppercase">PROFIT FACTOR</div>
+            <div class="text-base font-extrabold font-mono text-white" id="aProfitFactor">--</div>
+          </div>
+          <div class="bg-surface-lowest/60 rounded-lg p-2 text-center">
+            <div class="text-[9px] text-slate-500 font-bold uppercase">KAZANMA %</div>
+            <div class="text-base font-extrabold font-mono text-white" id="aWinRate">--</div>
+          </div>
+          <div class="bg-surface-lowest/60 rounded-lg p-2 text-center">
+            <div class="text-[9px] text-slate-500 font-bold uppercase">MAX DRAWDD %</div>
+            <div class="text-base font-extrabold font-mono text-white" id="aMaxDD">--</div>
+          </div>
+        </div>
+        <div class="text-[10px] text-slate-500 mb-1 font-bold uppercase">EQUITY EĞRİSİ</div>
+        <svg id="equitySpark" viewBox="0 0 200 50" preserveAspectRatio="none" class="w-full h-12 bg-surface-lowest/40 rounded"></svg>
+        <div class="text-[10px] text-slate-500 mt-2" id="aMeta">İşlem yok.</div>
+      </section>
+
       <!-- Konsensüs İstatistikleri -->
       <section class="glass rounded-2xl flex flex-col p-5 border border-purple-500/10">
         <div class="border-b border-white/5 pb-3 mb-3 flex justify-between items-center">
@@ -874,6 +905,8 @@ function updateStatus() {
         html += '  </div>';
         html += '  <div class="flex items-center space-x-3">';
         html += '    <span class="text-white font-semibold">$' + Number(t.price).toLocaleString(undefined, {minimumFractionDigits: 0}) + '</span>';
+        var invested = (t.qty * (t.entry_price || t.price)) || 0;
+        html += '    <span class="text-[10px] text-slate-400">Yat: $' + Number(invested).toLocaleString(undefined, {minimumFractionDigits: 0}) + '</span>';
         html += '    <span class="text-[10px] text-slate-500 max-w-[90px] truncate">' + reasonStr + '</span>';
         html += '    <span class="px-2 py-0.5 rounded font-extrabold text-[10px] ' + pnlColor + '">' + (t.pnl !== 0 ? '$' + pnlStr : '---') + '</span>';
         html += '  </div>';
@@ -885,6 +918,38 @@ function updateStatus() {
     }
   }).catch(() => {});
 }
+
+function updateAnalytics() {
+  fetch('/api/analytics').then(r => r.json()).then(d => {
+    var s = d.stats || {};
+    setText('aExpectancy', '$' + (s.expectancy != null ? s.expectancy.toFixed(2) : '--'));
+    setText('aProfitFactor', s.profit_factor != null ? s.profit_factor.toFixed(2) : '--');
+    setText('aWinRate', s.win_rate != null ? (s.win_rate * 100).toFixed(0) + '%' : '--');
+    setText('aMaxDD', s.max_drawdown != null ? (s.max_drawdown * 100).toFixed(1) + '%' : '--');
+    var meta = (s.total || 0) + ' işlem | Toplam K/Z $' + (s.total_pnl != null ? s.total_pnl.toFixed(2) : '0') +
+               ' | Ort.K $' + (s.avg_win != null ? s.avg_win.toFixed(2) : '0') +
+               ' / Ort.Z $' + (s.avg_loss != null ? s.avg_loss.toFixed(2) : '0');
+    setText('aMeta', meta);
+    drawSpark(document.getElementById('equitySpark'), d.equity || []);
+  }).catch(() => {});
+}
+
+function drawSpark(svg, data) {
+  if (!svg || !data || !data.length) return;
+  var W = 200, H = 50, pad = 4;
+  var min = Math.min.apply(null, data), max = Math.max.apply(null, data);
+  var rng = (max - min) || 1;
+  var pts = data.map(function (v, i) {
+    var x = data.length > 1 ? (i / (data.length - 1)) * W : W / 2;
+    var y = H - pad - ((v - min) / rng) * (H - 2 * pad);
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+  var last = data[data.length - 1];
+  var color = last >= data[0] ? '#34d399' : '#fb7185';
+  svg.innerHTML = '<polyline fill="none" stroke="' + color + '" stroke-width="1.5" points="' + pts + '"/>';
+}
+
+function setText(id, v) { var e = document.getElementById(id); if (e) e.textContent = v; }
 
 function updateDecisions() {
   fetch('/api/decisions').then(r => r.json()).then(d => {
@@ -1128,6 +1193,7 @@ setInterval(updatePnlHistory, 8000);
 setInterval(updateReflection, 15000);
 setInterval(updateSelfImprove, 15000);
 setInterval(updateAgents, 5000);
+setInterval(updateAnalytics, 10000);
 
 // ==========================================
 // ==========================================
@@ -1370,6 +1436,15 @@ def api_memory():
     scans = db.get_recent_scans(20)
     state = quant_agent.get_state()
     return jsonify({"stats": stats, "trades": trades, "scans": scans, "state": state})
+
+
+@app.route('/api/analytics')
+def api_analytics():
+    from src import analytics
+    trades = db.get_trade_history(200)
+    stats = analytics.compute_stats(trades, settings.sim_starting_capital)
+    eq = analytics.equity_curve(trades, settings.sim_starting_capital)
+    return jsonify({"stats": stats, "equity": eq, "starting_capital": settings.sim_starting_capital})
 
 
 @app.route('/api/start', methods=['POST'])

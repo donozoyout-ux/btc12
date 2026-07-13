@@ -83,38 +83,17 @@ class Bot:
             time.sleep(settings.check_interval)
 
     def _check_sl_tp(self):
+        # NOT: Otomatik SL/TP SATISI KALDIRILDI. Pozisyonlar yalnizca scan()
+        # icindeki SELL sinyaliyle kapanir. Bu fonksiyon SADECE pasif
+        # izleyicidir; fiyat/kar-zarar/maliyet bazini raporlar, satis yapmaz.
         pos = executor.get_position()
         if not pos:
             return
         price = trader.get_price()
         entry = pos["avg_entry_price"]
         pl_pct = (price - entry) / entry * 100
-
-        state = quant_agent.state
-        sl = state.get("son_sl", 0)
-        tp = state.get("son_tp", 0)
-
-        if sl > 0 and price <= sl:
-            print(f"[SL] Tetiklendi: ${price:,.2f} <= ${sl:,.2f}")
-            tg.send(f"\u26a0\ufe0f <b>STOP-LOSS TETIKLENDI</b>\n\nFiyat: ${price:,.2f}\nKayip: %{pl_pct:.2f}")
-            self._satisi_gerceklestir("Stop-loss")
-            return
-
-        if tp > 0 and price >= tp:
-            print(f"[TP] Tetiklendi: ${price:,.2f} >= ${tp:,.2f}")
-            tg.send(f"\u2705 <b>TAKE-PROFIT TETIKLENDI</b>\n\nFiyat: ${price:,.2f}\nKar: %{pl_pct:.2f}")
-            self._satisi_gerceklestir("Take-profit")
-            return
-
-        if sl > 0 and pl_pct > settings.scalp_trailing_trigger_pct:
-            new_sl = round(entry + (price - entry) * 0.5, 2)
-            if new_sl > sl:
-                quant_agent.state["son_sl"] = new_sl
-                quant_agent._save_state()
-                print(f"[TRAILING] SL guncellendi: ${new_sl:,.2f} (kar: %{pl_pct:.2f})")
-
-        sl_tp_str = f"SL:${sl:,.0f} TP:${tp:,.0f}" if sl > 0 else ""
-        print(f"[MONITOR] ${price:,.2f} | %{pl_pct:+.2f} {sl_tp_str}")
+        cost_basis = pos["qty"] * entry
+        print(f"[MONITOR] ${price:,.2f} | %{pl_pct:+.2f} | Maliyet bazı: ${cost_basis:,.2f}")
 
     def _ai_skor(self, teknik, teknik_5m=None):
         prob, conf = ai_model.predict(teknik, teknik_5m)
@@ -485,7 +464,7 @@ class Bot:
                 tag = "SIMULASYON " if is_sim else ""
                 tutar_str = f"Tutar: ${amount_usd:.2f}" if amount_usd else f"Boyut: %{size_pct}"
                 print(f"[BOT] {tag}ALIS: {result['qty']:.6f} BTC @ ${result['price']:,.2f} ({tutar_str})")
-                tg.send_islem_sonucu("BUY", result["price"], result["qty"])
+                tg.send_islem_sonucu("BUY", result["price"], result["qty"], yatirilan=result.get("cost"))
         except Exception as e:
             self.son_hata = f"ALIS: {str(e)[:100]}"
             print(f"[BOT] ALIS HATASI: {e}")
@@ -546,7 +525,7 @@ class Bot:
                 is_sim = mode == "SIM"
                 tag = "SIMULASYON " if is_sim else ""
                 print(f"[BOT] {tag}SATIS: K/Z ${pl:+,.2f} ({sebep})")
-                tg.send_islem_sonucu("SELL", result["price"], result["qty"], pl)
+                tg.send_islem_sonucu("SELL", result["price"], result["qty"], pl, yatirilan=result.get("cost"))
         except Exception as e:
             self.son_hata = f"SATIS: {str(e)[:100]}"
             print(f"[BOT] SATIS HATASI: {e}")
