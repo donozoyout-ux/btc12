@@ -51,14 +51,75 @@ def _get_model():
 
 # Her beynin analiz odağı (AJAN_GÖREVİ şablonundaki "Analiz Odağın" yerine geçer)
 _AGENT_FOCUS = {
-    "trend": "EMA/MACD uyumu, trend yönü ve momentum",
-    "volatility": "RSI, StochRSI ve Bollinger Band aşırı alım/satım bölgeleri",
-    "volume": "Hacim oranı ve orderbook (bid/ask) dengesi",
-    "level": "Destek/direnç seviyeleri ve kırılım sinyalleri",
-    "sentiment": "Haber/duygu tonu, Fear & Greed endeksi ve makro psikoloji",
+    "trend": "EMA/MACD uyumu, trend yönü ve momentum avcılığı",
+    "volatility": "RSI, StochRSI ve Bollinger Band matematiği; aşırı alım/satım bölgeleri",
+    "volume": "Hacim oranı, orderbook (bid/ask) dengesi ve balina akışı",
+    "level": "Destek/direnç seviyeleri, kırılım sinyalleri ve risk yönetimi (stop-loss)",
+    "sentiment": "Haber/duygu tonu, Fear & Greed endeksi ve hakemlik (nihai denge)",
+}
+
+# Kullanıcının tanımladığı 5 ajans rol matrisi
+_AGENT_ROLES = {
+    "trend": "Trend Avcısı",
+    "volatility": "Matematikçi",
+    "volume": "Balina İzleyici",
+    "level": "Risk Yöneticisi",
+    "sentiment": "Hakem",
 }
 
 _ORDER = ["trend", "volatility", "volume", "level", "sentiment"]
+
+# Rol adı -> dahili anahtar (çıktı ayrıştırma için)
+_ROLE_TO_KEY = {v: k for k, v in _AGENT_ROLES.items()}
+
+# ---------------------------------------------------------------------------
+#  ROL MATRİSİ + DİNAMİK İNDİKATÖR DAĞILIMI
+#  Backend döngüsünden gelen ham indikatör verisi (RSI, MACD, EMA, ...)
+#  buraya göre her rolün prompt'una YALNIZCA kendi uzmanlık alanıyla
+#  ilgili göstergeler olarak dağıtılır. Böylece ajanlar birbirinin
+#  verisini kopyalamaz, sürü psikolojisi (groupthink) kırılır.
+# ---------------------------------------------------------------------------
+ROLE_MATRIX = {
+    "trend": {  # Trend Avcısı -> EMA / MACD / momentum
+        "indicators": ["price", "ema8", "ema21", "ema_cross", "ema_dist",
+                       "macd_line", "macd_hist", "macd_hist_prev", "sling_color",
+                       "sling_dist", "momentum_score", "price_change_5", "adx",
+                       "di_plus", "di_minus", "donchian_pos"],
+    },
+    "volatility": {  # Matematikçi -> RSI / StochRSI / Bollinger matematiği
+        "indicators": ["price", "rsi", "rsi_prev", "stoch_rsi", "stoch_rsi_prev",
+                       "bb_pct", "bb_upper", "bb_lower", "atr", "atr_pct",
+                       "cci", "williams_r", "mfi"],
+    },
+    "volume": {  # Balina İzleyici -> hacim / orderbook / balina akışı
+        "indicators": ["price", "vol_ratio", "mfi", "obv_signal", "vwap_dist",
+                       "orderbook", "price_change_5"],
+    },
+    "level": {  # Risk Yöneticisi -> destek/direnç / kırılım / stop-loss
+        "indicators": ["price", "support", "resistance", "breakout_up", "breakout_down",
+                       "bb_upper", "bb_lower", "atr", "atr_pct", "donchian_high",
+                       "donchian_low", "sling_color"],
+    },
+    "sentiment": {  # Hakem -> haber/duygu + genel dengenin sağlanması
+        "indicators": ["price", "rsi", "ema_cross", "macd_hist", "vol_ratio"],
+        "news": True,
+    },
+}
+
+# Ham indikatör anahtarı -> arayüzdeki Türkçe etiket
+_INDICATOR_LABELS = {
+    "price": "Fiyat", "ema8": "EMA 8", "ema21": "EMA 21", "ema_cross": "EMA Kesişim",
+    "ema_dist": "EMA Mesafesi (%)", "macd_line": "MACD Çizgisi", "macd_hist": "MACD Histogram",
+    "macd_hist_prev": "MACD Histogram (önceki)", "sling_color": "Sling Shot Rengi",
+    "sling_dist": "Sling Mesafe (%)", "momentum_score": "Momentum Skoru", "price_change_5": "5-Bar Fiyat Değişimi (%)",
+    "adx": "ADX", "di_plus": "DI+", "di_minus": "DI-", "donchian_pos": "Donchian Pozisyon",
+    "rsi": "RSI (14)", "rsi_prev": "RSI (önceki)", "stoch_rsi": "StochRSI", "stoch_rsi_prev": "StochRSI (önceki)",
+    "bb_pct": "Bollinger %B", "bb_upper": "BB Üst", "bb_lower": "BB Alt", "atr": "ATR", "atr_pct": "ATR (%)",
+    "cci": "CCI", "williams_r": "Williams %R", "mfi": "MFI", "vol_ratio": "Hacim Oranı",
+    "obv_signal": "OBV Sinyali", "vwap_dist": "VWAP Mesafe (%)", "support": "Destek",
+    "resistance": "Direnç", "breakout_up": "Yukarı Kırılım", "breakout_down": "Aşağı Kırılım",
+    "donchian_high": "Donchian Yüksek", "donchian_low": "Donchian Düşük",
+}
 
 
 def _build_agent_personas(brains=None):
@@ -74,13 +135,20 @@ def _build_agent_personas(brains=None):
         b = brains.get(key)
         if not b or not b.get("enabled", True):
             continue
-        name = b.get("label", key).upper()
-        role = b.get("instruction", "")
+        role = _AGENT_ROLES.get(key, b.get("label", key).upper())
+        instruction = b.get("instruction", "")
         focus = _AGENT_FOCUS.get(key, "ilgili göstergeler")
+        info = ROLE_MATRIX.get(key, {})
+        assigned = ", ".join(
+            _INDICATOR_LABELS.get(i, i) for i in info.get("indicators", [])
+        )
+        if info.get("news"):
+            assigned += (", HABERLER" if assigned else "HABERLER")
         blocks.append(
-            f"### AJAN: {name}\n"
-            f"- Rolün / Bakış açın: {role}\n"
-            f"- Analiz odağın: {focus}"
+            f"### AJAN: {role}\n"
+            f"- Rolün / Bakış açın: {instruction}\n"
+            f"- Analiz odağın: {focus}\n"
+            f"- Sana atanan göstergeler (yalnızca bunları kullan): {assigned}"
         )
     return "\n\n".join(blocks)
 
@@ -162,16 +230,24 @@ Yukarıdaki verileri analiz et ve 5 uzman beynin tartışmasını simüle et. SA
 
 {
   "brains": [
-    {"ajan": "TREND", "analiz": "Kısa, net ve verilere dayalı argüman (Maksimum 2 cümle)", "karar": "AL", "guven_skoru": 0.82},
-    {"ajan": "VOLATILITE", "analiz": "...", "karar": "BEKLE", "guven_skoru": 0.55},
-    {"ajan": "HACIM", "analiz": "...", "karar": "AL", "guven_skoru": 0.71},
-    {"ajan": "SEVİYE", "analiz": "...", "karar": "SAT", "guven_skoru": 0.60},
-    {"ajan": "DUYGU", "analiz": "...", "karar": "BEKLE", "guven_skoru": 0.50}
+    {"ajan": "Trend Avcısı", "analiz": "Kısa, net ve verilere dayalı argüman (MAKSİMUM 2 CÜMLE)", "karar": "AL", "guven_skoru": 0.82},
+    {"ajan": "Matematikçi", "analiz": "...", "karar": "BEKLE", "guven_skoru": 0.55},
+    {"ajan": "Balina İzleyici", "analiz": "...", "karar": "AL", "guven_skoru": 0.71},
+    {"ajan": "Risk Yöneticisi", "analiz": "...", "karar": "SAT", "guven_skoru": 0.60},
+    {"ajan": "Hakem", "analiz": "...", "karar": "BEKLE", "guven_skoru": 0.50}
   ],
   "final_decision": "AL",
   "final_confidence": 0.70,
   "summary": "1-2 cümle genel değerlendirme"
-}"""
+}
+
+ÇIKTI KURALLARI (KESİN):
+- "brains" dizisinde TAM OLARAK 5 nesne olmalı; her birinin "ajan" alanı yukarıdaki rollerle birebir aynı olmalı: "Trend Avcısı", "Matematikçi", "Balina İzleyici", "Risk Yöneticisi", "Hakem".
+- "analiz": SADECE o role atanan göstergelere dayalı, maksimum 2 cümlelik veri argümanı.
+- "karar": yalnızca "AL", "SAT" veya "BEKLE" değerlerinden biri.
+- "guven_skoru": 0.00 - 1.00 arası sayısal değer.
+- Diğer ajanların kararını körü körüne tekrarlama; eğer verin desteklemiyorsa "BEKLE" de.
+"""
 
 
 _KARAR_MAP = {"AL": "BUY", "BUY": "BUY", "SAT": "SELL", "SELL": "SELL",
@@ -179,73 +255,58 @@ _KARAR_MAP = {"AL": "BUY", "BUY": "BUY", "SAT": "SELL", "SELL": "SELL",
 
 
 def _build_market_context(teknik, haberler=None, ml_votes=None):
-    """Piyasa verilerinden Gemini'ye gönderilecek metin oluştur."""
+    """Piyasa verilerini rol matrisine göre HER AJANA YALNIZCA kendi
+    uzmanlık göstergelerini içeren bloklar halinde dağıtır.
+
+    Dönen metin doğrudan {CONTEXT} yerine basılır; böylece Trend Avcısı
+    yalnızca EMA/MACD, Matematikçi yalnızca RSI/Bollinger, Balina İzleyici
+    yalnızca hacim/orderbook, Risk Yöneticisi yalnızca destek/direnç,
+    Hakem ise haberler + genel dengede görür. Bu, ajanların birbirinin
+    ham verisini kopyalayıp sürü psikolojisine girmesini engeller.
+    """
     if not teknik or "price" not in teknik:
         return None
 
-    price = teknik["price"]
-    rsi = teknik.get("rsi", 50)
-    ema_cross = teknik.get("ema_cross", "?")
-    ema_dist = teknik.get("ema_dist", 0)
-    macd_hist = teknik.get("macd_hist", 0)
-    macd_hist_prev = teknik.get("macd_hist_prev", 0)
-    bb_pct = teknik.get("bb_pct", 0.5)
-    vol_ratio = teknik.get("vol_ratio", 1.0)
-    atr = teknik.get("atr", 0)
-    atr_pct = teknik.get("atr_pct", 0)
-    support = teknik.get("support", 0)
-    resistance = teknik.get("resistance", 0)
-    breakout_up = teknik.get("breakout_up", 0)
-    breakout_down = teknik.get("breakout_down", 0)
-    stoch_rsi = teknik.get("stoch_rsi", 50)
-    price_change_5 = teknik.get("price_change_5", 0)
-    sling_color = teknik.get("sling_color", "?")
+    blocks = []
+    for key in _ORDER:
+        info = ROLE_MATRIX.get(key, {})
+        role = _AGENT_ROLES.get(key, key)
+        focus = _AGENT_FOCUS.get(key, "ilgili göstergeler")
 
-    ob = teknik.get("orderbook", {})
-    ob_ratio = ob.get("bid_ask_ratio", 1.0)
-    ob_sinyal = ob.get("bid_ask_sinyal", "notr")
-    spread = ob.get("spread", 0)
+        lines = [
+            f"## {role.upper()} — ATANAN VERİ",
+            f"(Bu role yalnızca aşağıdaki göstergeler verildi; analiz odağı: {focus})",
+        ]
+        for ind in info.get("indicators", []):
+            if ind == "orderbook":
+                ob = teknik.get("orderbook", {}) or {}
+                lines.append(f"- Orderbook Bid/Ask Oranı: {ob.get('bid_ask_ratio', 1.0)}")
+                lines.append(f"- Orderbook Sinyalı: {ob.get('bid_ask_sinyal', 'notr')}")
+                lines.append(f"- Spread: {ob.get('spread', 0)}")
+                continue
+            val = teknik.get(ind)
+            if val is None:
+                continue
+            if isinstance(val, bool):
+                val = "EVET" if val else "Hayır"
+            elif isinstance(val, float):
+                val = round(val, 3)
+            label = _INDICATOR_LABELS.get(ind, ind)
+            lines.append(f"- {label}: {val}")
 
-    ctx = f"""## CANLI PİYASA VERİLERİ ({settings.symbol})
-Zaman: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Fiyat: {price:,.2f}
-Son 5-bar Değişim: %{price_change_5:.2f}
+        if info.get("news") and haberler and len(haberler) > 0:
+            lines.append("- SON HABERLER (duygu/ton):")
+            for h in haberler[:5]:
+                baslik = h.get("baslik", h.get("title", ""))
+                sentiment = h.get("sentiment", "notr")
+                lines.append(f"  * [{str(sentiment).upper()}] {baslik}")
 
-### TREND & MOMENTUM
-- EMA Kesişim: {ema_cross.upper()}
-- EMA Mesafesi: %{ema_dist:.2f}
-- MACD Histogram: {macd_hist:.4f} (önceki: {macd_hist_prev:.4f})
-- MACD Yön: {"Yükseliyor" if macd_hist > macd_hist_prev else "Düşüyor"}
-- Sling Shot Rengi: {sling_color}
+        blocks.append("\n".join(lines))
 
-### VOLATİLİTE & OSİLATÖRLER
-- RSI (14): {rsi:.1f}
-- StochRSI: {stoch_rsi:.1f}
-- Bollinger %B: {bb_pct:.3f}
-- ATR: {atr:.2f} (%{atr_pct:.2f})
-
-### HACİM & ORDERBOOK
-- Hacim Oranı: {vol_ratio:.2f}x
-- Orderbook Bid/Ask Oranı: {ob_ratio:.3f}
-- Orderbook Sinyali: {ob_sinyal}
-- Spread: {spread:.2f}
-
-### DESTEK & DİRENÇ
-- Destek: {support:,.2f}
-- Direnç: {resistance:,.2f}
-- Yukarı Kırılım: {"EVET" if breakout_up else "Hayır"}
-- Aşağı Kırılım: {"EVET" if breakout_down else "Hayır"}
-"""
-
-    if haberler and len(haberler) > 0:
-        ctx += "\n### SON HABERLER\n"
-        for h in haberler[:5]:
-            baslik = h.get("baslik", "")
-            sentiment = h.get("sentiment", "notr")
-            ctx += f"- [{sentiment.upper()}] {baslik}\n"
+    ctx = "\n\n".join(blocks)
 
     if ml_votes:
-        ctx += "\n### ML AJAN OYLAMASI (Mevcut Sistem)\n"
+        ctx += "\n\n### ML AJAN OYLAMASI (Mevcut Sistem)\n"
         for name, vote in ml_votes.items():
             if name.startswith("_"):
                 continue
@@ -309,15 +370,27 @@ def run_debate(teknik, haberler=None, ml_votes=None, brains=None, lessons=None):
                 conf = float(bb.get("guven_skoru", bb.get("confidence", 0)) or 0)
             except Exception:
                 conf = 0.0
+            # "ajan" alanı ya rol adı ya dahili anahtar olabilir; ikisine de normalize et
+            raw_name = str(bb.get("ajan", bb.get("name", ""))).strip()
+            internal_key = _ROLE_TO_KEY.get(raw_name)
+            if not internal_key:
+                internal_key = raw_name.lower()
+            ajan_display = _AGENT_ROLES.get(internal_key, raw_name)
+            analiz = bb.get("analiz", bb.get("argument", ""))
+            # Analizi 2 cümleyle sınırla (noktaya göre böl, ilk 2 cümle)
+            if analiz and isinstance(analiz, str):
+                parts = [p.strip() for p in analiz.replace("!", ".").split(". ") if p.strip()]
+                if len(parts) > 2:
+                    analiz = parts[0] + ". " + parts[1] + "."
             mapped.append({
-                "name": bb.get("ajan", bb.get("name", "?")),
-                "ajan": bb.get("ajan", bb.get("name", "?")),
+                "name": internal_key,
+                "ajan": ajan_display,
                 "vote": vote,
                 "karar": karar,
                 "confidence": round(conf, 3),
                 "guven_skoru": round(conf, 3),
-                "argument": bb.get("analiz", bb.get("argument", "")),
-                "analiz": bb.get("analiz", bb.get("argument", "")),
+                "argument": analiz,
+                "analiz": analiz,
             })
         debate["brains"] = mapped
 

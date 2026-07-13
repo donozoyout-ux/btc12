@@ -357,6 +357,20 @@ class Bot:
                     print(f"  -> DINAMIK ISLEM MIKTARI: ${size:.2f} (equity=${eq:.0f}, guven=%{confidence:.0%}, WR=%{wr:.0%})")
                 except Exception as e:
                     print(f"[SELF] boyut hesaplama hatasi: {e}")
+                # Girış anı gösterge snapshot'ı (geri besleme döngüsü için)
+                try:
+                    quant_agent.state["son_giris_teknik"] = {
+                        "rsi": teknik.get("rsi"),
+                        "macd_hist": teknik.get("macd_hist"),
+                        "macd_hist_prev": teknik.get("macd_hist_prev"),
+                        "bb_pct": teknik.get("bb_pct"),
+                        "ema_cross": teknik.get("ema_cross"),
+                        "vol_ratio": teknik.get("vol_ratio"),
+                        "stoch_rsi": teknik.get("stoch_rsi"),
+                    }
+                    quant_agent._save_state()
+                except Exception:
+                    pass
                 self._alisi_gerceklestir(karar)
                 executed = True
 
@@ -440,6 +454,25 @@ class Bot:
                 mode = result.get("mode", "SIM")
                 quant_agent.islem_sonucu_kaydet(pl)
                 db.save_trade("SELL", result["price"], result["qty"], pl, sebep, quant_agent.state.get("son_giris_fiyati", 0), mode)
+                # --- GERİ BESLEME DÖNGÜSÜ ---
+                # Zarar / stop-loss olan işlemlerde giriş koşulunu mini ders olarak kaydet.
+                if pl < 0:
+                    try:
+                        from src import self_improve
+                        entry = quant_agent.state.get("son_giris_teknik") or {}
+                        cond = self_improve.describe_entry_condition(entry)
+                        is_sl = "stop" in (sebep or "").lower() or "sl" in (sebep or "").lower()
+                        reason_word = "Stop-loss" if is_sl else "Zararlı"
+                        lesson = (f"{reason_word} işlem: [{cond}] ile AL yapıldı, terste kalındı. "
+                                  f"Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) "
+                                  f"tekrar AL sinyali üretme.")
+                        self_improve.add_trade_lesson(lesson)
+                        try:
+                            tg.send("🧠 <b>OTONOM ÖĞRENME</b>\n\n" + lesson)
+                        except Exception:
+                            pass
+                    except Exception as e:
+                        print(f"[SELF-IMPROVE] trade lesson hatasi: {e}")
                 # Kapanan işlemi öğrenme döngüsüne bildir
                 try:
                     n = self_improve.note_trade_closed()

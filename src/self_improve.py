@@ -95,6 +95,57 @@ def build_recent_reflection(limit=5):
         f"Yeni kararını verirken bu başarısız stratejiyi tekrarlamadığından emin ol."
     )
 
+
+def describe_entry_condition(t):
+    """Giriş anındaki gösterge koşulunu kısa Türkçe metne çevirir (ders üretimi için)."""
+    if not t:
+        return "bilinmeyen gösterge durumu"
+    parts = []
+    try:
+        rsi = float(t.get("rsi", 50))
+        if rsi >= 70:
+            parts.append(f"yüksek RSI ({rsi:.0f})")
+        elif rsi <= 30:
+            parts.append(f"düşük RSI ({rsi:.0f})")
+        macd = float(t.get("macd_hist", 0) or 0)
+        macd_prev = float(t.get("macd_hist_prev", 0) or 0)
+        if macd > 0 and macd < macd_prev:
+            parts.append("zayıflayan MACD momentumu")
+        elif macd < 0:
+            parts.append("negatif MACD")
+        bb = float(t.get("bb_pct", 0.5) or 0.5)
+        if bb >= 0.95:
+            parts.append(f"fiyat üst Bollinger bandında (%B={bb:.2f})")
+        elif bb <= 0.05:
+            parts.append(f"fiyat alt Bollinger bandında (%B={bb:.2f})")
+        if t.get("ema_cross") == "bearish":
+            parts.append("bearish EMA kesişimi")
+        vol = float(t.get("vol_ratio", 1) or 1)
+        if vol >= 2.5:
+            parts.append(f"anormal hacim ({vol:.1f}x)")
+    except Exception:
+        pass
+    return ", ".join(parts) if parts else "normal gösterge değerleri"
+
+
+def add_trade_lesson(text):
+    """Zarar/stop-loss işleminden üretilen mini dersi hafızaya kaydeder."""
+    if not text:
+        return
+    cfg = load()
+    cfg.setdefault("trade_lessons", [])
+    cfg["trade_lessons"].append({
+        "time": datetime.now().isoformat(),
+        "lesson": text,
+    })
+    cfg["trade_lessons"] = cfg["trade_lessons"][-20:]
+    save(cfg)
+
+
+def get_trade_lessons(limit=10):
+    cfg = load()
+    return list(reversed(cfg.get("trade_lessons", [])[-limit:]))
+
 def decide_position_size(equity, confidence, win_rate=0.5, drawdown_pct=0.0, daily_progress=0.0):
     """
     Sistemin kendi işlem miktarını belirlemesi.
