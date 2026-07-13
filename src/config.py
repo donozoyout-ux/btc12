@@ -71,12 +71,9 @@ settings = Settings()
 if not settings.telegram_bot_token or not settings.telegram_chat_id:
     print("[CONFIG] UYARI: Telegram API anahtarlari eksik! (opsiyonel)")
 if settings.executor_mode == "binance":
-    if not settings.binance_api_key or not settings.binance_secret_key:
-        print("[CONFIG] UYARI: EXECUTOR_MODE=binance ama Binance API anahtari yok -> SIM'e duser.")
-        print("[CONFIG] Gercek islem icin .env'e BINANCE_API_KEY ve BINANCE_SECRET_KEY ekle.")
-    else:
-        mode = "LIVE" if not settings.binance_testnet else "TESTNET"
-        print(f"[CONFIG] Binance API anahtarlari mevcut, {mode} modunda baglanilacak")
+    print("[CONFIG] UYARI: EXECUTOR_MODE=binance ama Binance hesabi kaldirildi.")
+    print("[CONFIG] Simulasyon moduna geciliyor (sahte para, canli veri CoinGecko).")
+    settings.executor_mode = "sim"
 else:
-    print(f"[CONFIG] MOD: SIMULASYON (gercek islem yok). Baslangic sermaye: ${settings.sim_starting_capital:.0f}")
-    print("[CONFIG] Veri kaynagi: Binance (public) -> CoinGecko -> sentetik fallback")
+    print(f"[CONFIG] MOD: SIMULASYON (gercek islem YOK, sahte para). Baslangic sermaye: ${settings.sim_starting_capital:.0f}")
+    print("[CONFIG] Canli veri kaynagi: CoinGecko -> sentetik fallback")

@@ -13,14 +13,11 @@ SCALP_INDICATOR_KEYS = [
     "sling_color", "breakout_up", "breakout_down", "support", "resistance",
 ]
 
-# Binance bölge engeli olabilir; bu yüzden veri katmanı çoklu kaynaktan beslenir:
-#   1) Binance public REST (anahtar gerektirmez)
-#   2) CoinGecko public API (anahtar gerektirmez)
-#   3) Hiçbiri çalışmazsa sentetik (rastgele yürüyen) fiyat üretilir
-# Böylece simülasyon HER KOŞULDA çalışır; gerçek işlem (executor) ise yalnızca
-# açıkça EXECUTOR_MODE=binance + API key verilirse yapılır.
+# VERİ KAYNAĞI: Yalnızca CANLI PİYASA VERİSİ (hesap/anahtar gerektirmez).
+#   1) CoinGecko public API  (gerçek BTC fiyatı + mum verisi)
+#   2) Hiçbiri çalışmazsa sentetik (rastgele yürüyen) fiyat üretilir
+# Binance'e artık hiç bağlanılmaz; sistem tamamen simülasyon (sahte para) modundadır.
 
-_BINANCE_REST = "https://api.binance.com/api/v3"
 _COINGECKO_REST = "https://api.coingecko.com/api/v3"
 
 _VALID_TF = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h",
@@ -59,69 +56,32 @@ class Trader:
         }.get(base, base.lower())
 
     # ──────────────────────────────────────────────────────────────
-    #  Fiyat
+    #  Fiyat (canlı)
     # ──────────────────────────────────────────────────────────────
     def get_price(self):
-        # 5 sn içinde taze fiyat varsa yeniden ağ çağrısı yapma
-        if self._last_price and (time.time() - self._last_price_ts) < 5:
+        if self._last_price and (time.time() - self._last_price_ts) < 10:
             return self._last_price
-
-        pair = self.symbol.replace("/", "")
-        # 1) Binance
-        try:
-            r = requests.get(f"{_BINANCE_REST}/ticker/price?symbol={pair}", timeout=8)
-            if r.status_code == 200:
-                p = float(r.json()["price"])
-                self._last_price, self._last_source, self._last_price_ts = p, "binance", time.time()
-                return p
-        except Exception:
-            pass
-
-        # 2) CoinGecko
         try:
             cid = self._coingecko_id()
-            r = requests.get(f"{_COINGECKO_REST}/simple/price?ids={cid}&vs_currencies=usd", timeout=10)
+            r = requests.get(
+                f"{_COINGECKO_REST}/simple/price?ids={cid}&vs_currencies=usd",
+                timeout=10,
+            )
             if r.status_code == 200:
                 p = float(r.json()[cid]["usd"])
                 self._last_price, self._last_source, self._last_price_ts = p, "coingecko", time.time()
                 return p
         except Exception:
             pass
-
-        # 3) Son bilinen fiyat
         if self._last_price:
             return self._last_price
-
         self._last_price = 60000.0
         self._last_price_ts = time.time()
         return self._last_price
 
     # ──────────────────────────────────────────────────────────────
-    #  OHLCV (mum) verisi
+    #  OHLCV (mum) verisi — CoinGecko (canlı) -> sentetik
     # ──────────────────────────────────────────────────────────────
-    def _binance_klines(self, interval, limit):
-        pair = self.symbol.replace("/", "")
-        try:
-            r = requests.get(
-                f"{_BINANCE_REST}/klines?symbol={pair}&interval={interval}&limit={limit}",
-                timeout=10,
-            )
-            if r.status_code != 200:
-                return None
-            data = r.json()
-            if not isinstance(data, list) or not data:
-                return None
-            rows = [[k[0], float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])] for k in data]
-            df = pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
-            df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-            df = df[["datetime", "open", "high", "low", "close", "volume"]]
-            self._last_price = float(df["close"].iloc[-1])
-            self._last_source = "binance"
-            return df
-        except Exception as e:
-            print(f"[TRADER] Binance veri hatasi: {e}")
-            return None
-
     def _coingecko_bars(self, interval, limit):
         minutes = self._tf_to_min(interval)
         total_min = minutes * limit
@@ -168,9 +128,6 @@ class Trader:
             return None
 
     def _fetch_ohlcv(self, interval, limit):
-        df = self._binance_klines(interval, limit)
-        if df is not None and len(df) >= 2:
-            return df
         df = self._coingecko_bars(interval, limit)
         if df is not None and len(df) >= 2:
             return df
@@ -188,7 +145,7 @@ class Trader:
             df = self._resample(base, tf) if base is not None and len(base) >= 2 else None
 
         if df is None or len(df) < 2:
-            print("[TRADER] Tum veri kaynaklari basarisiz -> sentetik veri uretiliyor.")
+            print("[TRADER] Canli veri alinamadi -> sentetik veri uretiliyor.")
             df = self._synthetic_bars(tf, limit)
         return df
 
@@ -213,46 +170,15 @@ class Trader:
         return df[["datetime", "open", "high", "low", "close", "volume"]]
 
     # ──────────────────────────────────────────────────────────────
-    #  Orderbook / son işlemler (Binance yoksa nötr sentetik)
+    #  Orderbook / son işlemler (CoinGecko vermez -> nötr sentetik)
     # ──────────────────────────────────────────────────────────────
     def get_orderbook(self, limit=50):
-        pair = self.symbol.replace("/", "")
-        try:
-            r = requests.get(f"{_BINANCE_REST}/depth?symbol={pair}&limit=50", timeout=8)
-            if r.status_code == 200:
-                book = r.json()
-                bids, asks = book["bids"], book["asks"]
-                bid_vol = sum(float(b[1]) for b in bids)
-                ask_vol = sum(float(a[1]) for a in asks)
-                top10_bid = sum(float(b[1]) for b in bids[:10])
-                top10_ask = sum(float(a[1]) for a in asks[:10])
-                imbalance = round(bid_vol / ask_vol, 2) if ask_vol > 0 else 1.0
-                return {
-                    "bid_ask_ratio": imbalance,
-                    "bid_ask_sinyal": "alis_baskisi" if imbalance > 1.2 else "satis_baskisi" if imbalance < 0.8 else "notr",
-                    "spread": round(float(asks[0][0]) - float(bids[0][0]), 2),
-                    "bid_volume": round(bid_vol, 4),
-                    "ask_volume": round(ask_vol, 4),
-                    "top10_bid": round(top10_bid, 4),
-                    "top10_ask": round(top10_ask, 4),
-                }
-        except Exception:
-            pass
         return {
             "bid_ask_ratio": 1.0, "bid_ask_sinyal": "notr", "spread": 0.0,
             "bid_volume": 0.0, "ask_volume": 0.0, "top10_bid": 0.0, "top10_ask": 0.0,
         }
 
     def get_recent_trades(self, limit=50):
-        pair = self.symbol.replace("/", "")
-        try:
-            r = requests.get(f"{_BINANCE_REST}/trades?symbol={pair}&limit={limit}", timeout=8)
-            if r.status_code == 200:
-                trades = r.json()
-                buys = sum(1 for t in trades if t.get("isBuyerMaker") is False)
-                return {"buy_sell_ratio": round(buys / max(len(trades) - buys, 1), 2)}
-        except Exception:
-            pass
         return {"buy_sell_ratio": 1.0}
 
     # ──────────────────────────────────────────────────────────────

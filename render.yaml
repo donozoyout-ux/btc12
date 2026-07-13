@@ -6,12 +6,6 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python app.py
     envVars:
-      - key: BINANCE_API_KEY
-        sync: false
-      - key: BINANCE_SECRET_KEY
-        sync: false
-      - key: BINANCE_TESTNET
-        value: "false"
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID
