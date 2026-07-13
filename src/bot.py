@@ -30,6 +30,8 @@ class Bot:
         self.last_news = []
         self.last_gemini_debate = None
         self._error_cooldown = 0
+        self._last_signal_notify = 0
+        self._last_signal_action = None
 
     def start(self, mesaj_gonder=True):
         if self.running:
@@ -286,6 +288,22 @@ class Bot:
             debate = llm_agent.run_debate(teknik, haberler, ml_votes, brains=brains_cfg, lessons=lessons_cfg)
             if debate:
                 self.last_gemini_debate = debate
+                # Güçlü 5-ajan sinyali için Telegram bildirimi (spam önlemek adına
+                # yön değişince veya 10 dk geçince bir kez)
+                try:
+                    fd = debate.get("final_decision", "HOLD")
+                    fc = float(debate.get("final_confidence", 0) or 0)
+                    if fd in ("BUY", "SELL") and fc >= 0.60:
+                        now = time.time()
+                        if fd != self._last_signal_action or (now - self._last_signal_notify) > 600:
+                            self._last_signal_notify = now
+                            self._last_signal_action = fd
+                            tg.send(f"📡 <b>5 AJAN SİNYALİ</b>\n\n"
+                                    f"Yön: <b>{'AL' if fd == 'BUY' else 'SAT'}</b>\n"
+                                    f"Güven: <b>%{fc*100:.0f}</b>\n"
+                                    f"(Güçlü çoğunluk sağlandı, işlem değerlendirmesi yapılıyor)")
+                except Exception:
+                    pass
         except Exception as e:
             print(f"[GEMINI] Debate cagirma hatasi: {e}")
 

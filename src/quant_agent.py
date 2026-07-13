@@ -238,6 +238,34 @@ class QuantAgent:
         print(f"  [CONSENSUS] Karar: {consensus_action} | Güven: {consensus_confidence:.0%} | Konsensüs: {'EVET' if consensus_ok else 'HAYIR'}")
         print(f"  [CONSENSUS] AL:{consensus_result['buy_count']} SAT:{consensus_result['sell_count']} BEKLE:{consensus_result['hold_count']}")
 
+        # ─── GEMINI 5-BEYIN TARTIŞMA KARARI (ekrandaki 5 ajansın gerçek kararı) ───
+        # Kullanıcının izlediği bu 5 ajan (Trend Avcısı / Matematikçi / Balina İzleyici /
+        # Risk Yöneticisi / Hakem) güçlü ve çoğunlukla aynı yönde karar verirse ARTIL
+        # doğrudan tetiklenir. Böylece ekranda "5 AL" görünüyorsa sistem de işlem yapar.
+        debate_action = "HOLD"
+        debate_conf = 0.0
+        debate_buy = 0
+        debate_sell = 0
+        debate_votes = {}
+        if gemini_debate:
+            debate_action = gemini_debate.get("final_decision", "HOLD")
+            try:
+                debate_conf = float(gemini_debate.get("final_confidence", 0) or 0)
+            except Exception:
+                debate_conf = 0.0
+            for b in gemini_debate.get("brains", []):
+                v = b.get("vote") or "HOLD"
+                debate_votes[b.get("ajan", "?")] = v
+                if v == "BUY":
+                    debate_buy += 1
+                elif v == "SELL":
+                    debate_sell += 1
+        # Güçlü sinyal: final yön + güven >= %60 + en az 3/5 ajan aynı yönde
+        debate_strong_buy = debate_action == "BUY" and debate_conf >= 0.60 and debate_buy >= 3
+        debate_strong_sell = debate_action == "SELL" and debate_conf >= 0.60 and debate_sell >= 3
+        if debate_strong_buy or debate_strong_sell:
+            print(f"  [DEBATE] final={debate_action} guven={debate_conf:.0%} | AL:{debate_buy} SAT:{debate_sell} (GÜÇLÜ SİNYAL)")
+
         # Ardışık kayıp durumunda güven eşiğini yükselt
         min_confidence = 0.50
         if ardisik_kayip >= settings.max_consecutive_losses:
@@ -250,19 +278,24 @@ class QuantAgent:
             if v["action"] != "HOLD":
                 used_indicators.append(name)
 
-        # Konsensüs + AI Birleşik Karar
-        if consensus_ok and consensus_action == "BUY" and not acik_pozisyon:
-            # AI veto kontrolü
-            if ai_prob < 0.35 and ai_conf > 0.3:
+        # Konsensüs + AI Birleşik Karar  (VEYA güçlü 5-ajan tartışması)
+        if (consensus_ok and consensus_action == "BUY" and not acik_pozisyon) or (debate_strong_buy and not acik_pozisyon):
+            # Güven birleştirme: tartışma kararı mı, konsensüs mü?
+            if debate_strong_buy and not (consensus_ok and consensus_action == "BUY"):
+                combined_confidence = debate_conf
+                src = "GEMINI_DEBATE"
+            else:
+                combined_confidence = consensus_confidence * 0.50 + ai_prob * 0.30 + (signal.get("long_score", 0) / 5 * 0.20)
+                combined_confidence = max(combined_confidence, consensus_confidence * 0.7)
+                src = "CONSENSUS"
+
+            # AI veto kontrolü (yalnızca konsensüs kaynağı için; tartışma kararına saygı duyulur)
+            if src == "CONSENSUS" and ai_prob < 0.35 and ai_conf > 0.3:
                 system_log = f"CONSENSUS_BUY_VETOED|AI:{ai_prob:.0%}|{details}"
                 print(f"  [VETO] Konsensüs AL dedi ama XGBoost düşüş öngörüyor ({ai_prob:.0%})")
                 return self._hold_karar(risk_seviyesi, "AI Veto", system_log)
 
-            # Güven birleştirme: %50 Konsensüs + %30 AI + %20 Kural
-            combined_confidence = consensus_confidence * 0.50 + ai_prob * 0.30 + (signal.get("long_score", 0) / 5 * 0.20)
-            combined_confidence = max(combined_confidence, consensus_confidence * 0.7)
-
-            if combined_confidence >= min_confidence:
+            if src == "GEMINI_DEBATE" or combined_confidence >= min_confidence:
                 sl_price = round(fiyat - 1.5 * atr, 2)
                 tp_price = round(fiyat + 3 * atr, 2)
                 
@@ -279,15 +312,16 @@ class QuantAgent:
                     "time": datetime.now().isoformat(),
                     "indicators": used_indicators,
                     "consensus_votes": {k: v["action"] for k, v in votes.items()},
+                    "debate_votes": debate_votes,
                     "buy_score": consensus_result["buy_score"],
                     "sell_score": consensus_result["sell_score"],
                     "rsi": rsi,
                 }
 
-                system_log = f"CONSENSUS_BUY|{consensus_result['buy_count']}/5|AI:{ai_prob:.0%}|Size:${order_size_usd:.2f}|{details}"
+                system_log = f"{src}_BUY|ML:{consensus_result['buy_count']}/5|Debate:{debate_buy}AL/{debate_sell}SAT|AI:{ai_prob:.0%}|Size:${order_size_usd:.2f}|{details}"
 
                 memory_update = {
-                    "aktif_strateji_notu": f"ALIS: {consensus_result['buy_count']}/5 ajan onayladı",
+                    "aktif_strateji_notu": f"ALIS ({src}): {consensus_result['buy_count']}/5 konsensüs, {debate_buy}/5 tartışma onayladı",
                     "risk_seviyesi_ayari": risk_seviyesi
                 }
 
@@ -307,32 +341,40 @@ class QuantAgent:
                     "system_log": system_log
                 }
 
-        elif consensus_ok and consensus_action == "SELL" and acik_pozisyon:
-            # AI veto kontrolü (satış için ters)
-            if ai_prob > 0.65 and ai_conf > 0.3:
+        elif (consensus_ok and consensus_action == "SELL" and acik_pozisyon) or (debate_strong_sell and acik_pozisyon):
+            mevcut_kar = (fiyat - giris_fiyati) / giris_fiyati * 100 if giris_fiyati > 0 else 0
+            if debate_strong_sell and not (consensus_ok and consensus_action == "SELL"):
+                combined_confidence = debate_conf
+                src = "GEMINI_DEBATE"
+            else:
+                combined_confidence = consensus_confidence * 0.50 + (1 - ai_prob) * 0.30 + (signal.get("short_score", 0) / 5 * 0.20)
+                combined_confidence = max(combined_confidence, consensus_confidence * 0.7)
+                src = "CONSENSUS"
+
+            # AI veto kontrolü (yalnızca konsensüs kaynağı için; tartışma kararına saygı duyulur)
+            if src == "CONSENSUS" and ai_prob > 0.65 and ai_conf > 0.3:
                 system_log = f"CONSENSUS_SELL_VETOED|AI:{ai_prob:.0%}|{details}"
                 print(f"  [VETO] Konsensüs SAT dedi ama XGBoost yükseliş öngörüyor ({ai_prob:.0%})")
                 return self._hold_karar(risk_seviyesi, "AI Veto (Yükseliş)", system_log)
 
-            mevcut_kar = (fiyat - giris_fiyati) / giris_fiyati * 100 if giris_fiyati > 0 else 0
-            combined_confidence = consensus_confidence * 0.50 + (1 - ai_prob) * 0.30 + (signal.get("short_score", 0) / 5 * 0.20)
-            combined_confidence = max(combined_confidence, consensus_confidence * 0.7)
-
-            if combined_confidence >= min_confidence:
+            if src == "GEMINI_DEBATE" or combined_confidence >= min_confidence:
                 self.state["son_sinyal"] = {
                     "action": "SELL",
                     "price": fiyat,
                     "time": datetime.now().isoformat(),
                     "indicators": used_indicators,
                     "consensus_votes": {k: v["action"] for k, v in votes.items()},
+                    "debate_votes": debate_votes,
                     "buy_score": consensus_result["buy_score"],
                     "sell_score": consensus_result["sell_score"],
                 }
 
-                system_log = f"CONSENSUS_SELL|{consensus_result['sell_count']}/5|AI:{ai_prob:.0%}|{details}"
+                system_log = f"{src}_SELL|ML:{consensus_result['sell_count']}/5|Debate:{debate_buy}AL/{debate_sell}SAT|AI:{ai_prob:.0%}|{details}"
 
                 memory_update = {
-                    "aktif_strateji_notu": f"SATIS: {consensus_result['sell_count']}/5 ajan (Kar: %{mevcut_kar:+.2f})" if abs(mevcut_kar) > 0 else f"SATIS: {consensus_result['sell_count']}/5 ajan",
+                    "aktif_strateji_notu": (f"SATIS ({src}): {consensus_result['sell_count']}/5 konsensüs, {debate_sell}/5 tartışma (Kar: %{mevcut_kar:+.2f})"
+                                            if abs(mevcut_kar) > 0 else
+                                            f"SATIS ({src}): {consensus_result['sell_count']}/5 konsensüs, {debate_sell}/5 tartışma"),
                     "risk_seviyesi_ayari": risk_seviyesi
                 }
 
@@ -352,7 +394,9 @@ class QuantAgent:
                 }
 
         # Konsensüs sağlanamadı → HOLD
-        system_log = f"NO_CONSENSUS|AL:{consensus_result['buy_count']}|SAT:{consensus_result['sell_count']}|BEKLE:{consensus_result['hold_count']}|{details}"
+        system_log = (f"NO_TRADE|ML AL:{consensus_result['buy_count']} SAT:{consensus_result['sell_count']} "
+                      f"|Debate:{debate_action}(%{debate_conf*100:.0f}) AL:{debate_buy} SAT:{debate_sell}"
+                      f"|{details}")
         return self._hold_karar(risk_seviyesi, "Konsensüs yok", system_log)
 
     def _hold_karar(self, risk_seviyesi, strateji_notu, system_log=""):
