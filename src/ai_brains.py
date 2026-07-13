@@ -136,3 +136,24 @@ def update_brain(key, instruction=None, enabled=None, label=None):
 
 def order():
     return list(_ORDER)
+
+
+_DIRECTIVE_FILE = os.path.join("config", "ai_directive.json")
+
+
+def load_directive():
+    """Kullanıcının 5 beyne verdiği eğitim talimatı (prompt)."""
+    try:
+        with open(_DIRECTIVE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("directive", "")
+    except Exception:
+        return ""
+
+
+def save_directive(text):
+    if not os.path.exists("config"):
+        os.makedirs("config", exist_ok=True)
+    with open(_DIRECTIVE_FILE, "w", encoding="utf-8") as f:
+        json.dump({"directive": text or ""}, f, ensure_ascii=False, indent=2)
+    return True

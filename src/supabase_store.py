@@ -336,3 +336,20 @@ def create_tables():
         updated_at TIMESTAMPTZ DEFAULT NOW()
     );
     """)
+
+
+def reset_all():
+    """Tüm ilgili Supabase tablolarını temizler (tam sıfırlama)."""
+    try:
+        c = _client()
+        for table in ("scans", "trades", "decisions", "signals",
+                      "ai_memory", "consensus_states", "agent_state"):
+            try:
+                c.table(table).delete().neq("id", -1).execute()
+            except Exception as e:
+                print(f"[SUPABASE] reset_all {table} hatasi: {e}")
+        return True
+    except Exception as e:
+        print(f"[SUPABASE] reset_all hatasi: {e}")
+        return False
+

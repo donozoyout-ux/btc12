@@ -33,6 +33,12 @@ class Bot:
 
     def start(self, mesaj_gonder=True):
         if self.running:
+            # Zaten çalışıyorsa sadece duraklatılmışsa devam ettir
+            if self.paused:
+                self.paused = False
+                if mesaj_gonder:
+                    tg.send("▶ Bot duraklatma kaldırıldı, taramaya devam ediliyor.")
+                return
             if mesaj_gonder:
                 tg.send("Bot zaten calisiyor. <code>/stop</code> ile durdurabilirsin.")
             return
@@ -48,12 +54,13 @@ class Bot:
                 )
             except:
                 pass
-        print("[BOT] Baslatildi, ilk tarama yapiliyor...")
+        print("[BOT] Baslatildi, tarama dongusu baslatiliyor...")
+        threading.Thread(target=self._main_loop, daemon=True).start()
+        # İlk taramayı ayrı çağır (hata olsa bile döngü çalışmaya devam eder)
         try:
             self.scan()
         except Exception as e:
             print(f"[BOT] Ilk tarama hatasi: {e}")
-        threading.Thread(target=self._main_loop, daemon=True).start()
 
     def stop(self):
         self.running = False
@@ -588,6 +595,51 @@ class Bot:
     def cmd_devam(self):
         self.paused = False
         tg.send("▶ Tarama devam ediyor.")
+
+    def reset_everything(self):
+        """Simülasyonu BAŞTAN SONA sıfırlar: tüm veriler, istatistikler,
+        öğrenilen dersler ve simüle edilmiş bakiye. Binance'e hiç dokunmaz."""
+        # 1. Tüm veritabanı kayıtlarını temizle (yerel + supabase)
+        try:
+            db.reset_all()
+        except Exception as e:
+            print(f"[RESET] db reset hatasi: {e}")
+
+        # 2. Ajan istatistiklerini sıfırla
+        for k in ("toplam_islem", "kazanma", "kaybetme", "ardisik_kayip",
+                  "son_islem_kar_zarar", "son_giris_fiyati", "son_sl", "son_tp",
+                  "consecutive_wins", "free_cash"):
+            if k in quant_agent.state:
+                quant_agent.state[k] = 0 if k != "free_cash" else 0.0
+        quant_agent.state["active_pool_size"] = 1000.0
+        quant_agent._save_state()
+
+        # 3. Konsensüs koordinatör sayaclarını sıfırla
+        consensus.total_decisions = 0
+        consensus.consensus_reached = 0
+
+        # 4. Öz-değerlendirme derslerini temizle (ayarlar korunur)
+        try:
+            from src import self_improve
+            s = self_improve.load()
+            s["lessons"] = []
+            s["position_aggressiveness"] = 1.0
+            s["total_reviews"] = 0
+            s["trades_since_review"] = 0
+            self_improve.save(s)
+        except Exception as e:
+            print(f"[RESET] self_improve reset hatasi: {e}")
+
+        # 5. Simülasyon bakiyesini başlangıç değerine çek
+        try:
+            executor.reset_sim()
+        except Exception as e:
+            print(f"[RESET] executor reset hatasi: {e}")
+
+        self.last_action = None
+        self.last_gemini_debate = None
+        print("[RESET] Simülasyon baştan sona sıfırlandı.")
+        return True
 
     def get_status(self):
         try:

@@ -143,7 +143,42 @@ class Database:
         finally:
             conn.close()
 
-    def get_trade_history(self, limit=50):
+    def reset_all(self):
+        """Tüm yerel ve Supabase verilerini (scans, trades, decisions, signals) sıfırlar."""
+        conn = self._conn()
+        try:
+            conn.execute("DELETE FROM scans")
+            conn.execute("DELETE FROM trades")
+            conn.execute("DELETE FROM decisions")
+            conn.execute("DELETE FROM signals")
+            conn.commit()
+        finally:
+            conn.close()
+        try:
+            supabase_store.reset_all()
+        except Exception as e:
+            print(f"[DATABASE] Supabase reset hatasi (yok sayildi): {e}")
+        return True
+
+    def get_trade_pnl(self, limit=100):
+        """Sadece kâr/zarar odaklı işlem geçmişi (tarih, aksiyon, pnl, mod)."""
+        conn = self._conn()
+        try:
+            rows = conn.execute(
+                "SELECT created_at, action, pnl, mode FROM trades ORDER BY id DESC LIMIT ?",
+                (limit,)
+            ).fetchall()
+            return [
+                {
+                    "time": r[0],
+                    "action": r[1],
+                    "pnl": round(r[2], 2) if r[2] else 0,
+                    "mode": r[3] or "SIM",
+                }
+                for r in rows
+            ]
+        finally:
+            conn.close()
         conn = self._conn()
         try:
             rows = conn.execute(

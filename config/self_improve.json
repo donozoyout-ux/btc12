@@ -1,0 +1,8 @@
+{
+  "position_aggressiveness": 1.0,
+  "min_confidence_threshold": 0.45,
+  "lessons": [],
+  "last_review": null,
+  "trades_since_review": 0,
+  "total_reviews": 0
+}

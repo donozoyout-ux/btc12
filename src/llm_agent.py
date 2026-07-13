@@ -100,7 +100,22 @@ def _build_brain_instructions(brains=None):
             lines.append(f"- {name}: {instr}")
     if not lines:
         return ""
-    return "\n\n### UZMANLIK TALİMATLARI (Kullanıcı tanımlı)\n" + "\n".join(lines)
+
+    # Kullanıcının 5 beyne verdiği eğitim talimatı (AI Yönet -> prompt ile eğit)
+    directive_text = ""
+    try:
+        from src import ai_brains
+        directive = ai_brains.load_directive()
+        if directive:
+            directive_text = (
+                "\n\n### KULLANICININ EĞİTİM TALİMATI (AI Yönet üzerinden verildi)\n"
+                f"{directive}\n"
+                "Bu talimatı tüm beyinler için ÜSTTEN BAĞLAYICI bir rehber olarak uygula."
+            )
+    except Exception:
+        pass
+
+    return "\n\n### UZMANLIK TALİMATLARI (Kullanıcı tanımlı)\n" + "\n".join(lines) + directive_text
 
 
 def _build_market_context(teknik, haberler=None, ml_votes=None):

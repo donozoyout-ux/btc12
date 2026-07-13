@@ -178,8 +178,9 @@ body {
 
     <!-- Sistem Kontrolleri -->
     <div class="flex items-center gap-2 bg-surface-lowest border border-white/5 rounded-lg p-1">
-      <button onclick="startBot()" class="btn text-[10px] font-bold text-gray-400 hover:text-white px-2.5 py-1 rounded">START</button>
-      <button onclick="stopBot()" class="btn text-[10px] font-bold text-gray-400 hover:text-white px-2.5 py-1 rounded">STOP</button>
+      <button id="btnStart" onclick="startBot()" class="btn text-[10px] font-bold text-gray-400 hover:text-white px-2.5 py-1 rounded">START</button>
+      <button id="btnStop" onclick="stopBot()" class="btn text-[10px] font-bold text-gray-400 hover:text-white px-2.5 py-1 rounded">STOP</button>
+      <button onclick="resetAll()" class="btn text-[10px] font-bold text-rose-300 hover:text-white px-2.5 py-1 rounded border border-rose-500/30" title="Simülasyonu baştan sona sıfırla">TAM SIFIRLA</button>
       <button onclick="scanNow()" class="btn bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-3 py-1 rounded-md shadow-md shadow-blue-500/10">
         TARA
       </button>
@@ -233,27 +234,6 @@ body {
   </section>
 
   <!-- 🧠 GEMINi 5-BEYiN AI TARTIŞMA PANELi -->
-  <section class="glass rounded-2xl p-5 border border-cyan-500/15" data-purpose="gemini-debate-panel" id="geminiSection">
-    <div class="border-b border-white/5 pb-3 mb-4 flex items-center justify-between">
-      <h3 class="text-sm font-bold text-white flex items-center gap-2">
-        <span class="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 animate-pulse"></span>
-        🧠 Gemini 5-Beyin AI Tartışma Paneli
-      </h3>
-      <div class="flex items-center gap-3">
-        <button onclick="openBrainsEditor()" class="btn text-[9px] font-bold px-2.5 py-1 rounded-md bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/25">⚙️ AI BEYİNLERİNİ DÜZENLE</button>
-        <span class="text-[9px] font-mono text-cyan-400 font-bold" id="geminiStatus">BAĞLANIYOR...</span>
-        <span id="geminiFinalBadge" class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-slate-500/10 text-slate-400 border border-white/10">---</span>
-      </div>
-    </div>
-    <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 gemini-brain-grid" id="geminiBrainCards">
-      <div class="text-slate-500 italic text-center py-6 text-xs col-span-5">Gemini API bağlanıyor...</div>
-    </div>
-    <div class="mt-3 p-3 bg-surface-lowest/60 rounded-xl border border-white/5" id="geminiSummaryBox" style="display:none">
-      <span class="text-[9px] text-slate-500 font-bold uppercase tracking-wider">GENEL DEĞERLENDİRME</span>
-      <p class="text-xs text-slate-300 mt-1 leading-relaxed" id="geminiSummaryText"></p>
-    </div>
-  </section>
-
   <!-- 5 AI AJAN KONSENSÜS PANELİ -->
   <section class="glass rounded-2xl p-5 glass-glow border border-purple-500/10" data-purpose="ai-consensus-panel">
     <div class="border-b border-white/5 pb-3 mb-4 flex items-center justify-between">
@@ -267,6 +247,24 @@ body {
     </div>
     <div class="grid grid-cols-1 sm:grid-cols-5 gap-3" id="agentCards">
       <div class="text-slate-500 italic text-center py-6 text-xs col-span-5">Ajan verileri yükleniyor...</div>
+    </div>
+
+    <!-- AI YÖNET (5 beyne prompt ile eğit) -->
+    <div class="mt-4 pt-4 border-t border-white/5" data-purpose="ai-manage">
+      <div class="flex items-center justify-between mb-2">
+        <button onclick="toggleAiManage()" class="flex items-center gap-2 text-[11px] font-bold text-purple-300 hover:text-purple-200">
+          <span id="aiManageChevron">▸</span> 🤖 AI YÖNET — 5 beyne talimat ver / eğit
+        </button>
+        <button onclick="openBrainsEditor()" class="btn text-[9px] font-bold px-2.5 py-1 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/30 hover:bg-purple-500/25">⚙️ BEYİNLERİ DÜZENLE</button>
+      </div>
+      <div id="aiManageBox" style="display:none">
+        <p class="text-[10px] text-slate-500 mb-2 leading-relaxed">Buraya yazdığın talimat 5 beynin tamamına <b>üstten bağlayıcı rehber</b> olarak eklenir. Örn: "Sadece güçlü trendlerde işlem yap, gereksiz risk alma." Kaydettikten sonra sıradaki tartışmada uygulanır.</p>
+        <textarea id="directiveInput" rows="3" placeholder="5 beyne vermek istediğin eğitim talimatı / strateji notu..." class="w-full bg-surface-lowest/60 border border-white/10 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500/40 resize-none"></textarea>
+        <div class="flex items-center justify-between mt-2">
+          <span id="directiveStatus" class="text-[10px] text-emerald-400"></span>
+          <button onclick="trainDirective()" class="btn bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-extrabold px-3 py-1.5 rounded-md shadow-md shadow-purple-500/10">EĞİT / KAYDET</button>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -421,6 +419,22 @@ body {
       </section>
     </div>
   </div>
+
+  <!-- Sadece Kâr/Zarar Gösterimi -->
+  <section class="glass rounded-2xl p-5" data-purpose="pnl-history">
+    <div class="border-b border-white/5 pb-3 mb-4 flex items-center justify-between">
+      <h3 class="text-sm font-bold text-white flex items-center gap-2">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Kâr / Zarar Geçmişi
+      </h3>
+      <div class="flex items-center gap-3 text-[10px] font-mono">
+        <span class="text-emerald-400">TOPLAM K/Z: <b id="pnlTotal">$0.00</b></span>
+        <span class="text-slate-500">İşlem: <b id="pnlCount">0</b></span>
+      </div>
+    </div>
+    <div id="pnlHistory" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+      <div class="col-span-full text-slate-500 italic text-center py-6 text-xs">Henüz işlem yok</div>
+    </div>
+  </section>
 </main>
 
 <script>
@@ -431,22 +445,86 @@ setInterval(() => {
 function startBot() {
   fetch('/api/start', {method: 'POST'}).then(r => r.json()).then(d => {
     showNotification('Algoritma başlatıldı!', 'success');
-    setTimeout(updateStatus, 1500);
-  });
+    setTimeout(updateStatus, 1200);
+  }).catch(() => showNotification('Bağlantı hatası', 'error'));
 }
 
 function stopBot() {
   fetch('/api/stop', {method: 'POST'}).then(r => r.json()).then(d => {
     showNotification('Algoritma durduruldu.', 'warning');
     setTimeout(updateStatus, 1000);
-  });
+  }).catch(() => showNotification('Bağlantı hatası', 'error'));
 }
 
-function scanNow() {
-  fetch('/api/scan', {method: 'POST'}).then(r => r.json()).then(d => {
-    showNotification('Piyasa analizi tetiklendi...', 'success');
-    setTimeout(updateStatus, 2000);
-  });
+function resetAll() {
+  if (!confirm('Tüm simülasyon sıfırlansın mı? (tüm işlemler, istatistikler, dersler ve bakiye)')) return;
+  showNotification('Sıfırlanıyor...', 'info');
+  fetch('/api/reset_all', {method: 'POST'}).then(r => r.json()).then(d => {
+    showNotification(d.message || 'Sıfırlandı', d.success ? 'success' : 'error');
+    setTimeout(function(){ updateStatus(); updatePnlHistory(); updateDecisions(); }, 1500);
+  }).catch(() => showNotification('Bağlantı hatası', 'error'));
+}
+
+function toggleAiManage() {
+  var box = document.getElementById('aiManageBox');
+  var chev = document.getElementById('aiManageChevron');
+  if (box.style.display === 'none') {
+    box.style.display = 'block';
+    chev.textContent = '▾';
+    loadDirective();
+  } else {
+    box.style.display = 'none';
+    chev.textContent = '▸';
+  }
+}
+
+function loadDirective() {
+  fetch('/api/directive').then(r => r.json()).then(d => {
+    document.getElementById('directiveInput').value = d.directive || '';
+  }).catch(() => {});
+}
+
+function trainDirective() {
+  var txt = document.getElementById('directiveInput').value || '';
+  fetch('/api/train_directive', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({prompt: txt})
+  }).then(r => r.json()).then(d => {
+    document.getElementById('directiveStatus').textContent = d.success ? '✓ Kaydedildi' : ('✗ ' + d.message);
+    showNotification(d.message || 'Kaydedildi', d.success ? 'success' : 'error');
+  }).catch(() => showNotification('Bağlantı hatası', 'error'));
+}
+
+function updatePnlHistory() {
+  fetch('/api/trade_pnl').then(r => r.json()).then(list => {
+    var box = document.getElementById('pnlHistory');
+    var totalEl = document.getElementById('pnlTotal');
+    var countEl = document.getElementById('pnlCount');
+    if (!box) return;
+    if (!list || list.length === 0) {
+      box.innerHTML = '<div class="col-span-full text-slate-500 italic text-center py-6 text-xs">Henüz işlem yok</div>';
+      if (totalEl) totalEl.textContent = '$0.00';
+      if (countEl) countEl.textContent = '0';
+      return;
+    }
+    var total = 0;
+    var html = '';
+    list.forEach(function(t) {
+      total += t.pnl;
+      var pos = t.pnl >= 0;
+      var cls = pos ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/10 border-rose-500/30 text-rose-300';
+      var sign = pos ? '+' : '';
+      var tag = t.action === 'SELL' ? 'SAT' : 'AL';
+      html += '<div class="rounded-lg border px-2 py-1.5 text-center ' + cls + '">'
+            + '<div class="text-[8px] opacity-70 font-bold">' + tag + '</div>'
+            + '<div class="text-xs font-extrabold font-mono">' + sign + '$' + t.pnl.toFixed(2) + '</div>'
+            + '</div>';
+    });
+    box.innerHTML = html;
+    if (totalEl) totalEl.textContent = (total >= 0 ? '+$' : '-$') + Math.abs(total).toFixed(2);
+    if (countEl) countEl.textContent = String(list.length);
+  }).catch(() => {});
 }
 
 function manualBuy() {
@@ -658,6 +736,19 @@ function updateStatus() {
     document.getElementById('sPortfolio').textContent = '$' + (d.portfolio_value || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
     document.getElementById('sCash').textContent = '$' + (d.cash || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
     document.getElementById('sScans').textContent = d.total_scans || 0;
+
+    // START / STOP butonlarının aktif durumunu yansıt
+    var btnStart = document.getElementById('btnStart');
+    var btnStop = document.getElementById('btnStop');
+    if (btnStart && btnStop) {
+      if (d.running && !d.paused) {
+        btnStart.className = 'btn text-[10px] font-bold px-2.5 py-1 rounded bg-emerald-600/30 text-emerald-300 border border-emerald-500/40';
+        btnStop.className = 'btn text-[10px] font-bold px-2.5 py-1 rounded text-gray-400 hover:text-white';
+      } else {
+        btnStart.className = 'btn text-[10px] font-bold px-2.5 py-1 rounded text-gray-400 hover:text-white';
+        btnStop.className = 'btn text-[10px] font-bold px-2.5 py-1 rounded ' + (d.paused ? 'bg-amber-600/30 text-amber-300 border border-amber-500/40' : 'text-gray-400 hover:text-white');
+      }
+    }
 
     var pl = d.kar_zarar || 0;
     var plEl = document.getElementById('sPnl');
@@ -991,104 +1082,18 @@ updateSelfImprove();
 updateDecisions();
 updateDailyPnl();
 updateAgents();
+updatePnlHistory();
 
 // Polling intervals
 setInterval(updateStatus, 5000);
 setInterval(updateDecisions, 5000);
 setInterval(updateDailyPnl, 10000);
 setInterval(updateGoal, 15000);
+setInterval(updatePnlHistory, 8000);
 setInterval(updateSelfImprove, 15000);
 setInterval(updateAgents, 5000);
 
 // ==========================================
-// GEMINI 5-BRAIN DEBATE PANEL
-// ==========================================
-var _geminiData = null;
-function updateGemini() {
-  fetch('/api/gemini_debate').then(r => r.json()).then(d => {
-    _geminiData = d;
-    var cards = document.getElementById('geminiBrainCards');
-    var badge = document.getElementById('geminiFinalBadge');
-    var statusEl = document.getElementById('geminiStatus');
-    var summBox = document.getElementById('geminiSummaryBox');
-    var summText = document.getElementById('geminiSummaryText');
-    if (!cards) return;
-
-    if (!d || !d.brains) {
-      statusEl.textContent = 'API KEY GEREKLI';
-      statusEl.className = 'text-[9px] font-mono text-amber-400 font-bold';
-      cards.innerHTML = '<div class="text-slate-500 italic text-center py-6 text-xs col-span-5">Gemini API anahtarı .env dosyasına GEMINI_API_KEY olarak ekleyin</div>';
-      return;
-    }
-
-    statusEl.textContent = 'CANLI DEBATE';
-    statusEl.className = 'text-[9px] font-mono text-cyan-400 font-bold';
-
-    var brainIcons = {'TREND': '📈', 'VOLATİLİTE': '📊', 'HACIM': '📦', 'SEVİYE': '🎯', 'DUYGU': '🧠'};
-    var brainColors = {
-      'TREND': 'from-blue-600 to-cyan-500',
-      'VOLATİLİTE': 'from-amber-500 to-orange-500',
-      'HACIM': 'from-emerald-500 to-green-500',
-      'SEVİYE': 'from-rose-500 to-pink-500',
-      'DUYGU': 'from-purple-500 to-violet-500'
-    };
-
-    // Final badge
-    var fd = d.final_decision || 'HOLD';
-    if (fd === 'BUY') {
-      badge.textContent = '🟢 AL (' + (d.buy_count||0) + '/5)';
-      badge.className = 'px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse';
-    } else if (fd === 'SELL') {
-      badge.textContent = '🔴 SAT (' + (d.sell_count||0) + '/5)';
-      badge.className = 'px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse';
-    } else {
-      badge.textContent = '⚪ BEKLE';
-      badge.className = 'px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-slate-500/10 text-slate-400 border border-white/10';
-    }
-
-    // Brain cards
-    var h = '';
-    d.brains.forEach(function(b) {
-      var icon = brainIcons[b.name] || '🤖';
-      var vAction = b.vote || 'HOLD';
-      var vConf = Math.round((b.confidence || 0) * 100);
-      var actionColor = vAction === 'BUY' ? 'text-emerald-400' : (vAction === 'SELL' ? 'text-rose-400' : 'text-slate-400');
-      var actionBg = vAction === 'BUY' ? 'border-emerald-500/20' : (vAction === 'SELL' ? 'border-rose-500/20' : 'border-white/5');
-      var confBarColor = vAction === 'BUY' ? 'bg-emerald-500' : (vAction === 'SELL' ? 'bg-rose-500' : 'bg-slate-500');
-      var voteLabel = vAction === 'BUY' ? 'AL' : (vAction === 'SELL' ? 'SAT' : 'BEKLE');
-
-      h += '<div class="glass rounded-xl p-3 border ' + actionBg + ' transition-all duration-300 hover:scale-[1.02]">';
-      h += '  <div class="flex items-center justify-between mb-1.5">';
-      h += '    <span class="text-sm">' + icon + '</span>';
-      h += '    <span class="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">GEMINI</span>';
-      h += '  </div>';
-      h += '  <h4 class="text-[10px] font-bold text-slate-300 mb-1">' + b.name + '</h4>';
-      h += '  <div class="flex items-center justify-between mb-1.5">';
-      h += '    <span class="text-sm font-extrabold ' + actionColor + '">' + voteLabel + '</span>';
-      h += '    <span class="text-[10px] font-mono font-bold ' + actionColor + '">' + vConf + '%</span>';
-      h += '  </div>';
-      h += '  <div class="w-full bg-surface-lowest rounded-full h-1.5 mb-2">';
-      h += '    <div class="' + confBarColor + ' h-1.5 rounded-full transition-all duration-500" style="width:' + Math.max(vConf, 3) + '%"></div>';
-      h += '  </div>';
-      h += '  <p class="text-[9px] text-slate-400 leading-relaxed line-clamp-3">' + (b.argument || '') + '</p>';
-      h += '</div>';
-    });
-    cards.innerHTML = h;
-
-    // Summary
-    if (d.summary) {
-      summBox.style.display = 'block';
-      summText.textContent = d.summary;
-    }
-  }).catch(function() {
-    var statusEl = document.getElementById('geminiStatus');
-    if (statusEl) statusEl.textContent = 'BAĞLANTI HATASI';
-  });
-}
-
-updateGemini();
-setInterval(updateGemini, 8000);
-
 // ==========================================
 // AJAN DETAY MODALI
 // ==========================================
@@ -1333,16 +1338,14 @@ def api_memory():
 
 @app.route('/api/start', methods=['POST'])
 def api_start():
-    if bot.running:
-        return jsonify({"success": False, "message": "Zaten calisiyor"})
     bot.start()
-    return jsonify({"success": True, "message": "Baslatildi"})
+    return jsonify({"success": True, "message": "Baslatildi", "running": bot.running, "paused": bot.paused})
 
 
 @app.route('/api/stop', methods=['POST'])
 def api_stop():
     bot.stop()
-    return jsonify({"success": True})
+    return jsonify({"success": True, "running": bot.running, "paused": bot.paused})
 
 
 @app.route('/api/scan', methods=['POST'])
@@ -1424,8 +1427,13 @@ def api_debug():
 
 @app.route('/api/decisions')
 def api_decisions():
-    from src.database import db
     return jsonify(db.get_decisions(20))
+
+
+@app.route('/api/trade_pnl')
+def api_trade_pnl():
+    return jsonify(db.get_trade_pnl(100))
+
 
 @app.route('/api/daily_pnl')
 def api_daily_pnl():
@@ -1523,6 +1531,33 @@ def api_binance_status():
 def api_self_improve():
     from src import self_improve
     return jsonify({"params": self_improve.get_params(), "lessons": self_improve.get_lessons(8)})
+
+
+@app.route('/api/reset_all', methods=['POST'])
+def api_reset_all():
+    try:
+        bot.reset_everything()
+        return jsonify({"success": True, "message": "Simülasyon baştan sona sıfırlandı"})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+
+@app.route('/api/directive', methods=['GET'])
+def api_get_directive():
+    from src import ai_brains
+    return jsonify({"directive": ai_brains.load_directive()})
+
+
+@app.route('/api/train_directive', methods=['POST'])
+def api_train_directive():
+    from src import ai_brains
+    data = request.get_json(silent=True) or {}
+    text = (data.get('prompt') or data.get('directive') or '').strip()
+    try:
+        ai_brains.save_directive(text)
+        return jsonify({"success": True, "message": "5 beyin eğitim talimatı kaydedildi"})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
 
 
 @app.route('/api/brains', methods=['GET'])
