@@ -30,6 +30,8 @@ class Trader:
         self._last_price = None
         self._last_price_ts = 0
         self._last_source = None
+        self._usd_try = 32.0
+        self._usd_try_ts = 0
 
     # ──────────────────────────────────────────────────────────────
     #  Yardımcılar
@@ -78,6 +80,30 @@ class Trader:
         self._last_price = 60000.0
         self._last_price_ts = time.time()
         return self._last_price
+
+    # ──────────────────────────────────────────────────────────────
+    #  USD/TRY kuru (₺ gösterimi için)
+    # ──────────────────────────────────────────────────────────────
+    def get_usd_try_rate(self):
+        now = time.time()
+        if self._usd_try and (now - self._usd_try_ts) < 300:
+            return self._usd_try
+        try:
+            r = requests.get(
+                f"{_COINGECKO_REST}/simple/price?ids=tether&vs_currencies=try,usd",
+                timeout=10,
+            )
+            if r.status_code == 200:
+                j = r.json().get("tether", {})
+                try_rate = float(j.get("try"))
+                usd_rate = float(j.get("usd", 1))
+                if try_rate and usd_rate:
+                    self._usd_try = try_rate / usd_rate
+                    self._usd_try_ts = now
+                    return self._usd_try
+        except Exception:
+            pass
+        return self._usd_try
 
     # ──────────────────────────────────────────────────────────────
     #  OHLCV (mum) verisi — CoinGecko (canlı) -> sentetik

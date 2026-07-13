@@ -471,32 +471,58 @@ class QuantAgent:
 
     def _scalp_signal(self, t, acik_pozisyon, ai_prob):
         """
-        Kısa vadeli "Vur-Kaç" sinyali: M10/M30 mikro trend + hacim kırılımı.
-        ML/konsensüs beklenmeden, saf kural tabanlı çalışır.
+        Kısa vadeli "Vur-Kaç" sinyali: 5m/10m/15m/30m mikro trend + hacim kırılımı.
+        ML/konsensüs beklenmeden, saf kural tabanlı çalışır. 5m trendini
+        anında yakalar; AI sadece çok güçlü ters sinyalde frenler.
         Dönüş: "BUY" | "SELL" | "HOLD"
         """
         base_ema = t.get("ema_cross")
+        m5_ema = t.get("5m_ema_cross", base_ema)
         m10_ema = t.get("10m_ema_cross", base_ema)
+        m15_ema = t.get("15m_ema_cross", base_ema)
         m30_ema = t.get("30m_ema_cross", base_ema)
         rsi = t.get("rsi", 50)
+        m5_rsi = t.get("5m_rsi", rsi)
         m10_rsi = t.get("10m_rsi", rsi)
+        m15_rsi = t.get("15m_rsi", rsi)
         m30_rsi = t.get("30m_rsi", rsi)
         vol = t.get("vol_ratio", 1.0)
-        brk_up = (t.get("breakout_up", 0) or t.get("10m_breakout_up", 0)
+        pchg5 = t.get("price_change_5", 0)
+
+        tf_emas = [base_ema, m5_ema, m10_ema, m15_ema, m30_ema]
+        bull_count = sum(1 for e in tf_emas if e == "bullish")
+        bear_count = sum(1 for e in tf_emas if e == "bearish")
+
+        brk_up = (t.get("breakout_up", 0) or t.get("5m_breakout_up", 0)
+                  or t.get("10m_breakout_up", 0) or t.get("15m_breakout_up", 0)
                   or t.get("30m_breakout_up", 0))
-        brk_dn = (t.get("breakout_down", 0) or t.get("10m_breakout_down", 0)
+        brk_dn = (t.get("breakout_down", 0) or t.get("5m_breakout_down", 0)
+                  or t.get("10m_breakout_down", 0) or t.get("15m_breakout_down", 0)
                   or t.get("30m_breakout_down", 0))
 
-        up_trend = (m10_ema == "bullish" or m30_ema == "bullish")
-        dn_trend = (m10_ema == "bearish" or m30_ema == "bearish")
+        up_trend = bull_count >= 1
+        dn_trend = bear_count >= 1
 
         if not acik_pozisyon:
-            # Giriş: mikro yükseliş trendi + hacim kırılımı + aşırı alım yok + AI düşüş görmüyor
-            if up_trend and brk_up and vol > 1.2 and rsi < 72 and m10_rsi < 72 and m30_rsi < 72 and ai_prob >= 0.40:
+            # 1) Çoklu periyot yükseliş trendi uyumu (5m ağırlıklı, esnek eşik)
+            if bull_count >= 2 and rsi < 75 and vol > 0.9:
+                return "BUY"
+            # 2) Klasik: yükseliş trendi + kırılım + hacim
+            if up_trend and brk_up and vol > 1.1 and rsi < 78 \
+               and m5_rsi < 78 and m10_rsi < 78 and m30_rsi < 78:
+                return "BUY"
+            # 3) Erken trend yakalama: 5m yükseliş + ivme + hacim patlaması
+            if m5_ema == "bullish" and pchg5 > 0.25 and vol > 1.15:
                 return "BUY"
         else:
-            # Çıkış: mikro düşüş trendi + aşağı kırılım + AI yükseliş görmüyor
-            if dn_trend and brk_dn and vol > 1.2 and rsi > 28 and ai_prob <= 0.60:
+            # 1) Çoklu periyot düşüş trendi uyumu
+            if bear_count >= 2 and rsi > 25 and vol > 0.9:
+                return "SELL"
+            # 2) Klasik: mikro düşüş trendi + aşağı kırılım
+            if dn_trend and brk_dn and vol > 1.1 and rsi > 22:
+                return "SELL"
+            # 3) Erken çıkış: 5m düşüş + ivme
+            if m5_ema == "bearish" and pchg5 < -0.25 and vol > 1.15:
                 return "SELL"
         return "HOLD"
 

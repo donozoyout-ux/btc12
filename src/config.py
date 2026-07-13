@@ -14,7 +14,7 @@ class Settings:
 
     symbol = os.getenv("SYMBOL", "BTC/USDT")
     gemini_api_key = os.getenv("GEMINI_API_KEY", "")
-    check_interval = int(os.getenv("CHECK_INTERVAL", "15"))
+    check_interval = int(os.getenv("CHECK_INTERVAL", "10"))
     position_size_usd = float(os.getenv("POSITION_SIZE_USD", "500"))
     risk_per_trade = float(os.getenv("RISK_PER_TRADE", "2"))
     rr_ratio = float(os.getenv("RR_RATIO", "2"))
@@ -29,7 +29,7 @@ class Settings:
 
     # ─── Scalping / Day Trading (M10–M30) ayarlari ───
     # Indikatorlerin beslenecegi kisa vadeli periyotlar.
-    scalp_timeframes = os.getenv("SCALP_TIMEFRAMES", "10m,30m").split(",")
+    scalp_timeframes = os.getenv("SCALP_TIMEFRAMES", "5m,10m,15m").split(",")
     # SL/TP hesabinda ATR'a gore dinamik kat sayilar (kisa vade => dar).
     scalp_sl_atr_mult = float(os.getenv("SCALP_SL_ATR_MULT", "1.0"))
     scalp_tp_atr_mult = float(os.getenv("SCALP_TP_ATR_MULT", "1.8"))
@@ -47,10 +47,10 @@ class Settings:
 
     # Aç gözlülük / atak modu: kapalıyken sistem disiplinli ve sabırlı kalır,
     # işlem agresifliğini otomatik artırmaz, günlük sabit hedef peşinde koşmaz.
-    aggressive_mode = os.getenv("AGGRESSIVE_MODE", "false").lower() == "true"
+    aggressive_mode = os.getenv("AGGRESSIVE_MODE", "true").lower() == "true"
     # Günlük hedef (%). 0 = hedef yok (sadece risk yönetimi). >0 ise gerisindeyken
     # daha sabırlı olunur, asla "daha atak" davranılmaz.
-    daily_goal_pct = float(os.getenv("DAILY_GOAL_PCT", "0"))
+    daily_goal_pct = float(os.getenv("DAILY_GOAL_PCT", "1"))
     # Simülasyon başlangıç sermayesi (kullanıcı ayarlayabilir)
     sim_starting_capital = float(os.getenv("SIM_STARTING_CAPITAL", "500"))
     binance_proxy = os.getenv("BINANCE_PROXY", "")

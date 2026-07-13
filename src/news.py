@@ -27,9 +27,14 @@ class NewsFetcher:
             items = []
             for item in root.iter("{http://www.w3.org/2005/Atom}entry"):
                 title = item.find("{http://www.w3.org/2005/Atom}title")
+                link = item.find("{http://www.w3.org/2005/Atom}link")
+                url = ""
+                if link is not None:
+                    url = link.get("href") or (link.text or "").strip()
                 if title is not None and title.text:
                     items.append({
                         "baslik": title.text.strip(),
+                        "url": url,
                         "sentiment": self._analyze_sentiment(title.text)
                     })
                 if len(items) >= limit:
@@ -38,9 +43,12 @@ class NewsFetcher:
             if not items:
                 for item in root.iter("item"):
                     title = item.find("title")
+                    link = item.find("link")
+                    url = link.text.strip() if link is not None and link.text else ""
                     if title is not None and title.text:
                         items.append({
                             "baslik": title.text.strip(),
+                            "url": url,
                             "sentiment": self._analyze_sentiment(title.text)
                         })
                     if len(items) >= limit:

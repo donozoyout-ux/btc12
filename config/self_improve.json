@@ -3,6 +3,12 @@
   "min_confidence_threshold": 0.45,
   "lessons": [],
   "last_review": null,
-  "trades_since_review": 0,
-  "total_reviews": 0
+  "trades_since_review": 1,
+  "total_reviews": 0,
+  "trade_lessons": [
+    {
+      "time": "2026-07-14T00:15:09.311551",
+      "lesson": "Zararlı işlem: [negatif MACD] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
+    }
+  ]
 }

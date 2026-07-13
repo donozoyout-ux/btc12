@@ -357,8 +357,9 @@ class Bot:
             print(f"  -> ALIS sinyali (guven: %{confidence:.0%} AI: {ai_prob:.0%})")
 
             is_strict = "STRICT" in karar_sistemi
+            is_scalp = "SCALP" in karar_sistemi
 
-            if not is_strict and ai_prob < 0.4 and ai_conf > 0.2:
+            if not is_strict and not is_scalp and ai_prob < 0.4 and ai_conf > 0.2:
                 print(f"  -> ALIS ENGELLENDI (AI dusus ongoruyor: %{ai_prob:.0%})")
                 ai_veto = True
             else:
@@ -406,8 +407,9 @@ class Bot:
             print(f"  -> SATIS sinyali (guven: %{confidence:.0%} AI: {ai_prob:.0%})")
 
             is_strict = "STRICT" in karar_sistemi
+            is_scalp = "SCALP" in karar_sistemi
 
-            if not is_strict and ai_prob > 0.6 and ai_conf > 0.2:
+            if not is_strict and not is_scalp and ai_prob > 0.6 and ai_conf > 0.2:
                 print(f"  -> SATIS ENGELLENDI (AI yukselis ongoruyor: %{ai_prob:.0%})")
                 ai_veto = True
             else:
@@ -738,6 +740,7 @@ class Bot:
                 "aggressive_mode": settings.aggressive_mode,
                 "symbol": settings.symbol,
                 "quote_asset": settings.quote_asset,
+                "usd_try": trader.get_usd_try_rate(),
             }
         except Exception as e:
             return {"running": self.running, "error": str(e), "son_hata": self.son_hata}
