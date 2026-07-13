@@ -160,25 +160,8 @@ class Database:
             print(f"[DATABASE] Supabase reset hatasi (yok sayildi): {e}")
         return True
 
-    def get_trade_pnl(self, limit=100):
-        """Sadece kâr/zarar odaklı işlem geçmişi (tarih, aksiyon, pnl, mod)."""
-        conn = self._conn()
-        try:
-            rows = conn.execute(
-                "SELECT created_at, action, pnl, mode FROM trades ORDER BY id DESC LIMIT ?",
-                (limit,)
-            ).fetchall()
-            return [
-                {
-                    "time": r[0],
-                    "action": r[1],
-                    "pnl": round(r[2], 2) if r[2] else 0,
-                    "mode": r[3] or "SIM",
-                }
-                for r in rows
-            ]
-        finally:
-            conn.close()
+    def get_trade_history(self, limit=50):
+        """Tam işlem geçmişi (panel ve /son komutu için)."""
         conn = self._conn()
         try:
             rows = conn.execute(
@@ -195,6 +178,26 @@ class Database:
                     "reason": r[5] or "",
                     "entry_price": r[6] or 0,
                     "mode": r[7] or "SIM",
+                }
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
+    def get_trade_pnl(self, limit=100):
+        """Sadece kâr/zarar odaklı işlem geçmişi (tarih, aksiyon, pnl, mod)."""
+        conn = self._conn()
+        try:
+            rows = conn.execute(
+                "SELECT created_at, action, pnl, mode FROM trades ORDER BY id DESC LIMIT ?",
+                (limit,)
+            ).fetchall()
+            return [
+                {
+                    "time": r[0],
+                    "action": r[1],
+                    "pnl": round(r[2], 2) if r[2] else 0,
+                    "mode": r[3] or "SIM",
                 }
                 for r in rows
             ]

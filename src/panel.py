@@ -1590,6 +1590,7 @@ def api_get_directive():
 @app.route('/api/reflection', methods=['GET'])
 def api_reflection():
     from src import self_improve
+    from src import llm_agent
     return jsonify({"reflection": self_improve.build_recent_reflection(5),
                     "debate": llm_agent.get_last_debate()})
 
