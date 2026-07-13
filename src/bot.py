@@ -106,7 +106,7 @@ class Bot:
             self._satisi_gerceklestir("Take-profit")
             return
 
-        if sl > 0 and pl_pct > 2.0:
+        if sl > 0 and pl_pct > settings.scalp_trailing_trigger_pct:
             new_sl = round(entry + (price - entry) * 0.5, 2)
             if new_sl > sl:
                 quant_agent.state["son_sl"] = new_sl
@@ -161,6 +161,18 @@ class Bot:
         teknik_5m = analyzer.analyze(df_5m) if df_5m is not None and not df_5m.empty else None
         if teknik_5m:
             teknik_5m["orderbook"] = teknik.get("orderbook", {})
+
+        # ─── Scalping (M10/M30) çoklu periyot beslemesi ───
+        # RSI / MACD / EMA Cross gibi indikatörler 10m ve 30m mumlarından da
+        # hesaplanıp ana 'teknik' sözlüğüne <periyot>_<gösterge> olarak eklenir.
+        try:
+            scalp = trader.get_scalp_indicators(limit=100)
+            teknik = trader.merge_scalp_indicators(teknik, scalp)
+            if scalp:
+                tf_list = ", ".join(scalp.keys())
+                print(f"[SCAN] Scalp periyotlari yüklendi: {tf_list}")
+        except Exception as e:
+            print(f"[SCAN] Scalp (M10/M30) veri hatasi: {e}")
 
         anomaly = ai_model.detect_anomaly(teknik["price"], teknik.get("vol_ratio", 1))
         if anomaly["is_anomaly"]:

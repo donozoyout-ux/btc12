@@ -224,6 +224,12 @@ Toplam skor 0.70'in altındaysa kararın ne olursa olsun ağırlığın "BEKLE" 
 {DIRECTIVE}
 {LESSONS}
 
+## STRATEJİK EMİR — SCALPING / VUR-KAÇ (M10–M30)
+Sen bir scalper'sın. Pozisyonların ortalama 10 ila 30 dakika içinde sonuçlanmasını hedefle. Büyük makro trendler yerine, bu kısa süreli mikro hacim kırılımlarına göre AL / SAT / BEKLE kararı üret.
+- Veri çekme katmanı sana RSI, MACD ve EMA Cross değerlerini HEM 10m HEM 30m mumlarından besler; kararını bu kısa vadeli mikro trendlere göre ver.
+- Stop-loss ve take-profit seviyelerin bu kısa vadeye uygundur (dar aralıklar); işlemi uzatma, hedefe yaklaşıldığında kârı realize et.
+- Makro/uzun vadeli trendlere (1h+) göre pozisyon taşıma; "Vur-Kaç" disipliniyle hızlı gir-çık yap.
+
 {CONTEXT}
 
 Yukarıdaki verileri analiz et ve 5 uzman beynin tartışmasını simüle et. SADECE aşağıdaki JSON formatında cevap ver:
@@ -304,6 +310,30 @@ def _build_market_context(teknik, haberler=None, ml_votes=None):
         blocks.append("\n".join(lines))
 
     ctx = "\n\n".join(blocks)
+
+    # ─── Scalping Çoklu Periyot Bloğu (M10 / M30) ───
+    # Ana 'teknik' sozlugune <periyot>_<gosterge> seklinde eklenmis RSI/MACD/EMA
+    # degerlerini tum ajansara gosterir; boylece mikro trendlere gore karar uretebilirler.
+    mtf_prefixes = [tf.strip().replace(":", "").replace("/", "") for tf in settings.scalp_timeframes if tf.strip()]
+    mtf_indicators = ["rsi", "rsi_prev", "ema8", "ema21", "ema_cross", "ema_dist",
+                      "macd_line", "macd_hist", "macd_hist_prev", "stoch_rsi",
+                      "bb_pct", "atr", "atr_pct", "vol_ratio", "momentum_score",
+                      "sling_color", "breakout_up", "breakout_down", "support", "resistance"]
+    mtf_lines = ["## SCALPING ÇOKLU PERİYOT GÖSTERGELERİ (M10 / M30)",
+                 "(Tüm ajansara ortak: kısa vadeli mikro trend kararları için)"]
+    for pfx in mtf_prefixes:
+        label = pfx.upper()
+        mtf_lines.append(f"### {label}")
+        for ind in mtf_indicators:
+            val = teknik.get(f"{pfx}_{ind}")
+            if val is None:
+                continue
+            if isinstance(val, bool):
+                val = "EVET" if val else "Hayır"
+            elif isinstance(val, float):
+                val = round(val, 3)
+            mtf_lines.append(f"- {_INDICATOR_LABELS.get(ind, ind)}: {val}")
+    ctx += "\n\n" + "\n".join(mtf_lines)
 
     if ml_votes:
         ctx += "\n\n### ML AJAN OYLAMASI (Mevcut Sistem)\n"

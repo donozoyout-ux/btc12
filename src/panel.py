@@ -1539,7 +1539,10 @@ def api_reset_sim():
         try:
             from src.database import db
             from src.trader import trader
-            price = trader.get_price() if settings.executor_mode == "binance" else 0
+            try:
+                price = trader.get_price()
+            except Exception:
+                price = 0
             db.save_decision(
                 strategy_action="RESET", strategy_score=0.0,
                 strategy_reason="Simülasyon baştan sona sıfırlandı (sermaye+pozisyon+istatistik)",

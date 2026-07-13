@@ -297,8 +297,7 @@ class QuantAgent:
                 return self._hold_karar(risk_seviyesi, "AI Veto", system_log)
 
             if src == "GEMINI_DEBATE" or combined_confidence >= min_confidence:
-                sl_price = round(fiyat - 1.5 * atr, 2)
-                tp_price = round(fiyat + 3 * atr, 2)
+                sl_price, tp_price = self._scalp_sl_tp(fiyat, atr)
                 
                 # Dynamic order size
                 support = teknik_analiz.get("support", fiyat * 0.95)
@@ -394,11 +393,112 @@ class QuantAgent:
                     "system_log": system_log
                 }
 
+        # ─── SCALPING HIZLI YOL (M10/M30 mikro hacim kırılımı) ───
+        # Konsensüs/AI beklenmeden, kısa vadeli mikro trend + hacim kırılımına
+        # göre hızlı gir-çık ("Vur-Kaç") yapar. Tamamen kural tabanlıdır; ML
+        # eğitimi veya Gemini anahtarı GEREKTİRMEZ, böylece bot her zaman
+        # scalping fırsatı bulabilir.
+        scalp_action = self._scalp_signal(teknik_analiz, acik_pozisyon, ai_prob)
+        if scalp_action == "BUY" and not acik_pozisyon:
+            sl_price, tp_price = self._scalp_sl_tp(fiyat, atr)
+            support = teknik_analiz.get("support", fiyat * 0.99)
+            resistance = teknik_analiz.get("resistance", fiyat * 1.01)
+            order_size_usd = self.calculate_order_size(fiyat, support, resistance)
+            if order_size_usd <= 10.0:
+                system_log = "SCALP BUY iptal: bütçe/direnç yetersiz"
+                print(f"  [SCALP] {system_log}")
+            else:
+                self.state["son_sinyal"] = {"action": "BUY", "source": "SCALP", "ai_prob": ai_prob}
+                self._save_state()
+                print(f"  [SCALP] MIKRO KIRILIM AL (AI:{ai_prob:.0%}) | Size:${order_size_usd:.2f} SL:${sl_price} TP:${tp_price}")
+                return {
+                    "action": "BUY",
+                    "confidence_score": round(max(ai_prob, 0.6), 2),
+                    "execution": {
+                        "size_percentage": 100,
+                        "amount_usd": order_size_usd,
+                        "stop_loss": sl_price,
+                        "take_profit": tp_price,
+                    },
+                    "memory_update": {
+                        "aktif_strateji_notu": "SCALP: M10/M30 mikro kırılım + hacim patlaması",
+                        "risk_seviyesi_ayari": risk_seviyesi,
+                    },
+                    "system_log": f"SCALP_BUY|{details}",
+                }
+        elif scalp_action == "SELL" and acik_pozisyon:
+            self.state["son_sinyal"] = {"action": "SELL", "source": "SCALP", "ai_prob": ai_prob}
+            self._save_state()
+            print(f"  [SCALP] MIKRO KIRILIM SAT (AI:{ai_prob:.0%})")
+            return {
+                "action": "SELL",
+                "confidence_score": round(max(1 - ai_prob, 0.6), 2),
+                "execution": {"size_percentage": 100, "stop_loss": 0, "take_profit": 0},
+                "memory_update": {
+                    "aktif_strateji_notu": "SCALP: M10/M30 mikro kırılım tersi",
+                    "risk_seviyesi_ayari": risk_seviyesi,
+                },
+                "system_log": f"SCALP_SELL|{details}",
+            }
+
         # Konsensüs sağlanamadı → HOLD
         system_log = (f"NO_TRADE|ML AL:{consensus_result['buy_count']} SAT:{consensus_result['sell_count']} "
                       f"|Debate:{debate_action}(%{debate_conf*100:.0f}) AL:{debate_buy} SAT:{debate_sell}"
                       f"|{details}")
         return self._hold_karar(risk_seviyesi, "Konsensüs yok", system_log)
+
+    def _scalp_sl_tp(self, fiyat, atr):
+        """
+        Kısa vadeli (M10/M30) scalping için DİNAMİK stop-loss / take-profit.
+        SL ve TP, ATR'a göre ölçeklenir ama ayarlanabilir maksimum yüzde
+        cap'iyle sınırlanır; böylece dar aralıklı "Vur-Kaç" hedefi korunur.
+        """
+        sl_atr = fiyat - settings.scalp_sl_atr_mult * atr if atr and atr > 0 else float("-inf")
+        tp_atr = fiyat + settings.scalp_tp_atr_mult * atr if atr and atr > 0 else float("inf")
+        sl_cap = fiyat * (1 - settings.scalp_max_sl_pct / 100.0)
+        tp_cap = fiyat * (1 + settings.scalp_max_tp_pct / 100.0)
+
+        # Stop-loss: iki yöntemden DAHA YAKIN (daha az riskli) olanı seçilir.
+        sl_price = max(sl_atr, sl_cap)
+        # Take-profit: iki yöntemden DAHA YAKIN (daha hızlı realize) olanı seçilir.
+        tp_price = min(tp_atr, tp_cap)
+
+        # Pozitif R:R garantisi (TP her zaman SL'den uzakta kalsın).
+        if tp_price <= sl_price:
+            tp_price = round(fiyat * 1.004, 2)
+
+        return round(sl_price, 2), round(tp_price, 2)
+
+    def _scalp_signal(self, t, acik_pozisyon, ai_prob):
+        """
+        Kısa vadeli "Vur-Kaç" sinyali: M10/M30 mikro trend + hacim kırılımı.
+        ML/konsensüs beklenmeden, saf kural tabanlı çalışır.
+        Dönüş: "BUY" | "SELL" | "HOLD"
+        """
+        base_ema = t.get("ema_cross")
+        m10_ema = t.get("10m_ema_cross", base_ema)
+        m30_ema = t.get("30m_ema_cross", base_ema)
+        rsi = t.get("rsi", 50)
+        m10_rsi = t.get("10m_rsi", rsi)
+        m30_rsi = t.get("30m_rsi", rsi)
+        vol = t.get("vol_ratio", 1.0)
+        brk_up = (t.get("breakout_up", 0) or t.get("10m_breakout_up", 0)
+                  or t.get("30m_breakout_up", 0))
+        brk_dn = (t.get("breakout_down", 0) or t.get("10m_breakout_down", 0)
+                  or t.get("30m_breakout_down", 0))
+
+        up_trend = (m10_ema == "bullish" or m30_ema == "bullish")
+        dn_trend = (m10_ema == "bearish" or m30_ema == "bearish")
+
+        if not acik_pozisyon:
+            # Giriş: mikro yükseliş trendi + hacim kırılımı + aşırı alım yok + AI düşüş görmüyor
+            if up_trend and brk_up and vol > 1.2 and rsi < 72 and m10_rsi < 72 and m30_rsi < 72 and ai_prob >= 0.40:
+                return "BUY"
+        else:
+            # Çıkış: mikro düşüş trendi + aşağı kırılım + AI yükseliş görmüyor
+            if dn_trend and brk_dn and vol > 1.2 and rsi > 28 and ai_prob <= 0.60:
+                return "SELL"
+        return "HOLD"
 
     def _hold_karar(self, risk_seviyesi, strateji_notu, system_log=""):
         return {

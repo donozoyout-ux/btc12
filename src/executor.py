@@ -1,7 +1,10 @@
 import json
 import os
 import time
-import ccxt
+try:
+    import ccxt
+except Exception:
+    ccxt = None
 from src.config import settings
 from src.trader import trader
 from src import supabase_store

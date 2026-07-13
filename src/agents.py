@@ -843,7 +843,7 @@ class ConsensusCoordinator:
             "level": LevelAgent(),
             "sentiment": SentimentAgent(),
         }
-        self.min_consensus = 3       # En az 3 ajan aynı yönde olmalı
+        self.min_consensus = settings.consensus_min  # Varsayılan 2 (scalping)
         self.min_weighted_conf = 0.45  # Ağırlıklı minimum güven
         self.last_votes = {}          # Son oylar (panel'de göstermek için)
         self.total_decisions = 0

@@ -1,5 +1,6 @@
 import numpy as np
 from datetime import datetime
+from src.config import settings
 
 
 class SignalStrategy:
@@ -39,8 +40,7 @@ class SignalStrategy:
             }
 
         if long_score >= 3:
-            sl_price = round(price * 0.985, 2)
-            tp_price = round(price * 1.03, 2)
+            sl_price, tp_price = self._scalp_sl_tp(price, atr)
             return {
                 "action": "BUY",
                 "reason": f"Puan: {long_score}/5",
@@ -52,8 +52,7 @@ class SignalStrategy:
             }
 
         if short_score >= 3:
-            sl_price = round(price * 1.015, 2)
-            tp_price = round(price * 0.97, 2)
+            sl_price, tp_price = self._scalp_sl_tp(price, atr)
             return {
                 "action": "SELL",
                 "reason": f"Puan: {short_score}/5",
@@ -141,6 +140,28 @@ class SignalStrategy:
         if abs(wt_tci) > 80:
             return f"VT Cross asiri bolge: TCI={wt_tci}"
         return None
+
+    def _scalp_sl_tp(self, price, atr):
+        """
+        Kısa vadeli (M10/M30) scalping için DİNAMİK stop-loss / take-profit.
+        ATR'a göre ölçeklenir, ayarlanabilir maksimum yüzde cap'iyle sınırlanır.
+        """
+        if atr and atr > 0:
+            sl_atr = price - settings.scalp_sl_atr_mult * atr
+            tp_atr = price + settings.scalp_tp_atr_mult * atr
+        else:
+            sl_atr = float("-inf")
+            tp_atr = float("inf")
+        sl_cap = price * (1 - settings.scalp_max_sl_pct / 100.0)
+        tp_cap = price * (1 + settings.scalp_max_tp_pct / 100.0)
+
+        sl_price = max(sl_atr, sl_cap)
+        tp_price = min(tp_atr, tp_cap)
+
+        if tp_price <= sl_price:
+            tp_price = round(price * 1.004, 2)
+
+        return round(sl_price, 2), round(tp_price, 2)
 
     def _beklenen_adim(self, sling_colors, sling_color, stoch_rsi, long_score, short_score):
         if sling_color == "GREEN":

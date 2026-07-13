@@ -25,6 +25,10 @@ services:
       - key: SYMBOL
         value: "BTC/USDT"
       - key: EXECUTOR_MODE
-        value: "binance"
+        value: "sim"
+      - key: SIM_STARTING_CAPITAL
+        value: "500"
+      - key: POSITION_SIZE_USD
+        value: "500"
       - key: PYTHON_VERSION
         value: 3.12.0

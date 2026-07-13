@@ -20,10 +20,27 @@ class Settings:
     rr_ratio = float(os.getenv("RR_RATIO", "2"))
     max_consecutive_losses = int(os.getenv("MAX_CONSECUTIVE_LOSSES", "3"))
 
-    executor_mode = os.getenv("EXECUTOR_MODE", "binance")
+    # Varsayilan: sim (gercek islem acilmaz). Gercek Binance islemi icin
+    # asagidaki degeri "binance" yapip API anahtari vermen gerekir.
+    executor_mode = os.getenv("EXECUTOR_MODE", "sim")
     stop_loss_pct = float(os.getenv("STOP_LOSS_PCT", "3"))
     last_entry_price = 0
     memory_file = "state.json"
+
+    # ─── Scalping / Day Trading (M10–M30) ayarlari ───
+    # Indikatorlerin beslenecegi kisa vadeli periyotlar.
+    scalp_timeframes = os.getenv("SCALP_TIMEFRAMES", "10m,30m").split(",")
+    # SL/TP hesabinda ATR'a gore dinamik kat sayilar (kisa vade => dar).
+    scalp_sl_atr_mult = float(os.getenv("SCALP_SL_ATR_MULT", "1.0"))
+    scalp_tp_atr_mult = float(os.getenv("SCALP_TP_ATR_MULT", "1.8"))
+    # Guvenlik cap'i: ATR asiri buyukse bile SL/TP bu yuzdeyi asamaz.
+    scalp_max_sl_pct = float(os.getenv("SCALP_MAX_SL_PCT", "0.6"))
+    scalp_max_tp_pct = float(os.getenv("SCALP_MAX_TP_PCT", "1.2"))
+    # Trailing (kademeli SL) baslatma esigi (kisa vadede erken kilit).
+    scalp_trailing_trigger_pct = float(os.getenv("SCALP_TRAILING_TRIGGER_PCT", "0.5"))
+
+    # Scalping modunda kısmi uyuşma ile de işlem açılabilsin (varsayılan 2/5)
+    consensus_min = int(os.getenv("CONSENSUS_MIN", "2"))
 
     # Gemini 5-Brain konsensüs ağırlığı (0 = devre dışı, 1 = tam ajan gibi sayılır)
     gemini_weight = float(os.getenv("GEMINI_WEIGHT", "1.0"))
@@ -52,13 +69,14 @@ settings = Settings()
 
 # Startup kontrol
 if not settings.telegram_bot_token or not settings.telegram_chat_id:
-    print("[CONFIG] UYARI: Telegram API anahtarlari eksik!")
+    print("[CONFIG] UYARI: Telegram API anahtarlari eksik! (opsiyonel)")
 if settings.executor_mode == "binance":
     if not settings.binance_api_key or not settings.binance_secret_key:
-        print("[CONFIG] UYARI: Binance API anahtarlari eksik! EXECUTOR_MODE=binance ama key yok.")
-        print("[CONFIG] Render'da Environment Variables ayarlayin:")
-        print("[CONFIG]   BINANCE_API_KEY = ...")
-        print("[CONFIG]   BINANCE_SECRET_KEY = ...")
+        print("[CONFIG] UYARI: EXECUTOR_MODE=binance ama Binance API anahtari yok -> SIM'e duser.")
+        print("[CONFIG] Gercek islem icin .env'e BINANCE_API_KEY ve BINANCE_SECRET_KEY ekle.")
     else:
         mode = "LIVE" if not settings.binance_testnet else "TESTNET"
         print(f"[CONFIG] Binance API anahtarlari mevcut, {mode} modunda baglanilacak")
+else:
+    print(f"[CONFIG] MOD: SIMULASYON (gercek islem yok). Baslangic sermaye: ${settings.sim_starting_capital:.0f}")
+    print("[CONFIG] Veri kaynagi: Binance (public) -> CoinGecko -> sentetik fallback")
