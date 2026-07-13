@@ -152,7 +152,11 @@ class Bot:
                 self._error_cooldown = now
             return
 
-        teknik["orderbook"] = trader.get_orderbook()
+        try:
+            teknik["orderbook"] = trader.get_orderbook()
+        except Exception as e:
+            print(f"[SCAN] Orderbook alinamadi: {e}")
+            teknik["orderbook"] = {}
 
         teknik_5m = analyzer.analyze(df_5m) if df_5m is not None and not df_5m.empty else None
         if teknik_5m:
@@ -241,7 +245,11 @@ class Bot:
                 print(f"[SELF-IMPROVE] periyodik hata: {e}")
 
         price = teknik["price"]
-        haberler = news_fetcher.fetch_bitcoin_news(8)
+        try:
+            haberler = news_fetcher.fetch_bitcoin_news(8)
+        except Exception as e:
+            print(f"[SCAN] Haber alinamadi: {e}")
+            haberler = []
 
         account = executor.get_account()
         pos = executor.get_position()
@@ -307,21 +315,31 @@ class Bot:
         except Exception as e:
             print(f"[GEMINI] Debate cagirma hatasi: {e}")
 
-        karar = quant_agent.analyze(teknik, haberler, portfoy, hafiza, gemini_debate=self.last_gemini_debate)
-        action = karar["action"]
-        confidence = karar["confidence_score"]
+        try:
+            karar = quant_agent.analyze(teknik, haberler, portfoy, hafiza, gemini_debate=self.last_gemini_debate)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"[SCAN] Analiz hatasi (HOLD'a dusuldu): {e}")
+            karar = {"action": "HOLD", "confidence_score": 0.0, "execution": {},
+                     "system_log": f"ANALYZE_ERROR:{e}", "memory_update": {}}
+        action = karar.get("action", "HOLD")
+        confidence = karar.get("confidence_score", 0.0)
         self.last_scan_data = teknik
         self.last_news = haberler
 
         haber_sentiment = sum(1 for h in haberler if h.get("sentiment") == "pozitif") - sum(1 for h in haberler if h.get("sentiment") == "negatif")
-        db.save_scan(
-            price=price, rsi=teknik.get("rsi"), ema_cross=teknik.get("ema_cross"),
-            macd_hist=teknik.get("macd_hist"), vol_ratio=teknik.get("vol_ratio"),
-            haber_sentiment=haber_sentiment, action=action, confidence=confidence,
-            stop_loss=karar.get("execution", {}).get("stop_loss", 0),
-            take_profit=karar.get("execution", {}).get("take_profit", 0),
-            system_log=karar.get("system_log", "")
-        )
+        try:
+            db.save_scan(
+                price=price, rsi=teknik.get("rsi"), ema_cross=teknik.get("ema_cross"),
+                macd_hist=teknik.get("macd_hist"), vol_ratio=teknik.get("vol_ratio"),
+                haber_sentiment=haber_sentiment, action=action, confidence=confidence,
+                stop_loss=karar.get("execution", {}).get("stop_loss", 0),
+                take_profit=karar.get("execution", {}).get("take_profit", 0),
+                system_log=karar.get("system_log", "")
+            )
+        except Exception as e:
+            print(f"[SCAN] save_scan hatasi: {e}")
 
         self.last_action = action
 
@@ -354,8 +372,8 @@ class Bot:
                 ai_veto = True
             else:
                 self.bekleyen_alis = karar
-                quant_agent.state["son_sl"] = karar["execution"]["stop_loss"]
-                quant_agent.state["son_tp"] = karar["execution"]["take_profit"]
+                quant_agent.state["son_sl"] = karar.get("execution", {}).get("stop_loss", 0)
+                quant_agent.state["son_tp"] = karar.get("execution", {}).get("take_profit", 0)
                 quant_agent._save_state()
                 # Sistem kendi işlem miktarına karar verir (dinamik boyut)
                 try:
@@ -408,17 +426,20 @@ class Bot:
         else:
             print(f"  -> {action} (%{confidence:.0%})")
 
-        db.save_decision(
-            strategy_action=strategy_action,
-            strategy_score=round(strategy_score, 2),
-            strategy_reason=strategy_reason,
-            ai_prob=round(ai_prob, 3),
-            ai_veto=ai_veto,
-            final_action=action,
-            final_reason=final_reason,
-            price=price,
-            executed=executed
-        )
+        try:
+            db.save_decision(
+                strategy_action=strategy_action,
+                strategy_score=round(strategy_score, 2),
+                strategy_reason=strategy_reason,
+                ai_prob=round(ai_prob, 3),
+                ai_veto=ai_veto,
+                final_action=action,
+                final_reason=final_reason,
+                price=price,
+                executed=executed
+            )
+        except Exception as e:
+            print(f"[SCAN] save_decision hatasi: {e}")
 
         if self.total_scans == 1:
             rsi_de = teknik.get("rsi", "?")
