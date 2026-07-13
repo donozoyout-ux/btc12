@@ -293,7 +293,7 @@ class Bot:
                 try:
                     fd = debate.get("final_decision", "HOLD")
                     fc = float(debate.get("final_confidence", 0) or 0)
-                    if fd in ("BUY", "SELL") and fc >= 0.60:
+                    if fd in ("BUY", "SELL") and fc >= 0.50:
                         now = time.time()
                         if fd != self._last_signal_action or (now - self._last_signal_notify) > 600:
                             self._last_signal_notify = now

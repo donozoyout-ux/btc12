@@ -260,16 +260,17 @@ class QuantAgent:
                     debate_buy += 1
                 elif v == "SELL":
                     debate_sell += 1
-        # Güçlü sinyal: final yön + güven >= %60 + en az 3/5 ajan aynı yönde
-        debate_strong_buy = debate_action == "BUY" and debate_conf >= 0.60 and debate_buy >= 3
-        debate_strong_sell = debate_action == "SELL" and debate_conf >= 0.60 and debate_sell >= 3
+        # Güçlü sinyal: final yön + güven >= %50 + en az 3/5 ajan aynı yönde
+        # (test/izleme kolaylığı için eşik 0.60 -> 0.50 düşürüldü; istenirse yükseltilebilir)
+        debate_strong_buy = debate_action == "BUY" and debate_conf >= 0.50 and debate_buy >= 3
+        debate_strong_sell = debate_action == "SELL" and debate_conf >= 0.50 and debate_sell >= 3
         if debate_strong_buy or debate_strong_sell:
             print(f"  [DEBATE] final={debate_action} guven={debate_conf:.0%} | AL:{debate_buy} SAT:{debate_sell} (GÜÇLÜ SİNYAL)")
 
         # Ardışık kayıp durumunda güven eşiğini yükselt
-        min_confidence = 0.50
+        min_confidence = 0.45
         if ardisik_kayip >= settings.max_consecutive_losses:
-            min_confidence = 0.70
+            min_confidence = 0.60
             risk_seviyesi = "muhafazakar"
 
         # ─── Konsensüs sonucunu XGBoost ile doğrula ───
