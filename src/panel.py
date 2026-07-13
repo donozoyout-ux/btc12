@@ -200,7 +200,7 @@ body {
   </div>
 </header>
 
-<main class="p-6 space-y-6 max-w-[1700px] mx-auto">
+<main class="p-6 space-y-6 w-full">
   <!-- Ana Metrik Kartları -->
   <section class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4" data-purpose="top-stats-cards">
     <div class="glass p-4 rounded-xl flex flex-col justify-between">
