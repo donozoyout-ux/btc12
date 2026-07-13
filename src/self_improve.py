@@ -63,6 +63,38 @@ def get_lessons(limit=8):
     return list(reversed(s.get("lessons", [])[-limit:]))
 
 
+def build_recent_reflection(limit=5):
+    """Son işlemlerin net K/Z özetini ve son zararın nedenini üreten öz-eleştiri metni.
+    5 beyne (Gemini tartışmasına) enjekte edilir ki başarısız strateji tekrarlanmasın."""
+    try:
+        from src.database import db
+    except Exception:
+        return ""
+    try:
+        trades = db.get_trade_history(limit)
+    except Exception:
+        return ""
+    sells = [t for t in trades if t.get("action") == "SELL"]
+    if not sells:
+        return ""
+    son5 = sells[:limit]
+    net = round(sum((t.get("pnl", 0) or 0) for t in son5), 2)
+    last_loss = next((t for t in sells if (t.get("pnl", 0) or 0) < 0), None)
+    if last_loss:
+        reason = (last_loss.get("reason") or "").lower()
+        if "stop" in reason or "sl" in reason or "stoploss" in reason:
+            cause = "Stop-loss patlaması"
+        else:
+            cause = "Yanlış sinyal"
+        loss_line = f"Son zararlı işlem nedenin: {cause}."
+    else:
+        loss_line = "Son zararlı işlem nedeni: son işlemlerde zarar yok."
+    return (
+        f"Son {len(son5)} işlemdeki Net K/Z durumun: {net:+.2f} $. "
+        f"{loss_line} "
+        f"Yeni kararını verirken bu başarısız stratejiyi tekrarlamadığından emin ol."
+    )
+
 def decide_position_size(equity, confidence, win_rate=0.5, drawdown_pct=0.0, daily_progress=0.0):
     """
     Sistemin kendi işlem miktarını belirlemesi.

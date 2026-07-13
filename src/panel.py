@@ -264,6 +264,14 @@ body {
           <span id="directiveStatus" class="text-[10px] text-emerald-400"></span>
           <button onclick="trainDirective()" class="btn bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-extrabold px-3 py-1.5 rounded-md shadow-md shadow-purple-500/10">EĞİT / KAYDET</button>
         </div>
+        <div class="mt-3 pt-3 border-t border-white/5">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-[10px] font-bold text-slate-400">SON BESLEME (beynlere gidiyor)</span>
+            <button onclick="updateReflection()" class="text-[9px] text-purple-300 hover:text-purple-200">YENİLE</button>
+          </div>
+          <div id="reflectionBox" class="text-[10px] text-slate-400 bg-surface-lowest/60 border border-white/5 rounded-lg p-2.5 leading-relaxed mb-2">Hesaplanıyor...</div>
+          <div id="lastDebateBox" class="grid grid-cols-5 gap-1.5"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -494,6 +502,32 @@ function trainDirective() {
     document.getElementById('directiveStatus').textContent = d.success ? '✓ Kaydedildi' : ('✗ ' + d.message);
     showNotification(d.message || 'Kaydedildi', d.success ? 'success' : 'error');
   }).catch(() => showNotification('Bağlantı hatası', 'error'));
+}
+
+function updateReflection() {
+  fetch('/api/reflection').then(r => r.json()).then(d => {
+    var box = document.getElementById('reflectionBox');
+    if (box && d.reflection) box.textContent = d.reflection;
+    var db = document.getElementById('lastDebateBox');
+    if (!db) return;
+    var debate = d.debate;
+    if (!debate || !debate.brains || debate.brains.length === 0) {
+      db.innerHTML = '<div class="col-span-full text-[10px] text-slate-500 italic">Henüz tartışma yok</div>';
+      return;
+    }
+    var h = '';
+    debate.brains.forEach(function(b) {
+      var v = b.karar || 'BEKLE';
+      var col = v === 'AL' ? 'text-emerald-400' : (v === 'SAT' ? 'text-rose-400' : 'text-slate-400');
+      var pct = Math.round((b.guven_skoru || 0) * 100);
+      h += '<div class="rounded-lg border border-white/5 bg-surface-lowest/50 px-1.5 py-1 text-center">'
+        + '<div class="text-[8px] font-bold text-slate-300 leading-tight">' + (b.ajan || b.name) + '</div>'
+        + '<div class="text-[10px] font-extrabold ' + col + '">' + v + '</div>'
+        + '<div class="text-[8px] font-mono ' + col + '">' + pct + '%</div>'
+        + '</div>';
+    });
+    db.innerHTML = h;
+  }).catch(() => {});
 }
 
 function updatePnlHistory() {
@@ -1083,6 +1117,7 @@ updateDecisions();
 updateDailyPnl();
 updateAgents();
 updatePnlHistory();
+updateReflection();
 
 // Polling intervals
 setInterval(updateStatus, 5000);
@@ -1090,6 +1125,7 @@ setInterval(updateDecisions, 5000);
 setInterval(updateDailyPnl, 10000);
 setInterval(updateGoal, 15000);
 setInterval(updatePnlHistory, 8000);
+setInterval(updateReflection, 15000);
 setInterval(updateSelfImprove, 15000);
 setInterval(updateAgents, 5000);
 
@@ -1546,6 +1582,13 @@ def api_reset_all():
 def api_get_directive():
     from src import ai_brains
     return jsonify({"directive": ai_brains.load_directive()})
+
+
+@app.route('/api/reflection', methods=['GET'])
+def api_reflection():
+    from src import self_improve
+    return jsonify({"reflection": self_improve.build_recent_reflection(5),
+                    "debate": llm_agent.get_last_debate()})
 
 
 @app.route('/api/train_directive', methods=['POST'])

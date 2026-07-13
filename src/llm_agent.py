@@ -1,9 +1,13 @@
 """
 Gemini 5-Brain AI Debate Consensus System
-==========================================
+=========================================
 5 uzman AI kişiliği (Gemini LLM) piyasa verilerini tartışır ve ortak karara varır.
 Her beyin kendi uzmanlık alanına göre argüman üretir.
-Mevcut ML tabanlı ajanlarla (agents.py) birlikte çalışır - onları TAMAMLAR, değiştirmez.
+
+Her beyin, kullanıcının verdiği rol şablonuna göre (AJAN_ADI / AJAN_GÖREVİ /
+analiz odağı) kişiliklendirilir. Son işlemlerin net K/Z özeti ("otonom öğrenme
+logları") beyinlere beslenir; böylece başarısız strateji tekrarlanmaz.
+Mevcut ML tabanlı ajanlarla (agents.py) birlikte çalışır - onları TAMAMLAR.
 """
 
 import json
@@ -45,77 +49,133 @@ def _get_model():
         return None
 
 
-SYSTEM_PROMPT = """Sen bir kripto para uzman paneli koordinatörüsün. 5 farklı uzman beyinin tartışmasını simüle edeceksin.
+# Her beynin analiz odağı (AJAN_GÖREVİ şablonundaki "Analiz Odağın" yerine geçer)
+_AGENT_FOCUS = {
+    "trend": "EMA/MACD uyumu, trend yönü ve momentum",
+    "volatility": "RSI, StochRSI ve Bollinger Band aşırı alım/satım bölgeleri",
+    "volume": "Hacim oranı ve orderbook (bid/ask) dengesi",
+    "level": "Destek/direnç seviyeleri ve kırılım sinyalleri",
+    "sentiment": "Haber/duygu tonu, Fear & Greed endeksi ve makro psikoloji",
+}
 
-## 5 UZMAN BEYİN:
-
-1. **TREND (Trend & Momentum Stratejisti)**: EMA kesişimleri, MACD momentumu, fiyat trendleri ve sling shot renklerine odaklanır. Trend takipçisidir.
-
-2. **VOLATILITE (Volatilite & Mean Reversion Analisti)**: RSI aşırı alım/satım bölgeleri, StochRSI, Bollinger Band pozisyonu ve ATR volatilitesine odaklanır. Ortalamaya dönüşü arar.
-
-3. **HACIM (Orderbook & Hacim Uzmanı)**: Alım/satım hacim oranı, orderbook dengesizliği (bid/ask ratio), hacimle teyit edilen hareketlere odaklanır.
-
-4. **SEVİYE (Destek/Direnç & Kırılım Mimarı)**: Fiyatın destek ve direnç seviyelerine göre konumunu, kırılım sinyallerini ve Bollinger Band sınırlarını analiz eder.
-
-5. **DUYGU (Makro Duygu & Haber Analisti)**: Son haberlerin duygusal tonunu, Fear & Greed endeksini ve piyasa psikolojisini değerlendirir. Contrarian (karşıt) bakış açısı sunar.
-
-## KURALLAR:
-- Her beyin KENDİ uzmanlık alanındaki verilere dayanarak 2-3 cümlelik argüman üretmeli.
-- Her beyin BUY, SELL veya HOLD oylamalı ve 0.0-1.0 arası güven puanı vermeli.
-- Argümanlar TÜRKÇE olmalı.
-- Sonunda 5 beyinin oylarına göre final karar verilmeli (çoğunluk).
-- SADECE aşağıdaki JSON formatında cevap ver, başka hiçbir şey yazma.
-
-## ÇIKTI FORMATI (SADECE JSON):
-{
-  "brains": [
-    {"name": "TREND", "vote": "BUY|SELL|HOLD", "confidence": 0.0-1.0, "argument": "..."},
-    {"name": "VOLATILITE", "vote": "BUY|SELL|HOLD", "confidence": 0.0-1.0, "argument": "..."},
-    {"name": "HACIM", "vote": "BUY|SELL|HOLD", "confidence": 0.0-1.0, "argument": "..."},
-    {"name": "SEVİYE", "vote": "BUY|SELL|HOLD", "confidence": 0.0-1.0, "argument": "..."},
-    {"name": "DUYGU", "vote": "BUY|SELL|HOLD", "confidence": 0.0-1.0, "argument": "..."}
-  ],
-  "final_decision": "BUY|SELL|HOLD",
-  "final_confidence": 0.0-1.0,
-  "summary": "1-2 cümlelik genel değerlendirme"
-}"""
+_ORDER = ["trend", "volatility", "volume", "level", "sentiment"]
 
 
-def _build_brain_instructions(brains=None):
-    """Kullanıcının düzenlediği beyin talimatlarını prompt'a enjekte eder."""
+def _build_agent_personas(brains=None):
+    """Her beyne rol şablonunu uygular: AJAN_ADI + AJAN_GÖREVİ + analiz odağı."""
     if not brains:
         try:
             from src import ai_brains
             brains = ai_brains.load_brains()
         except Exception:
             return ""
-    lines = []
-    for key in ["trend", "volatility", "volume", "level", "sentiment"]:
+    blocks = []
+    for key in _ORDER:
         b = brains.get(key)
         if not b or not b.get("enabled", True):
             continue
         name = b.get("label", key).upper()
-        instr = b.get("instruction", "")
-        if instr:
-            lines.append(f"- {name}: {instr}")
-    if not lines:
-        return ""
+        role = b.get("instruction", "")
+        focus = _AGENT_FOCUS.get(key, "ilgili göstergeler")
+        blocks.append(
+            f"### AJAN: {name}\n"
+            f"- Rolün / Bakış açın: {role}\n"
+            f"- Analiz odağın: {focus}"
+        )
+    return "\n\n".join(blocks)
 
-    # Kullanıcının 5 beyne verdiği eğitim talimatı (AI Yönet -> prompt ile eğit)
-    directive_text = ""
+
+def _build_directive_block():
     try:
         from src import ai_brains
         directive = ai_brains.load_directive()
         if directive:
-            directive_text = (
+            return (
                 "\n\n### KULLANICININ EĞİTİM TALİMATI (AI Yönet üzerinden verildi)\n"
-                f"{directive}\n"
-                "Bu talimatı tüm beyinler için ÜSTTEN BAĞLAYICI bir rehber olarak uygula."
+                f"{directive}\nBu talimatı tüm beyinler için ÜSTTEN BAĞLAYICI bir rehber olarak uygula."
             )
     except Exception:
         pass
+    return ""
 
-    return "\n\n### UZMANLIK TALİMATLARI (Kullanıcı tanımlı)\n" + "\n".join(lines) + directive_text
+
+def _build_reflection_block():
+    """Son işlemlerin net K/Z özeti -> 'otonom öğrenme logları' olarak beslenir."""
+    try:
+        from src import self_improve
+        refl = self_improve.build_recent_reflection(5)
+        if refl:
+            return (
+                "\n\n### SON İŞLEMLERİN OTONOM ÖĞRENME LOGLARI (Son 5 işlem)\n"
+                f"{refl}\n"
+                "Bu logdaki bilgi, GÜVEN SKORU kuralının '+0.30 geçmiş hatalardan kaçınma' "
+                "kısmını besler. Beyinler bu hataları tekrarlamamalıdır."
+            )
+    except Exception:
+        pass
+    return ""
+
+
+def _build_lessons_block(lessons):
+    if not lessons:
+        return ""
+    try:
+        lines = []
+        for les in lessons[-6:]:
+            ls = les.get("lesson", "") if isinstance(les, dict) else str(les)
+            if ls:
+                lines.append(f"- {ls}")
+        if not lines:
+            return ""
+        return (
+            "\n\n### SİSTEMİN ÖĞRENDİĞİ DERSLER (geçmiş işlemlerden)\n"
+            + "\n".join(lines)
+            + "\nBu dersleri dikkate al: başarısız yaklaşımlardan kaçın, işe yarayanı güçlendir."
+        )
+    except Exception:
+        return ""
+
+
+_SYSTEM_PROMPT = """Sen, 5 farklı yapay zeka ajanından oluşan otonom bir BTC Alım-Satım Konsensüs Sistemi'nin koordinatörüsün. Aşağıdaki 5 ajanın her biri kendi uzmanlık alanına göre filtreleme yapar ve diğer ajanlarla rasyonel bir tartışma yürütür. Her ajan için tanımlı rolü kullanarak o ajanın bakış açısından düşün ve çıktıyı üret.
+
+## 5 AJANIN ROLLERİ VE ODAKLARI
+{AGENT_PERSONAS}
+
+KESİN YASAKLAR VE KURALLAR:
+1. Finansal klişeler ("Piyasa belirsiz duruyor", "Yatırım tavsiyesi değildir") KESİNLİKLE kullanma. Net, analitik ve agresif ol.
+2. Diğer ajanların kararlarına körü körüne katılma (Groupthink yapma). Eğer masadaki diğer ajanlar "AL" diyorsa ve senin indikatörün bunu desteklemiyorsa, konsensüsü bozma pahasına "BEKLE" kararı ver ve gerekçeni matematiksel olarak masaya koy.
+3. Çıktı formatını bozma. Sadece ham analizini, nihai kararını (AL / SAT / BEKLE) ve güven skorunu üret.
+
+GÜVEN SKORU HESAPLAMA METRİĞİ (0.00 - 1.00):
+Güven skorunu rastgele belirleme, şu kurallara göre puan ver:
+- Fiyat aksiyonu senin indikatör setinle %100 uyumluysa: +0.40
+- Masadaki muhalif/karamsar ajanın argümanını çürütebiliyorsan: +0.30
+- Son 5 işlemdeki otonom öğrenme loglarında belirtilen geçmiş hatalardan kaçınabiliyorsan: +0.30
+Toplam skor 0.70'in altındaysa kararın ne olursa olsun ağırlığın "BEKLE" yönünde olacaktır.
+{REFLECTION}
+{DIRECTIVE}
+{LESSONS}
+
+{CONTEXT}
+
+Yukarıdaki verileri analiz et ve 5 uzman beynin tartışmasını simüle et. SADECE aşağıdaki JSON formatında cevap ver:
+
+{
+  "brains": [
+    {"ajan": "TREND", "analiz": "Kısa, net ve verilere dayalı argüman (Maksimum 2 cümle)", "karar": "AL", "guven_skoru": 0.82},
+    {"ajan": "VOLATILITE", "analiz": "...", "karar": "BEKLE", "guven_skoru": 0.55},
+    {"ajan": "HACIM", "analiz": "...", "karar": "AL", "guven_skoru": 0.71},
+    {"ajan": "SEVİYE", "analiz": "...", "karar": "SAT", "guven_skoru": 0.60},
+    {"ajan": "DUYGU", "analiz": "...", "karar": "BEKLE", "guven_skoru": 0.50}
+  ],
+  "final_decision": "AL",
+  "final_confidence": 0.70,
+  "summary": "1-2 cümle genel değerlendirme"
+}"""
+
+
+_KARAR_MAP = {"AL": "BUY", "BUY": "BUY", "SAT": "SELL", "SELL": "SELL",
+              "BEKLE": "HOLD", "HOLD": "HOLD", "WAIT": "HOLD"}
 
 
 def _build_market_context(teknik, haberler=None, ml_votes=None):
@@ -177,7 +237,6 @@ Son 5-bar Değişim: %{price_change_5:.2f}
 - Aşağı Kırılım: {"EVET" if breakout_down else "Hayır"}
 """
 
-    # Haberler
     if haberler and len(haberler) > 0:
         ctx += "\n### SON HABERLER\n"
         for h in haberler[:5]:
@@ -185,7 +244,6 @@ Son 5-bar Değişim: %{price_change_5:.2f}
             sentiment = h.get("sentiment", "notr")
             ctx += f"- [{sentiment.upper()}] {baslik}\n"
 
-    # ML Ajan Oyları (mevcut agents.py sistemi)
     if ml_votes:
         ctx += "\n### ML AJAN OYLAMASI (Mevcut Sistem)\n"
         for name, vote in ml_votes.items():
@@ -218,21 +276,18 @@ def run_debate(teknik, haberler=None, ml_votes=None, brains=None, lessons=None):
     if context is None:
         return None
 
-    brain_instructions = _build_brain_instructions(brains)
-
-    lessons_text = ""
-    if lessons:
-        try:
-            lessons_text = "\n\n### SISTEMIN ÖĞRENDİĞİ DERSLER (geçmiş işlemlerden)\n"
-            for les in lessons[-6:]:
-                ls = les.get("lesson", "") if isinstance(les, dict) else str(les)
-                lessons_text += f"- {ls}\n"
-            lessons_text += "\nBu dersleri dikkate al: başarısız olan yaklaşımlardan kaçın, işe yarayanı güçlendir."
-        except Exception:
-            lessons_text = ""
+    personas = _build_agent_personas(brains)
+    reflection = _build_reflection_block()
+    directive = _build_directive_block()
+    lessons_text = _build_lessons_block(lessons)
 
     try:
-        prompt = f"{SYSTEM_PROMPT}{brain_instructions}{lessons_text}\n\n{context}\n\nYukarıdaki verileri analiz et ve 5 uzman beyinin tartışmasını simüle et."
+        prompt = _SYSTEM_PROMPT
+        prompt = prompt.replace("{AGENT_PERSONAS}", personas)
+        prompt = prompt.replace("{REFLECTION}", reflection)
+        prompt = prompt.replace("{DIRECTIVE}", directive)
+        prompt = prompt.replace("{LESSONS}", lessons_text)
+        prompt = prompt.replace("{CONTEXT}", context)
 
         response = model.generate_content(prompt)
         text = response.text.strip()
@@ -240,20 +295,45 @@ def run_debate(teknik, haberler=None, ml_votes=None, brains=None, lessons=None):
         # JSON parse
         debate = json.loads(text)
 
-        # Doğrulama
-        if "brains" not in debate or len(debate.get("brains", [])) != 5:
-            print(f"[GEMINI] Gecersiz cikti formati, brains eksik/hatali")
+        raw_brains = debate.get("brains", [])
+        if not isinstance(raw_brains, list) or len(raw_brains) < 1:
+            print("[GEMINI] Gecersiz cikti: brains yok/hatali")
             return _LAST_DEBATE
+
+        # Ham beyinleri dahili formata map et (karar AL/SAT/BEKLE -> BUY/SELL/HOLD)
+        mapped = []
+        for bb in raw_brains:
+            karar = str(bb.get("karar", "BEKLE")).strip().upper()
+            vote = _KARAR_MAP.get(karar, "HOLD")
+            try:
+                conf = float(bb.get("guven_skoru", bb.get("confidence", 0)) or 0)
+            except Exception:
+                conf = 0.0
+            mapped.append({
+                "name": bb.get("ajan", bb.get("name", "?")),
+                "ajan": bb.get("ajan", bb.get("name", "?")),
+                "vote": vote,
+                "karar": karar,
+                "confidence": round(conf, 3),
+                "guven_skoru": round(conf, 3),
+                "argument": bb.get("analiz", bb.get("argument", "")),
+                "analiz": bb.get("analiz", bb.get("argument", "")),
+            })
+        debate["brains"] = mapped
 
         # Meta veriler ekle
         debate["timestamp"] = datetime.now().isoformat()
         debate["symbol"] = settings.symbol
         debate["price"] = teknik.get("price", 0)
 
+        # final_decision map
+        fd_raw = str(debate.get("final_decision", "")).strip().upper()
+        debate["final_decision"] = _KARAR_MAP.get(fd_raw, "HOLD")
+
         # Oy sayımı
-        buy_count = sum(1 for b in debate["brains"] if b.get("vote") == "BUY")
-        sell_count = sum(1 for b in debate["brains"] if b.get("vote") == "SELL")
-        hold_count = sum(1 for b in debate["brains"] if b.get("vote") == "HOLD")
+        buy_count = sum(1 for b in mapped if b["vote"] == "BUY")
+        sell_count = sum(1 for b in mapped if b["vote"] == "SELL")
+        hold_count = sum(1 for b in mapped if b["vote"] == "HOLD")
         debate["buy_count"] = buy_count
         debate["sell_count"] = sell_count
         debate["hold_count"] = hold_count
@@ -263,9 +343,9 @@ def run_debate(teknik, haberler=None, ml_votes=None, brains=None, lessons=None):
 
         fd = debate.get("final_decision", "HOLD")
         fc = debate.get("final_confidence", 0)
-        print(f"[GEMINI] Debate tamamlandi: {fd} (%{fc*100:.0f}) | AL:{buy_count} SAT:{sell_count} BEKLE:{hold_count}")
-        for b in debate["brains"]:
-            print(f"  [{b['name']}] {b['vote']} (%{b['confidence']*100:.0f}): {b['argument'][:80]}")
+        print(f"[GEMINI] Debate tamamlandi: {fd} (%{float(fc)*100:.0f}) | AL:{buy_count} SAT:{sell_count} BEKLE:{hold_count}")
+        for b in mapped:
+            print(f"  [{b['name']}] {b['karar']} (%{b['guven_skoru']*100:.0f}): {str(b['analiz'])[:80]}")
 
         return debate
 
