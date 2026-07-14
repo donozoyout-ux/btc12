@@ -213,13 +213,67 @@ class Trader:
         return df[["datetime", "open", "high", "low", "close", "volume"]]
 
     # ──────────────────────────────────────────────────────────────
-    #  Orderbook / son işlemler (CoinGecko vermez -> nötr sentetik)
+    #  Orderbook: Binance public (anahtarsız) depth endpoint'ten gercek derinlik.
+    #  Son işlemler: nötr sentetik (şimdilik kullanılmıyor).
     # ──────────────────────────────────────────────────────────────
     def get_orderbook(self, limit=50):
-        return {
+        """Gerçek orderbook (emniyet/bid-ask derinliği) verisini çeker.
+
+        Binance public REST endpoint kullanılır; bu, işlem yapmayan,
+        anahtar gerektirmeyen salt-okunur piyasa verisidir (tıpkı CoinGecko
+        fiyatı gibi). İstek başarısız olursa eski sabit (notr) dict'e düşer
+        ki bot asla çökmesin.
+        """
+        fallback = {
             "bid_ask_ratio": 1.0, "bid_ask_sinyal": "notr", "spread": 0.0,
             "bid_volume": 0.0, "ask_volume": 0.0, "top10_bid": 0.0, "top10_ask": 0.0,
+            "source": "stub",
         }
+        try:
+            sym = settings.symbol.replace("/", "").upper()
+            url = f"https://api.binance.com/api/v3/depth?symbol={sym}&limit={limit}"
+            proxies = {"http": settings.binance_proxy, "https": settings.binance_proxy} if settings.binance_proxy else None
+            r = requests.get(url, timeout=10, proxies=proxies,
+                             headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code != 200:
+                return fallback
+            data = r.json()
+            bids = data.get("bids", [])
+            asks = data.get("asks", [])
+            if not bids or not asks:
+                return fallback
+
+            best_bid = float(bids[0][0])
+            best_ask = float(asks[0][0])
+            spread = round(best_ask - best_bid, 2)
+
+            bid_volume = sum(float(b[1]) for b in bids[:limit])
+            ask_volume = sum(float(a[1]) for a in asks[:limit])
+            top10_bid = sum(float(b[1]) for b in bids[:10])
+            top10_ask = sum(float(a[1]) for a in asks[:10])
+
+            bid_ask_ratio = round(bid_volume / ask_volume, 3) if ask_volume > 0 else 1.0
+
+            if bid_ask_ratio > 1.1:
+                sinyal = "al"
+            elif bid_ask_ratio < 0.9:
+                sinyal = "sat"
+            else:
+                sinyal = "notr"
+
+            return {
+                "bid_ask_ratio": bid_ask_ratio,
+                "bid_ask_sinyal": sinyal,
+                "spread": spread,
+                "bid_volume": round(bid_volume, 3),
+                "ask_volume": round(ask_volume, 3),
+                "top10_bid": round(top10_bid, 3),
+                "top10_ask": round(top10_ask, 3),
+                "source": "binance",
+            }
+        except Exception as e:
+            print(f"[TRADER] Orderbook hatasi (stub'a donuluyor): {e}")
+            return fallback
 
     def get_recent_trades(self, limit=50):
         return {"buy_sell_ratio": 1.0}
