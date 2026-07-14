@@ -19,29 +19,42 @@ HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BTC AI BOT Dashboard</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script>
 tailwind.config = {
   darkMode: 'class',
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
+        sans: ['Geist', 'Inter', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
       colors: {
         surface: {
-          DEFAULT: '#0b0f19',
-          dim: '#131b2d',
-          bright: '#242f49',
-          lowest: '#060a12',
-          low: '#0e1424',
+          DEFAULT: '#121318',
+          dim: '#1a1b21',
+          bright: '#292a2f',
+          lowest: '#0d0e13',
+          low: '#1e1f25',
         },
         trading: {
-          buy: '#10b981',
-          sell: '#ef4444',
-          accent: '#3b82f6'
-        }
+          buy: '#00e1ab',
+          sell: '#cb0247',
+          accent: '#3ad6ff'
+        },
+        // ─── Cyber-Quant Pro: varsayılan Tailwind renklerini yeniden eşle ───
+        emerald: { 300: '#7dffdc', 400: '#2ee6b4', 500: '#00e1ab', 600: '#00c295' },
+        rose:    { 300: '#ffc7cd', 400: '#ffb2ba', 500: '#cb0247', 600: '#a3023b' },
+        red:     { 400: '#ffb2ba', 500: '#cb0247' },
+        indigo:  { 300: '#7ee7ff', 400: '#3ad6ff', 500: '#22b8e6', 600: '#1aa0cc' },
+        blue:    { 300: '#7ee7ff', 400: '#3ad6ff', 500: '#22b8e6', 600: '#1aa0cc' },
+        cyan:    { 400: '#3ad6ff', 500: '#22b8e6' },
+        purple:  { 200: '#e9dcff', 300: '#cbb6ff', 400: '#a87bff', 500: '#7727ff', 600: '#5e1fcf' },
+        violet:  { 500: '#7727ff' },
+        green:   { 500: '#00e1ab' },
+        amber:   { 300: '#ffd58a', 400: '#ffb84d', 500: '#f59e0b', 600: '#b45309' },
+        yellow:  { 500: '#ffb84d' },
+        slate:   { 200: '#cdd3da', 300: '#9aa3ad', 400: '#83958c', 500: '#5b636e', 600: '#3a4a43' }
       }
     }
   }
@@ -54,9 +67,9 @@ tailwind.config = {
   box-sizing: border-box;
 }
 body {
-  font-family: 'Inter', sans-serif;
-  background: radial-gradient(circle at top, #0f172a 0%, #020617 100%);
-  color: #f1f5f9;
+  font-family: 'Geist', 'Inter', sans-serif;
+  background: #0A0B10;
+  color: #e3e1e9;
   min-height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
@@ -64,44 +77,46 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 .glass {
-  background: rgba(14, 20, 36, 0.45);
+  background: #14161f;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  border: 1px solid #232634;
+  /* Tonal layering + inner glow (drop-shadow yerine) */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
 .glass-glow {
-  box-shadow: 0 0 20px rgba(59, 130, 246, 0.15);
+  box-shadow: inset 0 0 0 1px rgba(0, 225, 171, 0.10), 0 0 18px rgba(0, 225, 171, 0.06);
 }
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #060a12;
+  background: #0d0e13;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: #3a4a43;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #83958c;
 }
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 5px rgba(16, 185, 129, 0.2); }
-  50% { box-shadow: 0 0 15px rgba(16, 185, 129, 0.6); }
+  0%, 100% { box-shadow: 0 0 5px rgba(0, 225, 171, 0.25); }
+  50% { box-shadow: 0 0 14px rgba(0, 225, 171, 0.55); }
 }
 .pulse-glow-green {
   animation: pulse-glow 2s infinite;
 }
 .btn {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: filter 0.2s ease, transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .btn:hover {
-  transform: translateY(-1px);
+  filter: brightness(1.1);
 }
 .btn:active {
   transform: translateY(1px);
+  filter: brightness(0.95);
 }
 .trade-item {
   transition: all 0.2s ease;
@@ -1607,7 +1622,7 @@ function closeAgentModal() {
 
 <!-- AI BEYİNLERİ DÜZENLEME MODALI -->
 <div id="brainsModal" onclick="if(event.target===this)closeBrainsModal()" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;justify-content:center;align-items:center;opacity:0;transition:opacity 0.2s ease">
-  <div style="background:linear-gradient(135deg,#0f172a 0%,#0c1a2e 100%);border-radius:20px;border:1px solid rgba(255,255,255,0.1);max-width:640px;width:92%;max-height:88vh;overflow-y:auto;padding:24px;box-shadow:0 25px 50px rgba(0,0,0,0.5)">
+  <div style="background:linear-gradient(135deg,#14161f 0%,#1a1b21 100%);border-radius:20px;border:1px solid #232634;max-width:640px;width:92%;max-height:88vh;overflow-y:auto;padding:24px;box-shadow:0 25px 50px rgba(0,0,0,0.6)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <h3 style="font-size:18px;font-weight:900;color:white;margin:0">🧠 AI Beyinlerini Düzenle</h3>
       <button onclick="closeBrainsModal()" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#94a3b8;font-size:16px;width:32px;height:32px;cursor:pointer;display:flex;align-items:center;justify-content:center">✕</button>
@@ -1615,7 +1630,7 @@ function closeAgentModal() {
     <p style="font-size:11px;color:#64748b;margin-bottom:14px;line-height:1.4">Her analiz bölümü için AI'ın nasıl düşüneceğini yaz. Bu talimatlar Gemini 5-Beyin tartışmasında kullanılır. İstediğin bilgiyi sen yazabilirsin.</p>
     <div id="brainsModalBody"></div>
     <div style="display:flex;gap:10px;margin-top:18px">
-      <button onclick="saveBrains()" style="flex:1;background:linear-gradient(135deg,#06b6d4,#3b82f6);color:white;font-weight:800;font-size:13px;padding:12px;border-radius:12px;border:none;cursor:pointer">💾 KAYDET</button>
+      <button onclick="saveBrains()" style="flex:1;background:linear-gradient(135deg,#3ad6ff,#22b8e6);color:#06222b;font-weight:800;font-size:13px;padding:12px;border-radius:12px;border:none;cursor:pointer">💾 KAYDET</button>
       <button onclick="closeBrainsModal()" style="background:rgba(255,255,255,0.06);color:#94a3b8;font-weight:700;font-size:13px;padding:12px 18px;border-radius:12px;border:1px solid rgba(255,255,255,0.1);cursor:pointer">İPTAL</button>
     </div>
   </div>
@@ -1623,7 +1638,7 @@ function closeAgentModal() {
 
 <!-- AJAN DETAY MODALI -->
 <div id="agentDetailModal" onclick="if(event.target===this)closeAgentModal()" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;justify-content:center;align-items:center;opacity:0;transition:opacity 0.2s ease">
-  <div style="background:linear-gradient(135deg,#0f172a 0%,#1e1b4b 100%);border-radius:20px;border:1px solid rgba(255,255,255,0.1);max-width:520px;width:90%;max-height:85vh;overflow-y:auto;padding:24px;box-shadow:0 25px 50px rgba(0,0,0,0.5)">
+  <div style="background:linear-gradient(135deg,#14161f 0%,#1a1b21 100%);border-radius:20px;border:1px solid #232634;max-width:520px;width:90%;max-height:85vh;overflow-y:auto;padding:24px;box-shadow:0 25px 50px rgba(0,0,0,0.6)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h3 id="modalTitle" style="font-size:18px;font-weight:900;color:white;margin:0"></h3>
       <button onclick="closeAgentModal()" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#94a3b8;font-size:16px;width:32px;height:32px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">✕</button>
@@ -1633,7 +1648,7 @@ function closeAgentModal() {
 </div>
 <!-- K/Z DETAY MODALI -->
 <div id="pnlDetailModal" onclick="if(event.target===this)closePnlModal()" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;justify-content:center;align-items:center;opacity:0;transition:opacity 0.2s ease">
-  <div style="background:linear-gradient(135deg,#0f172a 0%,#0c1a2e 100%);border-radius:20px;border:1px solid rgba(255,255,255,0.1);max-width:680px;width:94%;max-height:88vh;overflow-y:auto;padding:24px;box-shadow:0 25px 50px rgba(0,0,0,0.5)">
+  <div style="background:linear-gradient(135deg,#14161f 0%,#1a1b21 100%);border-radius:20px;border:1px solid #232634;max-width:680px;width:94%;max-height:88vh;overflow-y:auto;padding:24px;box-shadow:0 25px 50px rgba(0,0,0,0.6)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h3 id="pnlModalTitle" style="font-size:18px;font-weight:900;color:white;margin:0"></h3>
       <button onclick="closePnlModal()" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#94a3b8;font-size:16px;width:32px;height:32px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">✕</button>
