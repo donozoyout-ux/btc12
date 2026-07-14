@@ -339,10 +339,11 @@ def create_tables():
 
 
 def reset_all():
-    """Tüm ilgili Supabase tablolarını temizler (tam sıfırlama)."""
+    """İlgili Supabase tablolarını temizler (tam sıfırlama).
+    NOT: 'scans' (tarama gecmisi) ASLA silinmez - arsiv olarak kalici."""
     try:
         c = _client()
-        for table in ("scans", "trades", "decisions", "signals",
+        for table in ("trades", "decisions", "signals",
                       "ai_memory", "consensus_states", "agent_state"):
             try:
                 c.table(table).delete().neq("id", -1).execute()

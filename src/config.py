@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 class Settings:
@@ -13,7 +13,14 @@ class Settings:
     telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
 
     symbol = os.getenv("SYMBOL", "BTC/USDT")
-    gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+    # ─── Ücretsiz LLM (Groq / OpenAI-uyumlu) ───
+    # 5-beyinli LLM tartişmasi bu anahtarla çalişir. Ücretsiz (kart yok):
+    # console.groq.com/keys  ->  LLM_MODEL=llama-3.3-70b-versatile
+    llm_api_key = os.getenv("LLM_API_KEY", os.getenv("GEMINI_API_KEY", ""))
+    llm_base_url = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1")
+    llm_model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+    # LLM tartişmasinin konsensüsteki ağirlği (0 = devre dişi, 1 = tam ajan gibi)
+    llm_weight = float(os.getenv("LLM_WEIGHT", os.getenv("GEMINI_WEIGHT", "1.0")))
     check_interval = int(os.getenv("CHECK_INTERVAL", "10"))
     position_size_usd = float(os.getenv("POSITION_SIZE_USD", "500"))
     risk_per_trade = float(os.getenv("RISK_PER_TRADE", "2"))
@@ -41,9 +48,6 @@ class Settings:
 
     # Scalping modunda kısmi uyuşma ile de işlem açılabilsin (varsayılan 2/5)
     consensus_min = int(os.getenv("CONSENSUS_MIN", "2"))
-
-    # Gemini 5-Brain konsensüs ağırlığı (0 = devre dışı, 1 = tam ajan gibi sayılır)
-    gemini_weight = float(os.getenv("GEMINI_WEIGHT", "1.0"))
 
     # Aç gözlülük / atak modu: kapalıyken sistem disiplinli ve sabırlı kalır,
     # işlem agresifliğini otomatik artırmaz, günlük sabit hedef peşinde koşmaz.

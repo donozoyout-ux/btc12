@@ -144,10 +144,10 @@ class Database:
             conn.close()
 
     def reset_all(self):
-        """Tüm yerel ve Supabase verilerini (scans, trades, decisions, signals) sıfırlar."""
+        """Tüm yerel ve Supabase verilerini (trades, decisions, signals) sıfırlar.
+        NOT: 'scans' (tarama gecmisi) ASLA silinmez - arsiv olarak sonsuza kadar kalir."""
         conn = self._conn()
         try:
-            conn.execute("DELETE FROM scans")
             conn.execute("DELETE FROM trades")
             conn.execute("DELETE FROM decisions")
             conn.execute("DELETE FROM signals")

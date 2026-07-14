@@ -12,41 +12,51 @@ Mevcut ML tabanlı ajanlarla (agents.py) birlikte çalışır - onları TAMAMLAR
 
 import json
 import time
+import requests
 from datetime import datetime
 from src.config import settings
 
-# Gemini client - lazy init
-_GEMINI_MODEL = None
+# LLM client (Groq / OpenAI-uyumlu) - lazy init
+_LLM_CLIENT = None
 _LAST_DEBATE = None
 _LAST_DEBATE_TIME = 0
 _DEBATE_COOLDOWN = 30  # Saniye - her taramada çağırmamak için
 
 
 def _get_model():
-    """Gemini modelini lazy-init et."""
-    global _GEMINI_MODEL
-    if _GEMINI_MODEL is not None:
-        return _GEMINI_MODEL
-    if not settings.gemini_api_key:
-        print("[GEMINI] API key yok, LLM debate devre disi.")
+    """LLM istemcisini (Groq, OpenAI-uyumlu) lazy-init et.
+    Döner: {base_url, api_key, model} sozlugu veya None (anahtar yoksa)."""
+    global _LLM_CLIENT
+    if _LLM_CLIENT is not None:
+        return _LLM_CLIENT
+    if not settings.llm_api_key:
+        print("[LLM] API key yok, LLM debate devre disi.")
+        return None
+    _LLM_CLIENT = {
+        "base_url": settings.llm_base_url.rstrip("/"),
+        "api_key": settings.llm_api_key,
+        "model": settings.llm_model,
+    }
+    print(f"[LLM] Model yuklendi ({settings.llm_model}) | base: {settings.llm_base_url}")
+    return _LLM_CLIENT
+
+
+def _parse_json(text):
+    """Yanit metninden JSON'i saglamca cikarir (ilk { -> son })."""
+    if not text:
         return None
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=settings.gemini_api_key)
-        _GEMINI_MODEL = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
-            generation_config={
-                "temperature": 0.7,
-                "top_p": 0.9,
-                "max_output_tokens": 2048,
-                "response_mime_type": "application/json",
-            },
-        )
-        print("[GEMINI] Model basariyla yuklendi (gemini-2.5-flash)")
-        return _GEMINI_MODEL
-    except Exception as e:
-        print(f"[GEMINI] Model yukleme hatasi: {e}")
-        return None
+        return json.loads(text)
+    except Exception:
+        pass
+    try:
+        s = text.find("{")
+        e = text.rfind("}")
+        if s != -1 and e != -1 and e > s:
+            return json.loads(text[s:e + 1])
+    except Exception:
+        pass
+    return None
 
 
 # Her beynin analiz odağı (AJAN_GÖREVİ şablonundaki "Analiz Odağın" yerine geçer)
@@ -359,8 +369,8 @@ def run_debate(teknik, haberler=None, ml_votes=None, brains=None, lessons=None):
     if now - _LAST_DEBATE_TIME < _DEBATE_COOLDOWN and _LAST_DEBATE is not None:
         return _LAST_DEBATE
 
-    model = _get_model()
-    if model is None:
+    client = _get_model()
+    if client is None:
         return None
 
     context = _build_market_context(teknik, haberler, ml_votes)
@@ -380,15 +390,52 @@ def run_debate(teknik, haberler=None, ml_votes=None, brains=None, lessons=None):
         prompt = prompt.replace("{LESSONS}", lessons_text)
         prompt = prompt.replace("{CONTEXT}", context)
 
-        response = model.generate_content(prompt)
-        text = response.text.strip()
+        messages = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": (
+                "Yukaridaki kurallara ve sana atanan verilere gore 5 uzman "
+                "beynin tartismasini uret. SADECE JSON formatinda yanit ver."
+            )},
+        ]
+        payload = {
+            "model": client["model"],
+            "messages": messages,
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "max_tokens": 2048,
+            "response_format": {"type": "json_object"},
+        }
+        headers = {
+            "Authorization": f"Bearer {client['api_key']}",
+            "Content-Type": "application/json",
+        }
+        try:
+            resp = requests.post(
+                f"{client['base_url']}/chat/completions",
+                headers=headers, json=payload, timeout=60,
+            )
+        except Exception as e:
+            print(f"[LLM] Isteme baglanamadi: {e}")
+            return _LAST_DEBATE
+        if resp.status_code == 429:
+            print("[LLM] Kota/rate limit (429) — beyinler bu tur atlandi, son debate korunuyor.")
+            return _LAST_DEBATE
+        if resp.status_code != 200:
+            print(f"[LLM] HTTP {resp.status_code}: {resp.text[:240]}")
+            return _LAST_DEBATE
+        try:
+            data = resp.json()
+            text = data["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            print(f"[LLM] Yanit cozumleme hatasi: {e}")
+            return _LAST_DEBATE
 
-        # JSON parse
-        debate = json.loads(text)
+        # JSON parse (saglam)
+        debate = _parse_json(text)
 
         raw_brains = debate.get("brains", [])
         if not isinstance(raw_brains, list) or len(raw_brains) < 1:
-            print("[GEMINI] Gecersiz cikti: brains yok/hatali")
+            print("[LLM] Gecersiz cikti: brains yok/hatali")
             return _LAST_DEBATE
 
         # Ham beyinleri dahili formata map et (karar AL/SAT/BEKLE -> BUY/SELL/HOLD)
@@ -446,17 +493,17 @@ def run_debate(teknik, haberler=None, ml_votes=None, brains=None, lessons=None):
 
         fd = debate.get("final_decision", "HOLD")
         fc = debate.get("final_confidence", 0)
-        print(f"[GEMINI] Debate tamamlandi: {fd} (%{float(fc)*100:.0f}) | AL:{buy_count} SAT:{sell_count} BEKLE:{hold_count}")
+        print(f"[LLM] Debate tamamlandi: {fd} (%{float(fc)*100:.0f}) | AL:{buy_count} SAT:{sell_count} BEKLE:{hold_count}")
         for b in mapped:
             print(f"  [{b['name']}] {b['karar']} (%{b['guven_skoru']*100:.0f}): {str(b['analiz'])[:80]}")
 
         return debate
 
     except json.JSONDecodeError as e:
-        print(f"[GEMINI] JSON parse hatasi: {e}")
+        print(f"[LLM] JSON parse hatasi: {e}")
         return _LAST_DEBATE
     except Exception as e:
-        print(f"[GEMINI] Debate hatasi: {e}")
+        print(f"[LLM] Debate hatasi: {e}")
         return _LAST_DEBATE
 
 

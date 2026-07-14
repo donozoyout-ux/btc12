@@ -894,7 +894,7 @@ class ConsensusCoordinator:
         if gemini and gemini.get("final_decision") in ("BUY", "SELL"):
             gemini_action = gemini["final_decision"]
             gemini_conf = float(gemini.get("final_confidence", 0) or 0)
-            gw = settings.gemini_weight  # Gemini'in konsensüsteki ağırlığı (ayarlanabilir)
+            gw = settings.llm_weight  # LLM'in konsensüsteki ağırlığı (ayarlanabilir)
             if gw <= 0:
                 pass  # 0 ise Gemini konsensüse etki etmez
             elif gemini_action == "BUY":
@@ -904,7 +904,7 @@ class ConsensusCoordinator:
                 sell_count += 1
                 sell_weighted += gemini_conf * gw
             total_weight += gw
-            details_parts.append(f"🧠gemini:{gemini_action}({gemini_conf:.0%})")
+            details_parts.append(f"🧠llm:{gemini_action}({gemini_conf:.0%})")
 
         buy_score = buy_weighted / total_weight if total_weight > 0 else 0
         sell_score = sell_weighted / total_weight if total_weight > 0 else 0
@@ -941,7 +941,7 @@ class ConsensusCoordinator:
             "hold_count": hold_count,
             "buy_score": round(buy_score, 3),
             "sell_score": round(sell_score, 3),
-            "gemini": {"action": gemini_action, "confidence": round(gemini_conf, 3)},
+            "llm": {"action": gemini_action, "confidence": round(gemini_conf, 3)},
             "details": details,
         }
 

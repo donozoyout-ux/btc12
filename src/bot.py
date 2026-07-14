@@ -160,71 +160,7 @@ class Bot:
         # Modeller egitilmemisse ilk taramada, sonrasinda her 50 taramada bir egit
         is_any_agent_untrained = not consensus.agents["trend"].is_trained
         if (self.total_scans % 50 == 0 or (self.total_scans == 1 and is_any_agent_untrained)) and not df.empty:
-            try:
-                teknik_listesi = []
-                # Analiz motorunun en az 50 bar istemesi sebebiyle dilimleri 60 barlik yapiyoruz
-                for i in range(len(df) - 60):
-                    temp_df = df.iloc[i : i + 60]
-                    if len(temp_df) >= 60:
-                        t = analyzer.analyze(temp_df)
-                        if t:
-                            t["orderbook"] = teknik.get("orderbook", {})
-                            teknik_listesi.append(t)
-                if len(teknik_listesi) > 10:
-                    ok = ai_model.train(df, teknik_listesi, None)
-                    if ok:
-                        ai_state = ai_model.get_state()
-                        print(f"[AI] Egitildi: dogruluk=%{ai_state['accuracy']*100:.0f} tahmin={ai_state['prediction_count']}")
-                    # --- 5 Ajan Egitimi ---
-                    try:
-                        closes = df["close"].values
-                        N = len(closes)
-                        LOOK_AHEAD = 5  # 5 bar ileriye bak
-
-                        # Her dilim icin gelecek getiriyi hesapla
-                        returns = []
-                        for i in range(len(teknik_listesi)):
-                            bar_idx = min(i + 59, N - 1)
-                            future_idx = min(bar_idx + LOOK_AHEAD, N - 1)
-                            cur_price = closes[bar_idx]
-                            fut_price = closes[future_idx]
-                            ret = (fut_price - cur_price) / cur_price * 100
-                            returns.append(ret)
-
-                        # Dinamik threshold: ust/alt %33 dilim BUY/SELL, orta %34 HOLD
-                        import numpy as np
-                        if len(returns) > 30:
-                            sorted_ret = sorted(returns)
-                            n = len(sorted_ret)
-                            low_thresh  = sorted_ret[int(n * 0.33)]
-                            high_thresh = sorted_ret[int(n * 0.67)]
-
-                            agent_training_data = []
-                            for i, ret in enumerate(returns):
-                                t = teknik_listesi[i]
-                                if ret >= high_thresh:
-                                    label = 2  # BUY
-                                elif ret <= low_thresh:
-                                    label = 0  # SELL
-                                else:
-                                    label = 1  # HOLD
-                                agent_training_data.append((t, label))
-
-                            counts = {0: 0, 1: 0, 2: 0}
-                            for _, lbl in agent_training_data:
-                                counts[lbl] = counts.get(lbl, 0) + 1
-                            print(f"[TRAINING] Egitim seti: BUY={counts[2]} HOLD={counts[1]} SELL={counts[0]} (Toplam:{len(agent_training_data)})")
-
-                            if len(agent_training_data) > 15:
-                                consensus.train_all(agent_training_data)
-                    except Exception as e:
-                        print(f"[CONSENSUS] Ajan egitim hatasi: {e}")
-                        import traceback
-                        traceback.print_exc()
-            except Exception as e:
-                print(f"[TRAINING] Ana egitim adiminda hata: {e}")
-                import traceback
-                traceback.print_exc()
+            self._train_models(df, teknik)
 
         # Periyodik otonom öz-değerlendirme (her 50 taramada)
         if self.total_scans % 50 == 0 and self.total_scans > 0:
@@ -234,6 +170,16 @@ class Bot:
                     print(f"[SELF-IMPROVE] periyodik: {lesson}")
             except Exception as e:
                 print(f"[SELF-IMPROVE] periyodik hata: {e}")
+
+        # ─── Beyinlerin otomatik yenilenmesi ───
+        # Üst üste zarar serisi (MAX_CONSECUTIVE_LOSSES) tespit edilirse beyinler
+        # kendini yeniler: stale dersler temizlenir, agresiflik/guven esigi sifirlanir,
+        # modeller birikmis tarama gecmisiyle yeniden egitilir.
+        if self.total_scans - getattr(self, "_last_refresh_scan", -9999) >= 10:
+            ark = quant_agent.state.get("ardisik_kayip", 0)
+            if ark >= settings.max_consecutive_losses:
+                self.brain_refresh()
+                self._last_refresh_scan = self.total_scans
 
         price = teknik["price"]
         try:
@@ -304,7 +250,7 @@ class Bot:
                 except Exception:
                     pass
         except Exception as e:
-            print(f"[GEMINI] Debate cagirma hatasi: {e}")
+            print(f"[LLM] Debate cagirma hatasi: {e}")
 
         try:
             karar = quant_agent.analyze(teknik, haberler, portfoy, hafiza, gemini_debate=self.last_gemini_debate)
@@ -443,6 +389,111 @@ class Bot:
                 f"RSI: <code>{rsi_de}</code> | EMA: <code>{ema_de}</code>",
                 silent=True
             )
+
+    def _train_models(self, df, teknik):
+        """Mevcut df + teknik listesinden AI modeli ve 5 ajani yeniden egitir.
+        Hem periyodik taramada hem brain_refresh()'te kullanilir."""
+        try:
+            teknik_listesi = []
+            # Analiz motorunun en az 50 bar istemesi sebebiyle dilimleri 60 barlik yapiyoruz
+            for i in range(len(df) - 60):
+                temp_df = df.iloc[i : i + 60]
+                if len(temp_df) >= 60:
+                    t = analyzer.analyze(temp_df)
+                    if t:
+                        t["orderbook"] = (teknik or {}).get("orderbook", {})
+                        teknik_listesi.append(t)
+            if len(teknik_listesi) > 10:
+                ok = ai_model.train(df, teknik_listesi, None)
+                if ok:
+                    ai_state = ai_model.get_state()
+                    print(f"[AI] Egitildi: dogruluk=%{ai_state['accuracy']*100:.0f} tahmin={ai_state['prediction_count']}")
+                # --- 5 Ajan Egitimi ---
+                try:
+                    closes = df["close"].values
+                    N = len(closes)
+                    LOOK_AHEAD = 5  # 5 bar ileriye bak
+
+                    returns = []
+                    for i in range(len(teknik_listesi)):
+                        bar_idx = min(i + 59, N - 1)
+                        future_idx = min(bar_idx + LOOK_AHEAD, N - 1)
+                        cur_price = closes[bar_idx]
+                        fut_price = closes[future_idx]
+                        ret = (fut_price - cur_price) / cur_price * 100
+                        returns.append(ret)
+
+                    # Dinamik threshold: ust/alt %33 dilim BUY/SELL, orta %34 HOLD
+                    import numpy as np
+                    if len(returns) > 30:
+                        sorted_ret = sorted(returns)
+                        n = len(sorted_ret)
+                        low_thresh = sorted_ret[int(n * 0.33)]
+                        high_thresh = sorted_ret[int(n * 0.67)]
+
+                        agent_training_data = []
+                        for i, ret in enumerate(returns):
+                            t = teknik_listesi[i]
+                            if ret >= high_thresh:
+                                label = 2  # BUY
+                            elif ret <= low_thresh:
+                                label = 0  # SELL
+                            else:
+                                label = 1  # HOLD
+                            agent_training_data.append((t, label))
+
+                        counts = {0: 0, 1: 0, 2: 0}
+                        for _, lbl in agent_training_data:
+                            counts[lbl] = counts.get(lbl, 0) + 1
+                        print(f"[TRAINING] Egitim seti: BUY={counts[2]} HOLD={counts[1]} SELL={counts[0]} (Toplam:{len(agent_training_data)})")
+
+                        if len(agent_training_data) > 15:
+                            consensus.train_all(agent_training_data)
+                except Exception as e:
+                    print(f"[CONSENSUS] Ajan egitim hatasi: {e}")
+                    import traceback
+                    traceback.print_exc()
+        except Exception as e:
+            print(f"[TRAINING] Ana egitim adiminda hata: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def brain_refresh(self):
+        """Zarar serisinde beyinleri otomatik yenile.
+        - self_improve dersleri + agresiflik/guven esigi sifirlanir (stale ogrenme temizlenir)
+        - AI model + 5 ajan, birikmis tarama gecmisiyle (ai_memory/scans) yeniden egitilir
+        - Telegram bildirimi
+        """
+        print("[BRAIN_REFRESH] Beyinler otomatik yenileniyor...")
+        try:
+            from src import self_improve
+            s = self_improve.load()
+            s["lessons"] = []
+            s["trade_lessons"] = []
+            s["position_aggressiveness"] = 1.0
+            s["min_confidence_threshold"] = 0.45
+            s["total_reviews"] = 0
+            self_improve.save(s)
+        except Exception as e:
+            print(f"[BRAIN_REFRESH] self_improve: {e}")
+
+        try:
+            df = trader.get_bars(500)
+            if df is not None and not df.empty:
+                self._train_models(df, analyzer.analyze(df))
+        except Exception as e:
+            print(f"[BRAIN_REFRESH] yeniden egitim: {e}")
+
+        try:
+            tg.send(
+                "🧠 <b>BEYINLER OTOMATIK YENILENDI</b>\n\n"
+                "Ust uste zarar serisi algilandi. Stale dersler temizlendi, "
+                "islem agresifligi ve guven esigi sifirlandi, AI model + 5 ajan "
+                "birikmis tarama gecmisiyle yeniden egitildi."
+            )
+        except Exception:
+            pass
+        print("[BRAIN_REFRESH] Beyinler otomatik yenilendi.")
 
     def alisi_onayla(self):
         if self.bekleyen_alis:
@@ -734,7 +785,7 @@ class Bot:
                 "ai_memory_size": ai_state.get("memory_size", 0),
                 "executor_mode": settings.executor_mode,
                 "sim_balance": executor._sim_balance if hasattr(executor, '_sim_balance') else 0,
-                "gemini_active": bool(settings.gemini_api_key),
+                "gemini_active": bool(settings.llm_api_key),
                 "gemini_last_decision": self.last_gemini_debate.get("final_decision", "---") if self.last_gemini_debate else "---",
                 "daily_goal_pct": settings.daily_goal_pct,
                 "aggressive_mode": settings.aggressive_mode,
