@@ -345,7 +345,7 @@ class Executor:
         self._sim_btc = 0.0
         self._sim_entry = 0.0
         self._save_state()
-        return {"qty": round(sell_qty, 6), "pl": round(pnl, 2), "price": price,
+        return {"qty": round(sell_qty, 6), "pl": round(pnl, 6), "price": price,
                 "cost": cost_basis, "order_id": "dry_sell", "mode": "SIM"}
 
     def _binance_buy(self, size_pct=100, amount_usd=None):
@@ -447,7 +447,7 @@ class Executor:
         self._save_state()
 
         print(f"[BINANCE] SATIS basarili: {filled_qty:.6f} {settings.base_asset} @ {avg_price:,.2f} {settings.quote_asset} (PNL: {pnl:+.2f})")
-        return {"qty": round(filled_qty, 6), "pl": round(pnl, 2), "price": avg_price, "order_id": str(order.get('id', 'binance_sell')), "mode": "REAL"}
+        return {"qty": round(filled_qty, 6), "pl": round(pnl, 6), "price": avg_price, "order_id": str(order.get('id', 'binance_sell')), "mode": "REAL"}
 
 
 executor = Executor()

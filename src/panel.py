@@ -741,28 +741,35 @@ function updatePnlHistory() {
     var totalEl = document.getElementById('pnlTotal');
     var countEl = document.getElementById('pnlCount');
     if (!box) return;
-    if (!list || list.length === 0) {
+    var all = list || [];
+    // Sadece gerceklesen (SAT/SELL) islemlerin K/Z'i anlamli; AL/BUY acilis oldugu icin pnl=0'dir.
+    var realized = all.filter(function(t) { return t.action === 'SELL'; });
+    if (all.length === 0) {
       box.innerHTML = '<div class="col-span-full text-slate-500 italic text-center py-6 text-xs">Henüz işlem yok</div>';
-      if (totalEl) totalEl.textContent = '$0.00';
+      if (totalEl) totalEl.textContent = '₺0,00';
+      if (countEl) countEl.textContent = '0';
+      return;
+    }
+    if (realized.length === 0) {
+      box.innerHTML = '<div class="col-span-full text-slate-500 italic text-center py-6 text-xs">Henüz gerçekleşen (SAT) işlem yok</div>';
+      if (totalEl) totalEl.textContent = '₺0,00';
       if (countEl) countEl.textContent = '0';
       return;
     }
     var total = 0;
     var html = '';
-    list.forEach(function(t) {
+    realized.forEach(function(t) {
       total += t.pnl;
       var pos = t.pnl >= 0;
       var cls = pos ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/10 border-rose-500/30 text-rose-300';
-      var sign = pos ? '+' : '';
-      var tag = t.action === 'SELL' ? 'SAT' : 'AL';
       html += '<div class="rounded-lg border px-2 py-1.5 text-center ' + cls + '">'
-            + '<div class="text-[8px] opacity-70 font-bold">' + tag + '</div>'
+            + '<div class="text-[8px] opacity-70 font-bold">SAT</div>'
              + '<div class="text-xs font-extrabold font-mono">' + tryFmt(t.pnl) + '</div>'
             + '</div>';
     });
     box.innerHTML = html;
     if (totalEl) totalEl.textContent = tryFmt(total);
-    if (countEl) countEl.textContent = String(list.length);
+    if (countEl) countEl.textContent = String(realized.length);
   }).catch(() => {});
 }
 
