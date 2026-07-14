@@ -326,7 +326,11 @@ class Bot:
                         today_pnl = 0
                     target = eq * 0.01
                     dp = (today_pnl / target) if target > 0 else 0
-                    size = self_improve.decide_position_size(eq, confidence, wr, 0.0, dp)
+                    if settings.executor_mode == "sim":
+                        # Simülasyon: 500 TL (≈equity) sermayenin TAMAMI kullanılsın.
+                        size = round(eq * 0.98, 2)
+                    else:
+                        size = self_improve.decide_position_size(eq, confidence, wr, 0.0, dp)
                     karar["execution"]["amount_usd"] = size
                     print(f"  -> DINAMIK ISLEM MIKTARI: ${size:.2f} (equity=${eq:.0f}, guven=%{confidence:.0%}, WR=%{wr:.0%})")
                 except Exception as e:

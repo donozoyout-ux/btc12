@@ -312,16 +312,21 @@ class Executor:
 
     def _dry_buy(self, size_pct=100, amount_usd=None):
         price = trader.get_price()
+        if price <= 0:
+            return None
         invest = amount_usd if amount_usd is not None else settings.position_size_usd * (size_pct / 100)
-        qty = round(invest / price, 6)
-        qty = max(qty, 0.0001)
+        # Yatırım tutarını mevcut bakiyeyle sınırla (asla eksiye düşmesin).
+        invest = min(invest, self._sim_balance)
+        # Alınabilir miktarı yüksek hassasiyetle (8 ondalık) hesapla.
+        qty = round(invest / price, 8)
+        # İhmal edilebilir miktar = işlem yapılamıyor (mecburi taban KALDIRILDI,
+        # aksi halde kalan küçük bakiye 0.0001 BTC (~$6) zoruyla negatife dönerdi).
+        if qty <= 0 or qty * price < 0.01:
+            return None
         cost = price * qty
-        if cost > self._sim_balance:
-            qty = round(self._sim_balance / price, 6)
-            qty = max(qty, 0.0001)
-            cost = price * qty
         old_btc = self._sim_btc
-        self._sim_balance -= cost
+        # Sert güvence: bakiye asla negatif olmasın.
+        self._sim_balance = max(0.0, self._sim_balance - cost)
         self._sim_btc += qty
 
         if old_btc > 0.0001:
@@ -331,7 +336,7 @@ class Executor:
 
         settings.last_entry_price = self._sim_entry
         self._save_state()
-        return {"price": price, "qty": round(qty, 6), "cost": round(cost, 2),
+        return {"price": price, "qty": round(qty, 8), "cost": round(cost, 2),
                 "order_id": "dry_buy", "mode": "SIM"}
 
     def _dry_sell(self):

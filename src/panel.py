@@ -844,8 +844,11 @@ function openPnlDetail(idx) {
     var el = document.getElementById('pnlChartWrap');
     if (!el) return;
     el.innerHTML = '';
-    if (_pnlTvWidget && _pnlTvWidget.remove) { try { _pnlTvWidget.remove(); } catch (e) {} }
-    if (typeof TradingView === 'undefined') { setTimeout(function(){ openPnlDetailDrawChart(); }, 800); return; }
+    if (typeof TradingView === 'undefined') {
+      el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;font-size:12px;text-align:center;padding:20px">Grafik yükleniyor...<br>(internet bağlantısı gerekli)</div>';
+      setTimeout(openPnlDetailDrawChart, 1200);
+      return;
+    }
     openPnlDetailDrawChart();
   }, 60);
 
@@ -859,22 +862,29 @@ function openPnlDetailDrawChart() {
   if (typeof TradingView === 'undefined') return;
   var el = document.getElementById('pnlChartWrap');
   if (!el) return;
-  _pnlTvWidget = new TradingView.widget({
-    "width": "100%",
-    "height": "100%",
-    "symbol": "COINBASE:BTCUSD",
-    "interval": "15",
-    "timezone": "Europe/Istanbul",
-    "theme": "dark",
-    "style": "1",
-    "locale": "tr",
-    "toolbar_bg": "#0e1424",
-    "enable_publishing": false,
-    "hide_side_toolbar": false,
-    "allow_symbol_change": true,
-    "autosize": true,
-    "container_id": "pnlChartWrap"
-  });
+  try {
+    _pnlTvWidget = new TradingView.widget({
+      "width": "100%",
+      "height": "100%",
+      "symbol": "COINBASE:BTCUSD",
+      "interval": "15",
+      "timezone": "Europe/Istanbul",
+      "theme": "dark",
+      "style": "1",
+      "locale": "tr",
+      "toolbar_bg": "#0e1424",
+      "enable_publishing": false,
+      "hide_side_toolbar": false,
+      "allow_symbol_change": true,
+      "autosize": true,
+      "container_id": "pnlChartWrap"
+    });
+    // Widget'ın yeni (modal içi) boyuta uyum sağlaması için resize tetikle
+    setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 80);
+    setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 400);
+  } catch (e) {
+    el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;font-size:12px;text-align:center;padding:20px">Grafik yüklenemedi.</div>';
+  }
 }
 
 function closePnlModal() {
