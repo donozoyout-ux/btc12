@@ -1,7 +1,18 @@
 import os
+import sys
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
+
+# Windows konsolunda ₺ gibi karakterler UnicodeEncodeError vermesin diye
+# stdout/stderr'i UTF-8'e al (Render/Linux zaten UTF-8, etkilenmez).
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 
 
 class Settings:
