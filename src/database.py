@@ -185,11 +185,11 @@ class Database:
             conn.close()
 
     def get_trade_pnl(self, limit=100):
-        """Sadece kâr/zarar odaklı işlem geçmişi (tarih, aksiyon, pnl, mod)."""
+        """Sadece kâr/zarar odaklı işlem geçmişi (tarih, aksiyon, pnl, mod, fiyatlar)."""
         conn = self._conn()
         try:
             rows = conn.execute(
-                "SELECT created_at, action, pnl, mode FROM trades ORDER BY id DESC LIMIT ?",
+                "SELECT created_at, action, pnl, mode, price, entry_price FROM trades ORDER BY id DESC LIMIT ?",
                 (limit,)
             ).fetchall()
             return [
@@ -198,6 +198,8 @@ class Database:
                     "action": r[1],
                     "pnl": round(r[2], 2) if r[2] else 0,
                     "mode": r[3] or "SIM",
+                    "price": r[4] or 0,
+                    "entry_price": r[5] or 0,
                 }
                 for r in rows
             ]

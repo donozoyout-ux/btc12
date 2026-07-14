@@ -478,6 +478,7 @@ body {
         <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Kâr / Zarar Geçmişi
       </h3>
       <div class="flex items-center gap-3 text-[10px] font-mono">
+        <span class="text-amber-400/80 hidden sm:inline">ÜZERİNE BASINCA DETAY AÇILIR 🔍</span>
         <span class="text-emerald-400">TOPLAM K/Z: <b id="pnlTotal">₺0,00</b></span>
         <span class="text-slate-500">İşlem: <b id="pnlCount">0</b></span>
       </div>
@@ -735,6 +736,7 @@ function updateReflection() {
   }).catch(() => {});
 }
 
+var _pnlData = [];
 function updatePnlHistory() {
   fetch('/api/trade_pnl').then(r => r.json()).then(list => {
     var box = document.getElementById('pnlHistory');
@@ -742,6 +744,7 @@ function updatePnlHistory() {
     var countEl = document.getElementById('pnlCount');
     if (!box) return;
     var all = list || [];
+    _pnlData = all;
     // Sadece gerceklesen (SAT/SELL) islemlerin K/Z'i anlamli; AL/BUY acilis oldugu icin pnl=0'dir.
     var realized = all.filter(function(t) { return t.action === 'SELL'; });
     if (all.length === 0) {
@@ -758,11 +761,11 @@ function updatePnlHistory() {
     }
     var total = 0;
     var html = '';
-    realized.forEach(function(t) {
+    realized.forEach(function(t, idx) {
       total += t.pnl;
       var pos = t.pnl >= 0;
       var cls = pos ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/10 border-rose-500/30 text-rose-300';
-      html += '<div class="rounded-lg border px-2 py-1.5 text-center ' + cls + '">'
+      html += '<div onclick="openPnlDetail(' + idx + ')" class="rounded-lg border px-2 py-1.5 text-center ' + cls + ' cursor-pointer hover:scale-[1.04] hover:shadow-lg transition-all duration-200" title="Detay için tıkla">'
             + '<div class="text-[8px] opacity-70 font-bold">SAT</div>'
              + '<div class="text-xs font-extrabold font-mono">' + tryFmt(t.pnl) + '</div>'
             + '</div>';
@@ -771,6 +774,117 @@ function updatePnlHistory() {
     if (totalEl) totalEl.textContent = tryFmt(total);
     if (countEl) countEl.textContent = String(realized.length);
   }).catch(() => {});
+}
+
+// ─── K/Z DETAY MODALI (aşağı açılmaz, overlay olarak gelir) ───
+var _pnlTvWidget = null;
+function openPnlDetail(idx) {
+  var t = _pnlData.filter(function(x){return x.action === 'SELL';})[idx];
+  if (!t) return;
+  var modal = document.getElementById('pnlDetailModal');
+  var title = document.getElementById('pnlModalTitle');
+  var body = document.getElementById('pnlModalBody');
+
+  var pos = t.pnl >= 0;
+  var pnlColor = pos ? '#34d399' : '#fb7185';
+  var pnlLabel = pos ? 'KÂR' : 'ZARAR';
+  var tTime = (t.time || '').replace('T', ' ').substring(0, 19);
+  var entry = t.entry_price || 0;
+  var exit = t.price || 0;
+  var roi = (entry > 0 && exit > 0) ? ((exit - entry) / entry * 100) : 0;
+  var sym = pos ? '+' : '';
+
+  var html = '';
+  // Üst özet kart
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding:14px;background:rgba(255,255,255,0.03);border-radius:12px;border:1px solid ' + (pos ? 'rgba(52,211,153,0.25)' : 'rgba(251,113,133,0.25)') + '">';
+  html += '  <div>';
+  html += '    <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:1px">NET K/Z</div>';
+  html += '    <div style="font-size:22px;font-weight:900;color:' + pnlColor + ';font-family:monospace">' + sym + tryFmt(t.pnl) + '</div>';
+  html += '  </div>';
+  html += '  <div style="text-align:right">';
+  html += '    <div style="font-size:10px;color:#64748b;font-weight:700">GETİRİ (ROI)</div>';
+  html += '    <div style="font-size:18px;font-weight:900;color:' + (roi >= 0 ? '#34d399' : '#fb7185') + ';font-family:monospace">' + sym + roi.toFixed(2) + '%</div>';
+  html += '  </div>';
+  html += '</div>';
+
+  // Teknik detay tablosu
+  html += '<div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">📋 İŞLEM BİLGİLERİ</div>';
+  var rows = [
+    ['Zaman', tTime || '--'],
+    ['Mod', t.mode || 'SIM'],
+    ['Giriş Fiyatı', entry > 0 ? '$' + entry.toFixed(2) : '--'],
+    ['Çıkış Fiyatı', exit > 0 ? '$' + exit.toFixed(2) : '--'],
+    ['Getiri %', (roi >= 0 ? '+' : '') + roi.toFixed(2) + '%'],
+    ['Net K/Z', (pos ? '+' : '') + tryFmt(t.pnl)]
+  ];
+  html += '<div style="background:rgba(255,255,255,0.02);border-radius:10px;border:1px solid rgba(255,255,255,0.05);overflow:hidden">';
+  rows.forEach(function(r, i) {
+    var bg = i % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent';
+    html += '<div style="display:flex;justify-content:space-between;padding:8px 12px;background:' + bg + ';border-bottom:1px solid rgba(255,255,255,0.03)">';
+    html += '  <span style="color:#94a3b8;font-size:11px">' + r[0] + '</span>';
+    html += '  <span style="color:#e2e8f0;font-weight:700;font-size:11px;font-family:monospace">' + r[1] + '</span>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  // Teknik Analiz Grafiği (canlı BTC/USD — TradingView)
+  html += '<div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px">📈 TEKNİK ANALİZ GRAFİĞİ (BTC/USD)</div>';
+  html += '<div id="pnlChartWrap" style="height:300px;width:100%;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);background:#020617"></div>';
+
+  // Equity eğrisi sparkline
+  html += '<div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:16px 0 6px">📊 EQUITY EĞRİSİ</div>';
+  html += '<svg id="pnlEquitySpark" viewBox="0 0 200 50" preserveAspectRatio="none" style="width:100%;height:54px;background:rgba(255,255,255,0.02);border-radius:10px;border:1px solid rgba(255,255,255,0.05)"></svg>';
+
+  body.innerHTML = html;
+  modal.style.display = 'flex';
+  setTimeout(function() { modal.classList.add('modal-visible'); }, 10);
+
+  // TradingView mini grafik widget'ı
+  setTimeout(function() {
+    var el = document.getElementById('pnlChartWrap');
+    if (!el) return;
+    el.innerHTML = '';
+    if (_pnlTvWidget && _pnlTvWidget.remove) { try { _pnlTvWidget.remove(); } catch (e) {} }
+    if (typeof TradingView === 'undefined') { setTimeout(function(){ openPnlDetailDrawChart(); }, 800); return; }
+    openPnlDetailDrawChart();
+  }, 60);
+
+  // Equity sparkline
+  fetch('/api/analytics').then(r => r.json()).then(d => {
+    drawSpark(document.getElementById('pnlEquitySpark'), d.equity || []);
+  }).catch(() => {});
+}
+
+function openPnlDetailDrawChart() {
+  if (typeof TradingView === 'undefined') return;
+  var el = document.getElementById('pnlChartWrap');
+  if (!el) return;
+  _pnlTvWidget = new TradingView.widget({
+    "width": "100%",
+    "height": "100%",
+    "symbol": "COINBASE:BTCUSD",
+    "interval": "15",
+    "timezone": "Europe/Istanbul",
+    "theme": "dark",
+    "style": "1",
+    "locale": "tr",
+    "toolbar_bg": "#0e1424",
+    "enable_publishing": false,
+    "hide_side_toolbar": false,
+    "allow_symbol_change": true,
+    "autosize": true,
+    "container_id": "pnlChartWrap"
+  });
+}
+
+function closePnlModal() {
+  var modal = document.getElementById('pnlDetailModal');
+  modal.classList.remove('modal-visible');
+  setTimeout(function() {
+    modal.style.display = 'none';
+    if (_pnlTvWidget && _pnlTvWidget.remove) { try { _pnlTvWidget.remove(); } catch (e) {} }
+    _pnlTvWidget = null;
+  }, 200);
 }
 
 function manualBuy() {
@@ -1505,6 +1619,16 @@ function closeAgentModal() {
       <button onclick="closeAgentModal()" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#94a3b8;font-size:16px;width:32px;height:32px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">✕</button>
     </div>
     <div id="modalBody"></div>
+  </div>
+</div>
+<!-- K/Z DETAY MODALI -->
+<div id="pnlDetailModal" onclick="if(event.target===this)closePnlModal()" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;justify-content:center;align-items:center;opacity:0;transition:opacity 0.2s ease">
+  <div style="background:linear-gradient(135deg,#0f172a 0%,#0c1a2e 100%);border-radius:20px;border:1px solid rgba(255,255,255,0.1);max-width:680px;width:94%;max-height:88vh;overflow-y:auto;padding:24px;box-shadow:0 25px 50px rgba(0,0,0,0.5)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 id="pnlModalTitle" style="font-size:18px;font-weight:900;color:white;margin:0"></h3>
+      <button onclick="closePnlModal()" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#94a3b8;font-size:16px;width:32px;height:32px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">✕</button>
+    </div>
+    <div id="pnlModalBody"></div>
   </div>
 </div>
 <style>.modal-visible{opacity:1!important}</style>
