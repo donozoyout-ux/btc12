@@ -402,7 +402,7 @@ def run_debate(teknik, haberler=None, ml_votes=None, brains=None, lessons=None):
             "messages": messages,
             "temperature": 0.7,
             "top_p": 0.9,
-            "max_tokens": 2048,
+            "max_tokens": 1200,
             "response_format": {"type": "json_object"},
         }
         headers = {
