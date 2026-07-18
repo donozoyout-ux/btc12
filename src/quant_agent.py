@@ -208,6 +208,9 @@ class QuantAgent:
                     "system_log": f"STRICT+AI:{ai_prob:.0%}|Size:${order_size_usd:.2f}"
                 }
             if signal["action"] == "SELL" and ai_prob <= 0.6 and acik_pozisyon:
+                giris = mevcut_portfoy.get("giris_fiyati", 0) or self.state.get("son_giris_fiyati", 0)
+                if self._should_hold_for_commission(fiyat, giris):
+                    return self._hold_karar(risk_seviyesi, "Komisyon korumasi: yetersiz hareket", "COMMISSION_HOLD")
                 self.state["son_sinyal"] = {"action": "SELL", "source": "STRICT", "ai_prob": ai_prob}
                 self._save_state()
                 return {
@@ -358,6 +361,9 @@ class QuantAgent:
                 return self._hold_karar(risk_seviyesi, "AI Veto (Yükseliş)", system_log)
 
             if src == "GEMINI_DEBATE" or combined_confidence >= min_confidence:
+                # KOMISYON KORUMASI: yeterli hareket yoksa SAT yapma
+                if self._should_hold_for_commission(fiyat, giris_fiyati):
+                    return self._hold_karar(risk_seviyesi, "Komisyon korumasi: yetersiz hareket", "COMMISSION_HOLD")
                 self.state["son_sinyal"] = {
                     "action": "SELL",
                     "price": fiyat,
@@ -541,16 +547,33 @@ class QuantAgent:
         else:
             fs = _bear_filters()
             # Satista da en az 3 filtre (konsensuz "hoparlör" satis engellenir)
-            # + KOMISYON KORUMASI: acilistan en az MIN_HOLD_SN saniye gecmeden
-            #   SAT sinyali tetiklenmez (gercek borsada spread+komisyonu karsilar)
+            # + DINAMIK KOMISYON KORUMASI (sistem kendi ogrenir, sabit degil)
             import time as _t
-            MIN_HOLD_SN = settings.scalp_min_hold_sec
             gecen = (_t.time() - giris_zamani) if giris_zamani else 9999
+            MIN_HOLD_SN = settings.scalp_min_hold_sec
             if sum(fs) >= 3 and gecen >= MIN_HOLD_SN:
-                return "SELL"
+                giris_fiyati = self.state.get("son_giris_fiyati", 0) or t.get("price", 0)
+                if not self._should_hold_for_commission(t.get("price", 0), giris_fiyati):
+                    return "SELL"
         return "HOLD"
 
-    def _hold_karar(self, risk_seviyesi, strateji_notu, system_log=""):
+    def _should_hold_for_commission(self, fiyat, giris_fiyati):
+        """KOMISYON KORUMASI (dinamik, sistem ogrenir).
+        Sistem kendi hesapladigi min_exit_move_pct kadar fiyat hareketi
+        OLMADAN pozisyonu kapatmaz. Boylece her islem komisyonu karsilanir.
+        Döner: True ise (henuz yeterli hareket yok) SAT YAPMA, HOLD et.
+        """
+        if not giris_fiyati or giris_fiyati <= 0 or not fiyat or fiyat <= 0:
+            return False  # bilinmiyorsa engelleme (guvenli taraf)
+        from src import self_improve
+        min_move = self_improve.compute_min_exit_move()  # %
+        hareket = abs(fiyat - giris_fiyati) / giris_fiyati * 100
+        if hareket < min_move:
+            print(f"  [KOMISYON] SAT engellendi: hareket %{hareket:.2f} < min_exit %{min_move:.2f} (komisyon korumasi)")
+            return True
+        return False
+
+
         return {
             "action": "HOLD",
             "confidence_score": 0.0,

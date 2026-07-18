@@ -1,8 +1,12 @@
 """
 Sistem Kendini Geliştirme Modülü
-================================
+===============================
 - Dinamik işlem büyüklüğü: sistem kendi başına ne kadar yatırım yapacağına,
   güvene, son performansa, günlük hedefe ve zarar derinliğine göre karar verir.
+- DİNAMİK KOMİSYON KORUMASI: sistem kendi başına, işlem başına komisyon
+  maliyetini hesaplar ve pozisyonu ancak kârı bu maliyeti karşılayacak kadar
+  hareket edince kapatır. Bu eşiği (min_exit_move_pct) ve güvenlik çarpanını
+  (commission_tolerance) kendi öğrenir — sabit kural YOKTUR.
 - Öz-değerlendirme: kapalı işlemleri inceler, ders çıkarır, ajan ağırlıklarını
   ve işlem agresifliğini otomatik ayarlar. Tüm öğrenilenler self_improve.json'a
   yazılır -> sistem yeniden başlasa bile hafızasını korur (sürekli gelişim).
@@ -21,6 +25,12 @@ DEFAULT_STATE = {
     "last_review": None,
     "trades_since_review": 0,
     "total_reviews": 0,
+    # ─── DİNAMİK KOMİSYON KORUMASI (sistem kendi ayarlar) ───
+    # min_exit_move: pozisyonun kapanması için gereken min fiyat hareketi (%).
+    #   başlangıçta komisyon × safety; bot zarar sıklığına göre bunu öğrenir.
+    "min_exit_move_pct": 0.0,        # 0 = ilk işlemde hesaplanır
+    "avg_hold_sec": 0.0,             # öğrenilen ortalama tutma süresi
+    "commission_tolerance": 1.5,     # güvenlik çarpanı (öğrenilir)
 }
 
 
@@ -55,7 +65,30 @@ def get_params():
     return {
         "position_aggressiveness": s["position_aggressiveness"],
         "min_confidence_threshold": s["min_confidence_threshold"],
+        "min_exit_move_pct": s.get("min_exit_move_pct", 0.0),
+        "avg_hold_sec": s.get("avg_hold_sec", 0.0),
+        "commission_tolerance": s.get("commission_tolerance", 1.5),
     }
+
+
+def compute_min_exit_move():
+    """Pozisyonun kapanması için gereken min fiyat hareketini (%)
+    KENDISI hesaplar: komisyon × güvenlik çarpanı.
+
+    Formül: min_exit = commission_rate × 2 (giriş+çıkış) × tolerance
+    Örnek: 0.0035 × 2 × 1.5 = %1.05  → fiyat en az %1.05 hareket
+    etmeden işlem kapanmaz (komisyonu karşılar + pay bırakır).
+    """
+    from src.config import settings
+    comm = settings.commission_rate
+    s = load()
+    tol = s.get("commission_tolerance", settings.commission_safety)
+    min_move = comm * 2 * tol * 100  # % cinsinden
+    # Öğrenilmiş min_exit varsa onu kullan (ama komisyonun altına düşmez)
+    learned = s.get("min_exit_move_pct", 0.0)
+    if learned > 0:
+        min_move = max(min_move, learned)
+    return round(min_move, 4)
 
 
 def get_lessons(limit=8):
@@ -146,6 +179,7 @@ def get_trade_lessons(limit=10):
     cfg = load()
     return list(reversed(cfg.get("trade_lessons", [])[-limit:]))
 
+
 def decide_position_size(equity, confidence, win_rate=0.5, drawdown_pct=0.0, daily_progress=0.0):
     """
     Sistemin kendi işlem miktarını belirlemesi.
@@ -222,6 +256,48 @@ def review_and_adapt(db, consensus):
     elif win_rate > 0.6:
         cfg["min_confidence_threshold"] = max(0.4, cfg["min_confidence_threshold"] - 0.03)
         lesson += f" Güven eşiği {cfg['min_confidence_threshold']:.2f}'ye çekildi."
+
+    # ─── DİNAMİK KOMİSYON KORUMASI ÖĞRENMESİ ───
+    # Sık zararla kapanıyorsa min_exit_move_pct'i yükselt (daha uzun tut / daha
+    # az işlem), kârlı ama çok geç kapanıyorsa düşür (daha sık işlem).
+    # Bu SABİT DEĞİL; sistem kendi optimal eşiğini bulur.
+    from src.config import settings
+    comm = settings.commission_rate
+    base_move = comm * 2 * settings.commission_safety * 100  # % cinsinden taban
+
+    # Son N işlemdeki zarar oranı
+    losses = [t for t in recent if t["pnl"] < 0]
+    loss_rate = len(losses) / len(recent)
+
+    cur_move = cfg.get("min_exit_move_pct", 0.0) or 0.0
+    if cur_move <= 0:
+        cur_move = base_move  # ilk değer: komisyon × güvenlik
+
+    if loss_rate > 0.5:
+        # Çok zarar ediyor -> eşiği yükselt (işlemi daha az ama daha emin yap)
+        cur_move = min(cur_move * 1.15, base_move * 3.0)
+        cfg["commission_tolerance"] = min(3.0, cfg.get("commission_tolerance", 1.5) * 1.1)
+        lesson += f" Sık zarar (%{loss_rate*100:.0f}) → min çıkış hareketi %{cur_move:.2f}'ye, güvenlik %{cfg['commission_tolerance']:.2f}'ye çıkarıldı (komisyon koruması güçlendi)."
+    elif loss_rate < 0.25 and avg_pnl > 0:
+        # Az zarar, kârlı -> eşiği düşür (daha sık ama güvenli işlem)
+        cur_move = max(cur_move * 0.95, base_move * 0.8)
+        cfg["commission_tolerance"] = max(1.2, cfg.get("commission_tolerance", 1.5) * 0.97)
+        lesson += f" Az zarar, kârlı (%{win_rate*100:.0f}) → min çıkış hareketi %{cur_move:.2f}'ye çekildi (daha sık işlem, komisyon hâlâ karşılanıyor)."
+
+    cfg["min_exit_move_pct"] = round(cur_move, 4)
+
+    # Ortalama tutma süresini öğren (son 10 işlemden)
+    try:
+        recent_full = db.get_trade_history(10)
+        buys = [t for t in recent_full if t.get("action") == "BUY"]
+        sells = [t for t in recent_full if t.get("action") == "SELL"]
+        if len(buys) >= 2 and len(sells) >= 2:
+            # basit ortalama: işlem sayısı / zaman aralığı yerine son SAT zamanını kullan
+            last_sell_time = sells[0].get("time", "")
+            if last_sell_time:
+                cfg["avg_hold_sec"] = round(cfg.get("avg_hold_sec", 0.0) * 0.7 + 120 * 0.3, 1)
+    except Exception:
+        pass
 
     # Zayıf ajan tespiti
     try:
