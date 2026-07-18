@@ -27,7 +27,7 @@ class Settings:
     # ─── Ücretsiz LLM (Groq / OpenAI-uyumlu) ───
     # 5-beyinli LLM tartişmasi bu anahtarla çalişir. Ücretsiz (kart yok):
     # console.groq.com/keys  ->  LLM_MODEL=llama-3.3-70b-versatile
-    llm_api_key = os.getenv("LLM_API_KEY", os.getenv("GEMINI_API_KEY", ""))
+    llm_api_key = os.getenv("LLM_API_KEY", "")
     llm_base_url = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1")
     llm_model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
     # LLM tartişmasinin konsensüsteki ağirlği (0 = devre dişi, 1 = tam ajan gibi)
