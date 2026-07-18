@@ -398,7 +398,8 @@ class QuantAgent:
         # göre hızlı gir-çık ("Vur-Kaç") yapar. Tamamen kural tabanlıdır; ML
         # eğitimi veya Gemini anahtarı GEREKTİRMEZ, böylece bot her zaman
         # scalping fırsatı bulabilir.
-        scalp_action = self._scalp_signal(teknik_analiz, acik_pozisyon, ai_prob)
+        scalp_action = self._scalp_signal(teknik_analiz, acik_pozisyon, ai_prob,
+                                          self.state.get("son_alis_zamani", 0))
         if scalp_action == "BUY" and not acik_pozisyon:
             sl_price, tp_price = self._scalp_sl_tp(fiyat, atr)
             support = teknik_analiz.get("support", fiyat * 0.99)
@@ -469,12 +470,15 @@ class QuantAgent:
 
         return round(sl_price, 2), round(tp_price, 2)
 
-    def _scalp_signal(self, t, acik_pozisyon, ai_prob):
+    def _scalp_signal(self, t, acik_pozisyon, ai_prob, giris_zamani=0):
         """
-        Kısa vadeli "Vur-Kaç" sinyali: 5m/10m/15m/30m mikro trend + hacim kırılımı.
-        ML/konsensüs beklenmeden, saf kural tabanlı çalışır. 5m trendini
-        anında yakalar; AI sadece çok güçlü ters sinyalde frenler.
-        Dönüş: "BUY" | "SELL" | "HOLD"
+        Çoklu indikatör onayli AL/SAT sinyali.
+        Gercek borsada her islem KOMISYON (maker %0.1 + spread + slippage) demek.
+        Bu yuzden TEK indikator yerine en az 3 bagimsiz filtrenin (EMA trend +
+        RSI bolgesi + MACD yonu + hacim + kirilim) uyumlu olmasi sart.
+        Boylece "alip direk sat" dongusu kirilir, islem sayisi azalir,
+        her islem komisyonu karsilar.
+        Donus: "BUY" | "SELL" | "HOLD"
         """
         base_ema = t.get("ema_cross")
         m5_ema = t.get("5m_ema_cross", base_ema)
@@ -485,9 +489,13 @@ class QuantAgent:
         m5_rsi = t.get("5m_rsi", rsi)
         m10_rsi = t.get("10m_rsi", rsi)
         m15_rsi = t.get("15m_rsi", rsi)
-        m30_rsi = t.get("30m_rsi", rsi)
+        m30_rsi = t.get("15m_rsi", rsi)
+        macd_hist = t.get("macd_hist", 0)
+        m5_macd = t.get("5m_macd_hist", macd_hist)
+        m10_macd = t.get("10m_macd_hist", macd_hist)
         vol = t.get("vol_ratio", 1.0)
         pchg5 = t.get("price_change_5", 0)
+        bb_pct = t.get("bb_pct", 0.5)
 
         tf_emas = [base_ema, m5_ema, m10_ema, m15_ema, m30_ema]
         bull_count = sum(1 for e in tf_emas if e == "bullish")
@@ -500,39 +508,46 @@ class QuantAgent:
                   or t.get("10m_breakout_down", 0) or t.get("15m_breakout_down", 0)
                   or t.get("30m_breakout_down", 0))
 
-        up_trend = bull_count >= 1
-        dn_trend = bear_count >= 1
+        # ─── ORTAK FILTRELER (her biri bagimsiz bir sinyal) ───
+        # F1: Coklu periyot EMA trendi (en az 2 periyot ayni yonde)
+        # F2: RSI makul bolgede (asiri alim/satim degil)
+        # F3: MACD histogrami yonu (momentum)
+        # F4: Hacim patlamasi (vol_ratio > 1.1)
+        # F5: Kirilim (breakout_up/down) VEYA guclu ivme (pchg5)
+
+        def _bull_filters():
+            f = []
+            f.append(bull_count >= 2)                          # F1
+            f.append(35 < rsi < 72)                            # F2
+            f.append(macd_hist > 0 or m5_macd > 0)             # F3
+            f.append(vol > 1.05)                               # F4
+            f.append(bool(brk_up) or pchg5 > 0.2)              # F5
+            return f
+
+        def _bear_filters():
+            f = []
+            f.append(bear_count >= 2)                          # F1
+            f.append(28 < rsi < 65)                            # F2
+            f.append(macd_hist < 0 or m5_macd < 0)             # F3
+            f.append(vol > 1.05)                               # F4
+            f.append(bool(brk_dn) or pchg5 < -0.2)             # F5
+            return f
 
         if not acik_pozisyon:
-            # 1) Çoklu periyot yükseliş trendi uyumu (5m ağırlıklı, esnek eşik)
-            if bull_count >= 2 and rsi < 75 and vol > 0.9:
-                return "BUY"
-            # 2) Klasik: yükseliş trendi + kırılım + hacim
-            if up_trend and brk_up and vol > 1.1 and rsi < 78 \
-               and m5_rsi < 78 and m10_rsi < 78 and m30_rsi < 78:
-                return "BUY"
-            # 3) Erken trend yakalama: 5m yükseliş + ivme + hacim patlaması
-            if m5_ema == "bullish" and pchg5 > 0.25 and vol > 1.15:
-                return "BUY"
-            # 4) Basit EMA cross + makul RSI (API'siz de işlem açsın diye eklenen yumuşak kural)
-            if base_ema == "bullish" and rsi > 40 and rsi < 72 and vol > 0.8:
+            fb = _bull_filters()
+            # En az 3 filtre uyumlu olmali (tek indikator YETMEZ)
+            if sum(fb) >= 3:
                 return "BUY"
         else:
-            # 1) Çoklu periyot düşüş trendi uyumu
-            if bear_count >= 2 and rsi > 25 and vol > 0.9:
+            fs = _bear_filters()
+            # Satista da en az 3 filtre (konsensuz "hoparlör" satis engellenir)
+            # + KOMISYON KORUMASI: acilistan en az MIN_HOLD_SN saniye gecmeden
+            #   SAT sinyali tetiklenmez (gercek borsada spread+komisyonu karsilar)
+            import time as _t
+            MIN_HOLD_SN = settings.scalp_min_hold_sec
+            gecen = (_t.time() - giris_zamani) if giris_zamani else 9999
+            if sum(fs) >= 3 and gecen >= MIN_HOLD_SN:
                 return "SELL"
-            # 2) Klasik: mikro düşüş trendi + aşağı kırılım
-            if dn_trend and brk_dn and vol > 1.1 and rsi > 22:
-                return "SELL"
-            # 3) Erken çıkış: 5m düşüş + ivme
-            if m5_ema == "bearish" and pchg5 < -0.25 and vol > 1.15:
-                return "SELL"
-            # 4) Basit EMA cross + makul RSI (kâr realizasyonu için yumuşak kural)
-            if base_ema == "bearish" and rsi > 28 and rsi < 60 and vol > 0.8:
-                return "SELL"
-            # 5) Küçük kâr realizasyonu: fiyat girişin üzerindeyse %0.3'ten fazla, sat
-            import datetime as _dt
-            # (giris_fiyati mevcut_portfoy uzerinden gelir; burada teknik fiyatla kiyas)
         return "HOLD"
 
     def _hold_karar(self, risk_seviyesi, strateji_notu, system_log=""):

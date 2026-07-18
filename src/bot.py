@@ -513,6 +513,7 @@ class Bot:
             if result:
                 db.save_trade("BUY", result["price"], result["qty"], 0, "AI sinyali", result["price"], result.get("mode", "SIM"))
                 quant_agent.state["son_giris_fiyati"] = result["price"]
+                quant_agent.state["son_alis_zamani"] = time.time()
                 quant_agent._save_state()
                 self.bekleyen_alis = None
                 self.bekleyen_satis = None

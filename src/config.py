@@ -54,8 +54,10 @@ class Settings:
     # Guvenlik cap'i: ATR asiri buyukse bile SL/TP bu yuzdeyi asamaz.
     scalp_max_sl_pct = float(os.getenv("SCALP_MAX_SL_PCT", "0.6"))
     scalp_max_tp_pct = float(os.getenv("SCALP_MAX_TP_PCT", "1.2"))
-    # Trailing (kademeli SL) baslatma esigi (kisa vadede erken kilit).
-    scalp_trailing_trigger_pct = float(os.getenv("SCALP_TRAILING_TRIGGER_PCT", "0.5"))
+    # Komisyon korumasi: acilistan en az bu sure (sn) gecmeden SAT yapilmaz.
+    # Gercek borsada maker %0.1 + spread + slippage ~ islem basina %0.3-0.4
+    # maliyet; bunu karsilamak icin fiyatin en az ~%0.4 hareket etmesi gerekir.
+    scalp_min_hold_sec = float(os.getenv("SCALP_MIN_HOLD_SEC", "300"))
 
     # Scalping modunda kısmi uyuşma ile de işlem açılabilsin (varsayılan 2/5)
     consensus_min = int(os.getenv("CONSENSUS_MIN", "2"))
