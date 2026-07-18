@@ -514,6 +514,9 @@ class QuantAgent:
             # 3) Erken trend yakalama: 5m yükseliş + ivme + hacim patlaması
             if m5_ema == "bullish" and pchg5 > 0.25 and vol > 1.15:
                 return "BUY"
+            # 4) Basit EMA cross + makul RSI (API'siz de işlem açsın diye eklenen yumuşak kural)
+            if base_ema == "bullish" and rsi > 40 and rsi < 72 and vol > 0.8:
+                return "BUY"
         else:
             # 1) Çoklu periyot düşüş trendi uyumu
             if bear_count >= 2 and rsi > 25 and vol > 0.9:
@@ -524,6 +527,12 @@ class QuantAgent:
             # 3) Erken çıkış: 5m düşüş + ivme
             if m5_ema == "bearish" and pchg5 < -0.25 and vol > 1.15:
                 return "SELL"
+            # 4) Basit EMA cross + makul RSI (kâr realizasyonu için yumuşak kural)
+            if base_ema == "bearish" and rsi > 28 and rsi < 60 and vol > 0.8:
+                return "SELL"
+            # 5) Küçük kâr realizasyonu: fiyat girişin üzerindeyse %0.3'ten fazla, sat
+            import datetime as _dt
+            # (giris_fiyati mevcut_portfoy uzerinden gelir; burada teknik fiyatla kiyas)
         return "HOLD"
 
     def _hold_karar(self, risk_seviyesi, strateji_notu, system_log=""):

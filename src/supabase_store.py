@@ -246,6 +246,8 @@ def load_agent_state():
 
 def save_consensus_states(data):
     """5 AI ajanının durumlarını (ağırlıklar, doğruluklar) kaydet."""
+    if not is_connected():
+        return
     c = _client()
     if not c:
         return
@@ -262,6 +264,8 @@ def save_consensus_states(data):
 
 def load_consensus_states():
     """5 AI ajanının durumlarını Supabase'den yükle."""
+    if not is_connected():
+        return None
     c = _client()
     if not c:
         return None
