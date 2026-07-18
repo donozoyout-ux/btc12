@@ -3,12 +3,47 @@
   "min_confidence_threshold": 0.45,
   "lessons": [],
   "last_review": null,
-  "trades_since_review": 5,
+  "trades_since_review": 13,
   "total_reviews": 0,
   "trade_lessons": [
     {
       "time": "2026-07-18T12:48:40.026233",
       "lesson": "Zararlı işlem: [negatif MACD] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
+    },
+    {
+      "time": "2026-07-18T13:22:53.051125",
+      "lesson": "Zararlı işlem: [zayıflayan MACD momentumu] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
+    },
+    {
+      "time": "2026-07-18T13:37:54.692205",
+      "lesson": "Zararlı işlem: [negatif MACD, bearish EMA kesişimi] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
+    },
+    {
+      "time": "2026-07-18T13:39:24.022563",
+      "lesson": "Zararlı işlem: [bearish EMA kesişimi] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
+    },
+    {
+      "time": "2026-07-18T13:43:10.120188",
+      "lesson": "Zararlı işlem: [bearish EMA kesişimi] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
+    },
+    {
+      "time": "2026-07-18T13:44:01.670522",
+      "lesson": "Zararlı işlem: [zayıflayan MACD momentumu] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
+    },
+    {
+      "time": "2026-07-18T17:29:37.727236",
+      "lesson": "Zararlı işlem: [normal gösterge değerleri] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
+    },
+    {
+      "time": "2026-07-18T17:37:09.371620",
+      "lesson": "Zararlı işlem: [düşük RSI (29), negatif MACD, bearish EMA kesişimi] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
+    },
+    {
+      "time": "2026-07-18T17:44:08.917138",
+      "lesson": "Zararlı işlem: [zayıflayan MACD momentumu] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
     }
-  ]
+  ],
+  "min_exit_move_pct": 0.0,
+  "avg_hold_sec": 0.0,
+  "commission_tolerance": 1.5
 }

@@ -21,16 +21,20 @@ MEMORY_FILE = "self_improve.json"
 DEFAULT_STATE = {
     "position_aggressiveness": 1.0,   # 0.4 .. 2.0
     "min_confidence_threshold": 0.45,  # konsensüs güven alt sınırı
-    "lessons": [],                     # öğrenilen dersler
+    # ─── DİNAMİK DESEN HAFIZASI (ezber DEĞİL, istatistik) ───
+    # patterns: gösterge kombinasyonu -> {hits, misses, last_seen, ttl}
+    #   sistem her işlemde deseni günceller; başarısız desen ZAMAN AŞIMI
+    #   ile otomatik geçersizleşir (piyasa rejimi değişince ezber kalmaz).
+    "patterns": {},                   # {"negatif MACD|bearish EMA": {...}}
+    "pattern_ttl_hours": 168,         # 7 gün sonra desen "bayatlar", değeri yarıya düşer
+    "lessons": [],                     # son dinamik dersler (gösterim için)
     "last_review": None,
     "trades_since_review": 0,
     "total_reviews": 0,
     # ─── DİNAMİK KOMİSYON KORUMASI (sistem kendi ayarlar) ───
-    # min_exit_move: pozisyonun kapanması için gereken min fiyat hareketi (%).
-    #   başlangıçta komisyon × safety; bot zarar sıklığına göre bunu öğrenir.
-    "min_exit_move_pct": 0.0,        # 0 = ilk işlemde hesaplanır
-    "avg_hold_sec": 0.0,             # öğrenilen ortalama tutma süresi
-    "commission_tolerance": 1.5,     # güvenlik çarpanı (öğrenilir)
+    "min_exit_move_pct": 0.0,
+    "avg_hold_sec": 0.0,
+    "commission_tolerance": 1.5,
 }
 
 
@@ -161,23 +165,110 @@ def describe_entry_condition(t):
     return ", ".join(parts) if parts else "normal gösterge değerleri"
 
 
+def _pattern_key(cond_text):
+    """Gösterge kombinasyonunu normalize edip anahtar üretir.
+    'negatif MACD, bearish EMA' -> 'bearish EMA|negatif MACD' (sıralı, stabil)."""
+    if not cond_text:
+        return "bilinmeyen"
+    parts = [p.strip() for p in cond_text.split(",") if p.strip()]
+    if not parts:
+        return "normal"
+    return "|".join(sorted(parts))
+
+
+def record_pattern(cond_text, action, profitable, pnl=0.0):
+    """DİNAMİK DESEN ÖĞRENMESİ (ezber DEĞİL).
+    Her işlemde gösterge kombinasyonunu (desen) günceller:
+      - hits/misses sayar, başarı oranı canlı hesaplanır
+      - last_seen güncellenir (TTL için)
+      - TTL: bayatlayan desenlerin değeri otomatik düşürülür
+    profitable=True -> kârlı, False -> zararlı
+    """
+    key = _pattern_key(cond_text)
+    cfg = load()
+    patterns = cfg.setdefault("patterns", {})
+    now = datetime.now()
+
+    # TTL DECAY: bayat desenlerin etkisini azalt (piyasa değiştiğinde ezber kalmaz)
+    ttl_h = cfg.get("pattern_ttl_hours", 168)
+    for k, p in patterns.items():
+        last = p.get("last_seen")
+        if last:
+            try:
+                age_h = (now - datetime.fromisoformat(last)).total_seconds() / 3600
+                if age_h > ttl_h:
+                    # Bayatlamış: ağırlığı yarıya düş (ama silme, yeniden öğrenebilir)
+                    p["weight"] = round(p.get("weight", 1.0) * 0.5, 3)
+                    p["last_decay"] = now.isoformat()
+            except Exception:
+                pass
+
+    p = patterns.get(key, {
+        "hits": 0, "misses": 0, "weight": 1.0,
+        "last_seen": None, "pnl_sum": 0.0, "count": 0,
+    })
+    p["count"] += 1
+    p["pnl_sum"] = round(p.get("pnl_sum", 0.0) + pnl, 4)
+    if profitable:
+        p["hits"] += 1
+    else:
+        p["misses"] += 1
+    p["last_seen"] = now.isoformat()
+    # Ağırlık: başarı oranı (bayatlamada düşer)
+    tot = p["hits"] + p["misses"]
+    if tot > 0:
+        p["weight"] = round(p["hits"] / tot, 3)
+    patterns[key] = p
+    cfg["patterns"] = patterns
+    save(cfg)
+
+    # Dinamik ders üret (gösterim için, son 20)
+    if not profitable and p["misses"] >= 2 and p["hits"] < p["misses"]:
+        win_rate = p["hits"] / tot
+        lesson = (f"Desen [{key}] {p['misses']}/{tot} kez ZARAR verdi "
+                  f"(başarı %{win_rate*100:.0f}). Bu kombinasyonda AL sinyali zayıflatıldı.")
+        _append_lesson(cfg, lesson)
+    elif profitable and p["hits"] >= 3 and p["hits"] > p["misses"]:
+        win_rate = p["hits"] / tot
+        lesson = (f"Desen [{key}] {p['hits']}/{tot} kez KÂRLI "
+                  f"(başarı %{win_rate*100:.0f}). Bu kombinasyon güçlendirildi.")
+        _append_lesson(cfg, lesson)
+
+
+def _append_lesson(cfg, lesson):
+    lessons = cfg.setdefault("lessons", [])
+    lessons.append({"time": datetime.now().isoformat(), "lesson": lesson})
+    cfg["lessons"] = lessons[-20:]
+    save(cfg)
+
+
+def get_pattern_warning(cond_text):
+    """Bir giriş deseni için dinamik uyarı/öncelik döner.
+    Döner: (weight, note)  weight < 0.5 ise o desenden KAÇIN, > 0.6 ise güçlendir.
+    """
+    key = _pattern_key(cond_text)
+    cfg = load()
+    p = cfg.get("patterns", {}).get(key)
+    if not p or p.get("count", 0) < 2:
+        return (1.0, "")
+    tot = p["hits"] + p["misses"]
+    wr = p["hits"] / tot if tot else 0.5
+    note = f"[{key}] geçmiş: {p['hits']}/{tot} kârlı (%{wr*100:.0f})"
+    return (round(wr, 2), note)
+
+
 def add_trade_lesson(text):
-    """Zarar/stop-loss işleminden üretilen mini dersi hafızaya kaydeder."""
+    """ESKİ API uyumluluğu: statik metin yerine artık pattern motoru kullanılır.
+    Doğrudan pattern kaydı için record_pattern() tercih edilir."""
     if not text:
         return
     cfg = load()
-    cfg.setdefault("trade_lessons", [])
-    cfg["trade_lessons"].append({
-        "time": datetime.now().isoformat(),
-        "lesson": text,
-    })
-    cfg["trade_lessons"] = cfg["trade_lessons"][-20:]
-    save(cfg)
+    _append_lesson(cfg, text)
 
 
 def get_trade_lessons(limit=10):
     cfg = load()
-    return list(reversed(cfg.get("trade_lessons", [])[-limit:]))
+    return list(reversed(cfg.get("lessons", [])[-limit:]))
 
 
 def decide_position_size(equity, confidence, win_rate=0.5, drawdown_pct=0.0, daily_progress=0.0):
