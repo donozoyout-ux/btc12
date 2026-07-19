@@ -454,6 +454,22 @@ class QuantAgent:
                       f"|{details}")
         return self._hold_karar(risk_seviyesi, "Konsensüs yok", system_log)
 
+    def _hold_karar(self, risk_seviyesi, strateji_notu, system_log=""):
+        return {
+            "action": "HOLD",
+            "confidence_score": 0.0,
+            "execution": {
+                "size_percentage": 0.0,
+                "stop_loss": 0.0,
+                "take_profit": 0.0,
+            },
+            "memory_update": {
+                "aktif_strateji_notu": strateji_notu,
+                "risk_seviyesi_ayari": risk_seviyesi,
+            },
+            "system_log": system_log
+        }
+
     def _scalp_sl_tp(self, fiyat, atr):
         """
         Kısa vadeli (M10/M30) scalping için DİNAMİK stop-loss / take-profit.
