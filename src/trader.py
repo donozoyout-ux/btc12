@@ -255,9 +255,9 @@ class Trader:
             bid_ask_ratio = round(bid_volume / ask_volume, 3) if ask_volume > 0 else 1.0
 
             if bid_ask_ratio > 1.1:
-                sinyal = "al"
+                sinyal = "alis_baskisi"
             elif bid_ask_ratio < 0.9:
-                sinyal = "sat"
+                sinyal = "satis_baskisi"
             else:
                 sinyal = "notr"
 
