@@ -156,6 +156,18 @@ class QuantAgent:
             system_log = "HATA: Teknik analiz verisi eksik"
             return self._hold_karar("normal", "", system_log)
 
+        # ─── İŞLEM SIKLIGI SINIRI ───
+        # Ardışık işlemler arasında min bekleyiş (aşırı al-sat döngüsünü kırar,
+        # komisyonu yiyen mikro-hareketleri engeller).
+        from src import self_improve
+        MIN_TRADE_GAP_SN = 300  # 5 dakika
+        if self_improve.seconds_since_last_trade() < MIN_TRADE_GAP_SN:
+            return self._hold_karar(
+                self.state.get("risk_seviyesi_ayari", "normal"),
+                f"İşlem sıklığı sınırı: son işlemden {MIN_TRADE_GAP_SN}s geçmedi",
+                "TRADE_GAP"
+            )
+
         fiyat = teknik_analiz["price"]
         rsi = teknik_analiz["rsi"]
         ema_cross = teknik_analiz["ema_cross"]
@@ -542,7 +554,7 @@ class QuantAgent:
             f.append(bull_count >= 2)                          # F1
             f.append(35 < rsi < 72)                            # F2
             f.append(macd_hist > 0 or m5_macd > 0)             # F3
-            f.append(vol > 1.05)                               # F4
+            f.append(vol > 1.2)                                # F4 (hacim teyidi güçlendirildi)
             f.append(bool(brk_up) or pchg5 > 0.2)              # F5
             return f
 
@@ -551,23 +563,23 @@ class QuantAgent:
             f.append(bear_count >= 2)                          # F1
             f.append(28 < rsi < 65)                            # F2
             f.append(macd_hist < 0 or m5_macd < 0)             # F3
-            f.append(vol > 1.05)                               # F4
+            f.append(vol > 1.2)                                # F4 (hacim teyidi güçlendirildi)
             f.append(bool(brk_dn) or pchg5 < -0.2)             # F5
             return f
 
         if not acik_pozisyon:
             fb = _bull_filters()
-            # En az 3 filtre uyumlu olmali (tek indikator YETMEZ)
-            if sum(fb) >= 3:
+            # En az 4 filtre uyumlu olmali (daha az yanlis giris, komisyonu karsilar)
+            if sum(fb) >= 4:
                 return "BUY"
         else:
             fs = _bear_filters()
-            # Satista da en az 3 filtre (konsensuz "hoparlör" satis engellenir)
+            # Satista da en az 4 filtre (konsensuz "hoparlör" satis engellenir)
             # + DINAMIK KOMISYON KORUMASI (sistem kendi ogrenir, sabit degil)
             import time as _t
             gecen = (_t.time() - giris_zamani) if giris_zamani else 9999
             MIN_HOLD_SN = settings.scalp_min_hold_sec
-            if sum(fs) >= 3 and gecen >= MIN_HOLD_SN:
+            if sum(fs) >= 4 and gecen >= MIN_HOLD_SN:
                 giris_fiyati = self.state.get("son_giris_fiyati", 0) or t.get("price", 0)
                 if not self._should_hold_for_commission(t.get("price", 0), giris_fiyati):
                     return "SELL"

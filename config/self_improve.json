@@ -1,6 +1,6 @@
 {
   "position_aggressiveness": 1.0,
-  "min_confidence_threshold": 0.45,
+  "min_confidence_threshold": 0.55,
   "lessons": [
     {
       "time": "2026-07-19T12:47:32.468994",
@@ -60,7 +60,7 @@
       "lesson": "Zararlı işlem: [zayıflayan MACD momentumu] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
     }
   ],
-  "min_exit_move_pct": 0.0,
+  "min_exit_move_pct": 1.05,
   "avg_hold_sec": 0.0,
   "commission_tolerance": 1.5,
   "patterns": {},

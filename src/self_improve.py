@@ -92,6 +92,12 @@ def compute_min_exit_move():
     learned = s.get("min_exit_move_pct", 0.0)
     if learned > 0:
         min_move = max(min_move, learned)
+    else:
+        # LAZY-INIT: db'de min_exit 0 ise taban eşiğini oraya yaz ki
+        # komisyon koruması ilk işlemden itibaren aktif olsun.
+        cfg = load()
+        cfg["min_exit_move_pct"] = round(min_move, 4)
+        save(cfg)
     return round(min_move, 4)
 
 
@@ -417,5 +423,21 @@ def review_and_adapt(db, consensus):
 def note_trade_closed():
     cfg = load()
     cfg["trades_since_review"] = cfg.get("trades_since_review", 0) + 1
+    # Son işlem kapanış zamanı (işlem sıklığı sınırı için)
+    cfg["last_trade_time"] = datetime.now().isoformat()
     save(cfg)
     return cfg.get("trades_since_review", 0)
+
+
+def seconds_since_last_trade():
+    """Son işlemden bu yana geçen süre (sn). İşlem yoksa çok büyük döner."""
+    cfg = load()
+    lt = cfg.get("last_trade_time")
+    if not lt:
+        return 999999
+    try:
+        from datetime import datetime as _dt
+        delta = _dt.now() - _dt.fromisoformat(lt)
+        return delta.total_seconds()
+    except Exception:
+        return 999999

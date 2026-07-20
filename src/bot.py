@@ -512,7 +512,9 @@ class Bot:
             result = executor.buy(size_pct, amount_usd=amount_usd)
             if result:
                 db.save_trade("BUY", result["price"], result["qty"], 0, "AI sinyali", result["price"], result.get("mode", "SIM"))
-                quant_agent.state["son_giris_fiyati"] = result["price"]
+                # Giriş maliyeti KOMİSYON DAHİL efektif fiyat olarak kaydedilir ki
+                # scalp satış kontrolü komisyonu doğru hesaba katsın.
+                quant_agent.state["son_giris_fiyati"] = executor._sim_entry if hasattr(executor, "_sim_entry") else result["price"]
                 quant_agent.state["son_alis_zamani"] = time.time()
                 quant_agent._save_state()
                 self.bekleyen_alis = None
