@@ -334,6 +334,10 @@ body {
       <span class="text-[10px] text-blue-400 font-bold uppercase tracking-wider">AI MODEL DOĞRULUK</span>
       <h2 class="text-sm font-extrabold font-mono text-blue-400 mt-1" id="sAiAccuracy">---</h2>
     </div>
+    <div class="glass p-4 rounded-xl flex flex-col justify-between border border-rose-500/20">
+      <span class="text-[10px] text-rose-400 font-bold uppercase tracking-wider">TOPLAM KOMİSYON</span>
+      <h2 class="text-xl font-extrabold font-mono text-rose-300 mt-1" id="sCommission">₺0,00</h2>
+    </div>
   </section>
 
   <!-- Grafik ve Karar Kayıtları Grid -->
@@ -450,6 +454,14 @@ body {
           <div class="bg-surface-lowest/60 rounded-lg p-2 text-center">
             <div class="text-[9px] text-slate-500 font-bold uppercase">GÜVEN EŞİĞİ</div>
             <div class="text-sm font-extrabold font-mono text-cyan-400" id="siConf">0.45</div>
+          </div>
+          <div class="bg-surface-lowest/60 rounded-lg p-2 text-center">
+            <div class="text-[9px] text-slate-500 font-bold uppercase">KOM. ORANI</div>
+            <div class="text-sm font-extrabold font-mono text-rose-300" id="siComm">0.35%</div>
+          </div>
+          <div class="bg-surface-lowest/60 rounded-lg p-2 text-center">
+            <div class="text-[9px] text-slate-500 font-bold uppercase">MIN ÇIKIŞ</div>
+            <div class="text-sm font-extrabold font-mono text-amber-400" id="siMinExit">--%</div>
           </div>
         </div>
         <div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">SON ÖĞRENİLEN DERSLER</div>
@@ -839,6 +851,7 @@ function openPnlDetail(idx) {
     ['Mod', t.mode || 'SIM'],
     ['Giriş Fiyatı', entry > 0 ? '$' + entry.toFixed(2) : '--'],
     ['Çıkış Fiyatı', exit > 0 ? '$' + exit.toFixed(2) : '--'],
+    ['Komisyon (Giriş+Çıkış)', t.fee ? '$' + t.fee.toFixed(2) : '--'],
     ['Getiri %', (roi >= 0 ? '+' : '') + roi.toFixed(2) + '%'],
     ['Net K/Z', (pos ? '+' : '') + tryFmt(t.pnl)]
   ];
@@ -1070,7 +1083,9 @@ function updateStatus() {
     } else {
       aiEl.textContent = 'EĞİTİLİYOR...';
     }
-  }).catch(() => {});
+
+    var commEl = document.getElementById('sCommission');
+    if (commEl) commEl.textContent = tryFmt(d.total_commission || 0);
 
   fetch('/api/memory').then(r => r.json()).then(m => {
     var stats = m.stats || {};
@@ -1135,7 +1150,8 @@ function updateStatus() {
         var pnlStr = t.pnl !== 0 ? (t.pnl >= 0 ? '+' + t.pnl.toFixed(2) : t.pnl.toFixed(2)) : '---';
         var pnlColor = t.pnl > 0 ? 'text-emerald-400 bg-emerald-500/10' : t.pnl < 0 ? 'text-rose-400 bg-rose-500/10' : 'text-slate-400';
         var reasonStr = t.reason ? t.reason.substring(0, 20) : 'Algoritmik';
-        
+        var feeStr = t.fee ? (t.fee >= 0 ? '-' + t.fee.toFixed(2) : t.fee.toFixed(2)) : '0.00';
+
         html += '<div class="glass p-3 rounded-xl flex items-center justify-between text-xs font-mono trade-item">';
         html += '  <div class="flex items-center space-x-3">';
         html += '    <span class="text-slate-500">' + time + '</span>';
@@ -1146,6 +1162,7 @@ function updateStatus() {
         html += '    <span class="text-white font-semibold">' + tryFmt(t.price) + '</span>';
         var invested = (t.qty * (t.entry_price || t.price)) || 0;
         html += '    <span class="text-[10px] text-slate-400">Yat: ' + tryFmt(invested) + '</span>';
+        html += '    <span class="text-[10px] text-rose-400/70" title="İşlem komisyonu">Kom: ' + tryFmt(t.fee ? -t.fee : 0) + '</span>';
         html += '    <span class="text-[10px] text-slate-500 max-w-[90px] truncate">' + reasonStr + '</span>';
         html += '    <span class="px-2 py-0.5 rounded font-extrabold text-[10px] ' + pnlColor + '">' + (t.pnl !== 0 ? tryFmt(t.pnl) : '---') + '</span>';
         html += '  </div>';
@@ -1249,10 +1266,14 @@ function updateSelfImprove() {
     var p = d.params || {};
     var aggEl = document.getElementById('siAgg');
     var confEl = document.getElementById('siConf');
+    var commEl = document.getElementById('siComm');
+    var minExitEl = document.getElementById('siMinExit');
     var lesEl = document.getElementById('siLessons');
     if (!aggEl) return;
     aggEl.textContent = (p.position_aggressiveness || 1).toFixed(2) + 'x';
     confEl.textContent = (p.min_confidence_threshold || 0.45).toFixed(2);
+    if (commEl) commEl.textContent = ((d.commission_rate || 0) * 100).toFixed(2) + '%';
+    if (minExitEl) minExitEl.textContent = ((d.min_exit_move_pct || 0)).toFixed(2) + '%';
     var lessons = d.lessons || [];
     if (lessons.length > 0) {
       var h = '';
@@ -1753,7 +1774,7 @@ def api_manual_buy():
             return jsonify({"success": False, "message": result.get("message", "Binance işlem yetkisi yok")})
         if result:
             invested = result.get("cost", amount)
-            db.save_trade("BUY", result["price"], result["qty"], 0, "Manuel Islem", result["price"], result.get("mode", "SIM"))
+            db.save_trade("BUY", result["price"], result["qty"], 0, "Manuel Islem", result["price"], result.get("mode", "SIM"), result.get("fee", 0))
             tg.send(f"🟢 <b>MANUEL ALIS GERCEKLESTIRILDI</b>\n\nFiyat: <code>${result['price']:,.2f}</code>\nMiktar: <code>{result['qty']:.6f} BTC</code>\nTutar: <code>${invested:,.2f}</code>\nMod: <b>{result.get('mode', 'SIM')}</b>")
             return jsonify({"success": True, "message": f"{invested:,.2f} USDT değerinde alım yapıldı ({result.get('mode', 'SIM')})"})
         else:
@@ -1773,8 +1794,9 @@ def api_manual_sell():
         if result:
             pl = result.get("pl", 0)
             mode = result.get("mode", "SIM")
+            fee = result.get("fee", 0)
             quant_agent.islem_sonucu_kaydet(pl)
-            db.save_trade("SELL", result["price"], result["qty"], pl, "Manuel Satis", quant_agent.state.get("son_giris_fiyati", 0), mode)
+            db.save_trade("SELL", result["price"], result["qty"], pl, "Manuel Satis", quant_agent.state.get("son_giris_fiyati", 0), mode, fee)
             tg.send(f"🔴 <b>MANUEL SATIS GERCEKLESTIRILDI</b>\n\nFiyat: <code>${result['price']:,.2f}</code>\nMiktar: <code>{result['qty']:.6f} BTC</code>\nKar/Zarar: <b>${pl:+,.2f}</b>\nMod: <b>{mode}</b>")
             return jsonify({"success": True, "message": f"Satım yapıldı ({mode})"})
         else:
@@ -1890,7 +1912,12 @@ def api_reset_sim():
 @app.route('/api/self_improve')
 def api_self_improve():
     from src import self_improve
-    return jsonify({"params": self_improve.get_params(), "lessons": self_improve.get_lessons(8)})
+    return jsonify({
+        "params": self_improve.get_params(),
+        "lessons": self_improve.get_lessons(8),
+        "commission_rate": settings.commission_rate,
+        "min_exit_move_pct": self_improve.load().get("min_exit_move_pct", 0.0),
+    })
 
 
 @app.route('/api/reset_all', methods=['POST'])

@@ -48,7 +48,8 @@ class Database:
                     pnl REAL,
                     reason TEXT,
                     entry_price REAL,
-                    mode TEXT DEFAULT 'SIM'
+                    mode TEXT DEFAULT 'SIM',
+                    fee REAL DEFAULT 0
                 )
             """)
             conn.execute("""
@@ -80,6 +81,10 @@ class Database:
                 conn.execute("ALTER TABLE trades ADD COLUMN mode TEXT DEFAULT 'SIM'")
             except:
                 pass
+            try:
+                conn.execute("ALTER TABLE trades ADD COLUMN fee REAL DEFAULT 0")
+            except:
+                pass
             conn.commit()
         finally:
             conn.close()
@@ -99,15 +104,15 @@ class Database:
         finally:
             conn.close()
 
-    def save_trade(self, action, price, qty, pnl=0, reason="", entry_price=0, mode="SIM"):
+    def save_trade(self, action, price, qty, pnl=0, reason="", entry_price=0, mode="SIM", fee=0):
         conn = self._conn()
         try:
             conn.execute(
-                "INSERT INTO trades (created_at, action, price, qty, pnl, reason, entry_price, mode) VALUES (?,?,?,?,?,?,?,?)",
-                (datetime.now().isoformat(), action, price, qty, pnl, reason, entry_price, mode)
+                "INSERT INTO trades (created_at, action, price, qty, pnl, reason, entry_price, mode, fee) VALUES (?,?,?,?,?,?,?,?,?)",
+                (datetime.now().isoformat(), action, price, qty, pnl, reason, entry_price, mode, fee)
             )
             conn.commit()
-            supabase_store.save_trade(action, price, qty, pnl, reason, entry_price, mode)
+            supabase_store.save_trade(action, price, qty, pnl, reason, entry_price, mode, fee)
         finally:
             conn.close()
 
@@ -131,6 +136,7 @@ class Database:
             total_pnl = conn.execute("SELECT COALESCE(SUM(pnl), 0) FROM trades WHERE action='SELL'").fetchone()[0]
             scan_count = conn.execute("SELECT COUNT(*) FROM scans").fetchone()[0]
             total_buys = conn.execute("SELECT COUNT(*) FROM trades WHERE action='BUY'").fetchone()[0]
+            total_fee = conn.execute("SELECT COALESCE(SUM(fee), 0) FROM trades").fetchone()[0]
             return {
                 "toplam_islem": total,
                 "kazanma": wins,
@@ -139,7 +145,15 @@ class Database:
                 "toplam_kar_zarar": round(total_pnl, 2),
                 "toplam_tarama": scan_count,
                 "toplam_alim": total_buys,
+                "toplam_komisyon": round(total_fee, 2),
             }
+        finally:
+            conn.close()
+
+    def total_commission(self):
+        conn = self._conn()
+        try:
+            return round(conn.execute("SELECT COALESCE(SUM(fee), 0) FROM trades").fetchone()[0], 2)
         finally:
             conn.close()
 
@@ -165,7 +179,7 @@ class Database:
         conn = self._conn()
         try:
             rows = conn.execute(
-                "SELECT created_at, action, price, qty, pnl, reason, entry_price, mode FROM trades ORDER BY id DESC LIMIT ?",
+                "SELECT created_at, action, price, qty, pnl, reason, entry_price, mode, fee FROM trades ORDER BY id DESC LIMIT ?",
                 (limit,)
             ).fetchall()
             return [
@@ -178,6 +192,7 @@ class Database:
                     "reason": r[5] or "",
                     "entry_price": r[6] or 0,
                     "mode": r[7] or "SIM",
+                    "fee": round(r[8], 2) if r[8] else 0,
                 }
                 for r in rows
             ]
@@ -189,7 +204,7 @@ class Database:
         conn = self._conn()
         try:
             rows = conn.execute(
-                "SELECT created_at, action, pnl, mode, price, entry_price FROM trades ORDER BY id DESC LIMIT ?",
+                "SELECT created_at, action, pnl, mode, price, entry_price, fee FROM trades ORDER BY id DESC LIMIT ?",
                 (limit,)
             ).fetchall()
             return [
@@ -200,6 +215,7 @@ class Database:
                     "mode": r[3] or "SIM",
                     "price": r[4] or 0,
                     "entry_price": r[5] or 0,
+                    "fee": round(r[6], 2) if r[6] else 0,
                 }
                 for r in rows
             ]

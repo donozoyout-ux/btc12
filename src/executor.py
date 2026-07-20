@@ -323,35 +323,45 @@ class Executor:
         # aksi halde kalan küçük bakiye 0.0001 BTC (~$6) zoruyla negatife dönerdi).
         if qty <= 0 or qty * price < 0.01:
             return None
-        cost = price * qty
+        # KOMISYON: giriş işlem ücreti (gerçek borsa gibi bakiyeden düşülür).
+        fee = price * qty * settings.commission_rate
+        cost = price * qty + fee
         old_btc = self._sim_btc
         # Sert güvence: bakiye asla negatif olmasın.
         self._sim_balance = max(0.0, self._sim_balance - cost)
         self._sim_btc += qty
 
+        # Giriş maliyeti KOMİSYON DAHİL efektif fiyat olarak kaydedilir ki
+        # satışta net (komisyonlu) kâr/zarar doğru hesaplansın.
+        eff_entry = cost / qty
         if old_btc > 0.0001:
-            self._sim_entry = round(((self._sim_entry * old_btc) + (price * qty)) / self._sim_btc, 2)
+            self._sim_entry = round(((self._sim_entry * old_btc) + (eff_entry * qty)) / self._sim_btc, 2)
         else:
-            self._sim_entry = price
+            self._sim_entry = eff_entry
 
         settings.last_entry_price = self._sim_entry
         self._save_state()
         return {"price": price, "qty": round(qty, 8), "cost": round(cost, 2),
-                "order_id": "dry_buy", "mode": "SIM"}
+                "fee": round(fee, 2), "order_id": "dry_buy", "mode": "SIM"}
 
     def _dry_sell(self):
         if self._sim_btc <= 0.0001:
             return None
         price = trader.get_price()
         sell_qty = self._sim_btc
-        pnl = (price - self._sim_entry) * sell_qty
+        gross = price * sell_qty
+        # KOMISYON: çıkış işlem ücreti (gerçek borsa gibi düşülür).
+        fee = gross * settings.commission_rate
+        # NET PNL: brüt gelir - çıkış komisyonu - (komisyon dahil giriş maliyeti)
+        pnl = gross - fee - (self._sim_entry * sell_qty)
         cost_basis = round(sell_qty * self._sim_entry, 2)
-        self._sim_balance += price * sell_qty
+        self._sim_balance += gross - fee
         self._sim_btc = 0.0
         self._sim_entry = 0.0
         self._save_state()
         return {"qty": round(sell_qty, 6), "pl": round(pnl, 6), "price": price,
-                "cost": cost_basis, "order_id": "dry_sell", "mode": "SIM"}
+                "gross": round(gross, 2), "fee": round(fee, 2), "cost": cost_basis,
+                "order_id": "dry_sell", "mode": "SIM"}
 
     def _binance_buy(self, size_pct=100, amount_usd=None):
         price = trader.get_price()
@@ -403,13 +413,15 @@ class Executor:
             filled_qty = round(invest_amount / price, 6)
             avg_price = price
 
-        self._sim_entry = avg_price
+        # Giriş maliyeti KOMİSYON DAHİL efektif fiyat (avg_price = zaten komisyonlu
+        # ortalama fill fiyatıdır, ccxt 'cost' komisyon dahil verir).
+        self._sim_entry = (cost / filled_qty) if filled_qty > 0 else avg_price
         self._sim_btc = filled_qty
         self._sim_balance = free_quote - cost if free_quote > cost else 0.0
-        settings.last_entry_price = avg_price
+        settings.last_entry_price = self._sim_entry
         self._save_state()
 
-        print(f"[BINANCE] ALIS basarili: {filled_qty:.6f} {settings.base_asset} @ {avg_price:,.2f} {settings.quote_asset} (cost: {cost:.2f})")
+        print(f"[BINANCE] ALIS basarili: {filled_qty:.6f} {settings.base_asset} @ {avg_price:,.2f} {settings.quote_asset} (cost: {cost:.2f}, fee dahil)")
         return {"price": avg_price, "qty": round(filled_qty, 6), "order_id": str(order.get('id', 'binance_buy')), "mode": "REAL"}
 
     def _binance_sell(self):
@@ -444,14 +456,16 @@ class Executor:
 
         pnl = 0.0
         if self._sim_entry > 0:
-            pnl = (avg_price - self._sim_entry) * filled_qty
+            gross = avg_price * filled_qty
+            fee = gross * settings.commission_rate
+            pnl = gross - fee - (self._sim_entry * filled_qty)
 
         self._sim_entry = 0.0
         self._sim_btc = 0.0
-        self._sim_balance = float(balance['free'].get(settings.quote_asset, 0.0)) + cost
+        self._sim_balance = float(balance['free'].get(settings.quote_asset, 0.0)) + (avg_price * filled_qty) - (avg_price * filled_qty * settings.commission_rate)
         self._save_state()
 
-        print(f"[BINANCE] SATIS basarili: {filled_qty:.6f} {settings.base_asset} @ {avg_price:,.2f} {settings.quote_asset} (PNL: {pnl:+.2f})")
+        print(f"[BINANCE] SATIS basarili: {filled_qty:.6f} {settings.base_asset} @ {avg_price:,.2f} {settings.quote_asset} (NET PNL: {pnl:+.2f}, fee dahil)")
         return {"qty": round(filled_qty, 6), "pl": round(pnl, 6), "price": avg_price, "order_id": str(order.get('id', 'binance_sell')), "mode": "REAL"}
 
 

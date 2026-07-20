@@ -797,6 +797,8 @@ class Bot:
                 "symbol": settings.symbol,
                 "quote_asset": settings.quote_asset,
                 "usd_try": trader.get_usd_try_rate(),
+                "commission_rate": settings.commission_rate,
+                "total_commission": db.total_commission(),
             }
         except Exception as e:
             return {"running": self.running, "error": str(e), "son_hata": self.son_hata}

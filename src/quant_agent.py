@@ -680,6 +680,20 @@ class QuantAgent:
         self._save_state()
         self._save_agent_states()
 
+        # ─── ANINDA DERS (hata → öğrenme) ───
+        # Komisyonlu net PNL üzerinden; zararlı işlemde sistem kendine not düşer.
+        try:
+            from src import self_improve
+            if kar_zarar < 0:
+                lesson = (f"Zararlı işlem (net PNL ${kar_zarar:+.2f}, komisyon dahil): "
+                          f"sinyal tekrarlanmasın. Giriş: ${giris_fiyati:.2f}")
+            else:
+                lesson = (f"Kârlı işlem (net PNL ${kar_zarar:+.2f}, komisyon dahil): "
+                          f"bu sinyal kombinasyonu tekrarlanabilir.")
+            self_improve.add_trade_lesson(lesson)
+        except Exception as e:
+            print(f"[LESSON] anlık ders kaydi hatasi (yok sayildi): {e}")
+
     def get_state(self):
         return self.state
 

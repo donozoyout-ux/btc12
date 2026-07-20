@@ -23,6 +23,7 @@ from src.analyzer import analyzer
 from src.news import news_fetcher
 from src.database import db
 from src import supabase_store
+from src import self_improve
 
 load_dotenv()
 
@@ -150,7 +151,7 @@ def execute_trade(decision: dict, portfolio: dict, current_price: float):
         logger.info(f"BUY emri gonderiliyor... Size: {size_pct}%, Amount: ${amount_usd or settings.position_size_usd}")
         result = executor.buy(size_pct=size_pct, amount_usd=amount_usd)
         if result:
-            db.save_trade("BUY", result["price"], result["qty"], 0, decision.get("system_log", ""), result["price"], result.get("mode", "REAL"))
+            db.save_trade("BUY", result["price"], result["qty"], 0, decision.get("system_log", ""), result["price"], result.get("mode", "REAL"), result.get("fee", 0))
             logger.info(f"ALIS BASARILI: {result}")
         else:
             logger.error("ALIS BASARISIZ")
@@ -164,12 +165,17 @@ def execute_trade(decision: dict, portfolio: dict, current_price: float):
         result = executor.sell()
         if result:
             pnl = result.get("pl", 0.0)
-            db.save_trade("SELL", result["price"], result["qty"], pnl, decision.get("system_log", ""), pos.get("avg_entry_price", 0), result.get("mode", "REAL"))
+            fee = result.get("fee", 0.0)
+            gross = result.get("gross", 0.0)
+            db.save_trade("SELL", result["price"], result["qty"], pnl, decision.get("system_log", ""), pos.get("avg_entry_price", 0), result.get("mode", "REAL"), fee)
             # QuantAgent'e sonucu bildir
             quant_agent.islem_sonucu_kaydet(pnl)
-            logger.info(f"SATIS BASARILI: {result} | PNL: ${pnl:+.2f}")
-        else:
-            logger.error("SATIS BASARISIZ")
+            logger.info(f"SATIS BASARILI: {result} | PNL: ${pnl:+.2f} | Komisyon: ${fee:+.2f} (brüt: ${gross:.2f})")
+
+    # İşlem kapandıysa (BUY/SELL) adaptasyon sayacını ilerlet (periyodik
+    # review_and_adapt zaten scan döngüsünde her 50 taramada çalışır)
+    if action in ("BUY", "SELL"):
+        self_improve.note_trade_closed()
 
 
 def main():

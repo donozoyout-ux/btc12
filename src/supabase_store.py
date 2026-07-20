@@ -25,7 +25,7 @@ def is_connected():
     return _client() is not None
 
 
-def save_trade(action, price, qty, pnl, reason, entry_price, mode):
+def save_trade(action, price, qty, pnl, reason, entry_price, mode, fee=0):
     c = _client()
     if not c:
         return
@@ -39,6 +39,7 @@ def save_trade(action, price, qty, pnl, reason, entry_price, mode):
             "reason": reason,
             "entry_price": entry_price,
             "mode": mode,
+            "fee": fee,
         }).execute()
     except Exception as e:
         print(f"[SUPABASE] save_trade hatasi: {e}")

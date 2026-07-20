@@ -1,9 +1,26 @@
 {
   "position_aggressiveness": 1.0,
   "min_confidence_threshold": 0.45,
-  "lessons": [],
+  "lessons": [
+    {
+      "time": "2026-07-19T12:47:32.468994",
+      "lesson": "Zararlı işlem: [negatif MACD, bearish EMA kesişimi] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
+    },
+    {
+      "time": "2026-07-19T13:01:56.417353",
+      "lesson": "Zararlı işlem: [zayıflayan MACD momentumu] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
+    },
+    {
+      "time": "2026-07-19T13:04:28.411527",
+      "lesson": "Zararlı işlem: [zayıflayan MACD momentumu] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
+    },
+    {
+      "time": "2026-07-19T13:10:28.841883",
+      "lesson": "Zararlı işlem: [zayıflayan MACD momentumu, bearish EMA kesişimi] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
+    }
+  ],
   "last_review": null,
-  "trades_since_review": 13,
+  "trades_since_review": 22,
   "total_reviews": 0,
   "trade_lessons": [
     {
@@ -45,5 +62,7 @@
   ],
   "min_exit_move_pct": 0.0,
   "avg_hold_sec": 0.0,
-  "commission_tolerance": 1.5
+  "commission_tolerance": 1.5,
+  "patterns": {},
+  "pattern_ttl_hours": 168
 }
