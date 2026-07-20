@@ -125,6 +125,45 @@ class Trader:
     # ──────────────────────────────────────────────────────────────
     #  OHLCV (mum) verisi — CoinGecko (canlı) -> sentetik
     # ──────────────────────────────────────────────────────────────
+    def _binance_bars(self, interval, limit):
+        """Binance public klines (anahtarsız, salt-okunur) — CoinGecko
+        başarısız/eksik olduğunda OHLCV kaynağı olarak kullanılır.
+        Bu, orderbook için zaten kullanılan public endpoint'in mum versiyonudur.
+        """
+        try:
+            sym = settings.symbol.replace("/", "").upper()
+            tf = str(interval).strip().lower()
+            if tf not in _VALID_TF:
+                tf = "1m"
+            url = (f"https://api.binance.com/api/v3/klines"
+                   f"?symbol={sym}&interval={tf}&limit={limit}")
+            proxies = {"http": settings.binance_proxy, "https": settings.binance_proxy} if settings.binance_proxy else None
+            r = requests.get(url, timeout=12, proxies=proxies,
+                             headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code != 200:
+                return None
+            rows = r.json()
+            if not rows or len(rows) < 2:
+                return None
+            opens, highs, lows, closes, vols, dts = [], [], [], [], [], []
+            for row in rows:
+                dts.append(pd.to_datetime(int(row[0]), unit="ms"))
+                opens.append(float(row[1]))
+                highs.append(float(row[2]))
+                lows.append(float(row[3]))
+                closes.append(float(row[4]))
+                vols.append(float(row[5]))
+            df = pd.DataFrame({
+                "datetime": dts, "open": opens, "high": highs,
+                "low": lows, "close": closes, "volume": vols,
+            })
+            self._last_price = float(closes[-1])
+            self._last_source = "binance"
+            return df
+        except Exception as e:
+            print(f"[TRADER] Binance klines hatasi: {e}")
+            return None
+
     def _coingecko_bars(self, interval, limit):
         minutes = self._tf_to_min(interval)
         total_min = minutes * limit
@@ -172,6 +211,10 @@ class Trader:
 
     def _fetch_ohlcv(self, interval, limit):
         df = self._coingecko_bars(interval, limit)
+        if df is not None and len(df) >= 2:
+            return df
+        # CoinGecko yoksa Binance public klines (anahtarsız) dene
+        df = self._binance_bars(interval, limit)
         if df is not None and len(df) >= 2:
             return df
         return None

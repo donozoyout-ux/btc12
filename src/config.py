@@ -41,7 +41,7 @@ class Settings:
     # Varsayilan: sim (gercek islem acilmaz). Gercek Binance islemi icin
     # asagidaki degeri "binance" yapip API anahtari vermen gerekir.
     executor_mode = os.getenv("EXECUTOR_MODE", "sim")
-    stop_loss_pct = float(os.getenv("STOP_LOSS_PCT", "3"))
+    stop_loss_pct = float(os.getenv("STOP_LOSS_PCT", "2"))
     last_entry_price = 0
     memory_file = "state.json"
 
@@ -56,12 +56,14 @@ class Settings:
     scalp_max_tp_pct = float(os.getenv("SCALP_MAX_TP_PCT", "3.0"))
     # Dinamik komisyon korumasi icin parametreler.
     # Gercek borsada islem basina toplam maliyet (giris+cikis maker + spread +
-    # slippage). Binance maker %0.1 x2 = %0.2, spread+slippage ile efektif ~%0.35.
-    # Bot bu degeri KENDISI ogrenip ayarlar (self_improve), burasi sadece baslangic.
-    commission_rate = float(os.getenv("COMMISSION_RATE", "0.0035"))
+    # slippage). Binance spot maker %0.1 x2 = %0.2 taban; yaygin gercek deger
+    # ~%0.1-0.2/side. Sim bu degere cekildi ki sim gercek maliyeti yansitsin
+    # (eski 0.0035 asiri ceza kesiyordu ve islemleri gereksiz engelliyordu).
+    commission_rate = float(os.getenv("COMMISSION_RATE", "0.001"))
     # Komsiyonu karsilamak icin gereken min fiyat hareketi payi (guvenlik carpani).
-    # 3.0 => taban min_exit = comm*2*3 = %2.1 (komisyonun 3 kati; net kar payi birakir).
-    commission_safety = float(os.getenv("COMMISSION_SAFETY", "3.0"))
+    # 1.2 => taban min_exit = comm*2*1.2 = %0.24 (komisyonun 1.2 kati pay birakir).
+    # Yuksek degerler (3.0) islemleri asiri engelleyip pozisyonlari takiyordu.
+    commission_safety = float(os.getenv("COMMISSION_SAFETY", "1.2"))
     # Baslangic min hold (sn) - bot bunu da ogrenir, bu sadece alt sinir
     scalp_min_hold_sec = float(os.getenv("SCALP_MIN_HOLD_SEC", "120"))
 

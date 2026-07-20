@@ -224,6 +224,11 @@ body {
 
     <div class="font-mono text-sm text-slate-400 bg-surface-lowest px-3 py-1.5 border border-white/5 rounded-lg" id="clock">--:--:--</div>
 
+    <!-- Veri Kaynağı (gerçek mi / sentetik mi?) -->
+    <div id="dataBadge" class="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[10px] font-bold text-emerald-300" title="Botun kullandigi piyasa verisi kaynagi">
+      <span>📡</span><span id="dataText">VERİ: --</span>
+    </div>
+
     <!-- USD/TRY Kuru -->
     <div id="fxBadge" class="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[10px] font-bold text-emerald-300" title="Canlı döviz kuru (1$ = ?₺)">
       <span>💱</span><span id="fxText">$1 = ₺--</span>
@@ -1136,6 +1141,23 @@ function updateStatus() {
       aiEl.innerHTML = '%' + (d.ai_accuracy * 100).toFixed(1) + ' <span class="text-[9px] text-slate-500 font-normal">(' + d.ai_prediction_count + 't)</span>';
     } else {
       aiEl.textContent = 'EĞİTİLİYOR...';
+    }
+
+    // Veri kaynağı rozeti (gerçek mi / sentetik mi?)
+    var ds = d.data_source;
+    var dataBadge = document.getElementById('dataBadge');
+    var dataText = document.getElementById('dataText');
+    if (dataBadge && dataText) {
+      if (ds === 'coingecko' || ds === 'binance') {
+        dataText.textContent = (ds === 'binance' ? 'VERİ: BINANCE' : 'VERİ: COINGECKO');
+        dataBadge.className = 'flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[10px] font-bold text-emerald-300';
+      } else if (ds === 'synthetic') {
+        dataText.textContent = '⚠️ VERİ: SENTETİK (gerçek değil!)';
+        dataBadge.className = 'flex items-center gap-2 px-3 py-1.5 bg-rose-500/15 border border-rose-500/40 rounded-lg text-[10px] font-bold text-rose-300 animate-pulse';
+      } else {
+        dataText.textContent = 'VERİ: --';
+        dataBadge.className = 'flex items-center gap-2 px-3 py-1.5 bg-slate-500/10 border border-white/10 rounded-lg text-[10px] font-bold text-slate-400';
+      }
     }
   }).catch(() => {});
 

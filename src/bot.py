@@ -270,6 +270,23 @@ class Bot:
                      "system_log": f"ANALYZE_ERROR:{e}", "memory_update": {}}
         action = karar.get("action", "HOLD")
         confidence = karar.get("confidence_score", 0.0)
+
+        # ─── HARD STOP-LOSS (batık pozisyon koruması) ───
+        # Fiyat girişin stop_loss_pct kadar altına inerse pozisyon KOMİSYON
+        # KORUMASINDAN BAĞIMSIZ olarak kapanır (quant_agent guard'ı bypass edilir).
+        # Böylece zarar eden pozisyonlar "takılmaz", gerçek zarar realize edilir
+        # ve sermaye korunur.
+        if acik_pozisyon:
+            try:
+                sl_pct = settings.stop_loss_pct
+                if sl_pct and sl_pct > 0:
+                    drop = (price - giris_fiyati) / giris_fiyati * 100
+                    if drop <= -sl_pct:
+                        print(f"  -> HARD STOP-LOSS tetiklendi: dusus %{drop:.2f} <= -%{sl_pct:.2f}")
+                        action = "SELL"
+                        karar["system_log"] = (karar.get("system_log") or "") + " | HARD_SL"
+            except Exception as e:
+                print(f"[SCAN] SL kontrol hatasi: {e}")
         self.last_scan_data = teknik
         self.last_news = haberler
 
@@ -805,6 +822,7 @@ class Bot:
                 "aggressive_mode": settings.aggressive_mode,
                 "symbol": settings.symbol,
                 "quote_asset": settings.quote_asset,
+                "data_source": getattr(trader, "_last_source", None),
                 "usd_try": trader.get_usd_try_rate(),
                 "commission_rate": settings.commission_rate,
                 "total_commission": db.total_commission(),

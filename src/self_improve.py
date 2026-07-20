@@ -76,29 +76,29 @@ def get_params():
 
 
 def compute_min_exit_move():
-    """Pozisyonun kapanması için gereken min fiyat hareketini (%)
-    KENDISI hesaplar: komisyon × güvenlik çarpanı.
+    """Pozisyonun kapanması için gereken min fiyat hareketi (%).
 
-    Formül: min_exit = commission_rate × 2 (giriş+çıkış) × tolerance
-    Örnek: 0.0035 × 2 × 1.5 = %1.05  → fiyat en az %1.05 hareket
-    etmeden işlem kapanmaz (komisyonu karşılar + pay bırakır).
+    KOMİSYON TABANINA SABİTLENMİŞTİR (öğrenme ile yukarı kaçmaz):
+      taban = commission_rate × 2 (giriş+çıkış) × commission_safety
+      üst sınır (cap) = taban × 1.5
+    Öğrenilmiş değer varsa [taban, cap] aralığına sıkıştırılır; böylece
+    min_exit asla pozisyonları takacak seviyeye yükselmez.
     """
     from src.config import settings
     comm = settings.commission_rate
-    s = load()
-    tol = s.get("commission_tolerance", settings.commission_safety)
-    min_move = comm * 2 * tol * 100  # % cinsinden
-    # Öğrenilmiş min_exit varsa onu kullan (ama komisyonun altına düşmez)
-    learned = s.get("min_exit_move_pct", 0.0)
+    base = comm * 2 * settings.commission_safety * 100  # % cinsinden taban
+    cap = base * 1.5  # pozisyonlarin takilmamasi icin ust sinir
+    learned = load().get("min_exit_move_pct", 0.0) or 0.0
     if learned > 0:
-        min_move = max(min_move, learned)
+        move = min(max(base, learned), cap)
     else:
+        move = base
         # LAZY-INIT: db'de min_exit 0 ise taban eşiğini oraya yaz ki
         # komisyon koruması ilk işlemden itibaren aktif olsun.
         cfg = load()
-        cfg["min_exit_move_pct"] = round(min_move, 4)
+        cfg["min_exit_move_pct"] = round(move, 4)
         save(cfg)
-    return round(min_move, 4)
+    return round(move, 4)
 
 
 def get_lessons(limit=500):
@@ -358,34 +358,21 @@ def review_and_adapt(db, consensus):
         cfg["min_confidence_threshold"] = max(0.4, cfg["min_confidence_threshold"] - 0.03)
         lesson += f" Güven eşiği {cfg['min_confidence_threshold']:.2f}'ye çekildi."
 
-    # ─── DİNAMİK KOMİSYON KORUMASI ÖĞRENMESİ ───
-    # Sık zararla kapanıyorsa min_exit_move_pct'i yükselt (daha uzun tut / daha
-    # az işlem), kârlı ama çok geç kapanıyorsa düşür (daha sık işlem).
-    # Bu SABİT DEĞİL; sistem kendi optimal eşiğini bulur.
+    # ─── DİNAMİK KOMİSYON KORUMASI (SABİTLENDİ) ───
+    # Eskiden sık zarar görünce min_exit_move_pct sürekli yükseltiliyordu; bu,
+    # SAT emrini engelleyip zarar eden pozisyonları "takıyor" ve gerçek
+    # zararı gizliyordu. Artık min_exit SADECE komisyon tabanına sabitlenir
+    # (komisyonu karşılayacak kadar hareket olmadan işlem kapanmaz) ve ASLA
+    # yukarı çekilmez. Zarar eden pozisyonlar ayrıca HARD STOP-LOSS ile kapanır
+    # (bkz. quant_agent._should_hold_for_commission / bot scan SL kontrolü).
     from src.config import settings
     comm = settings.commission_rate
     base_move = comm * 2 * settings.commission_safety * 100  # % cinsinden taban
-
-    # Son N işlemdeki zarar oranı
-    losses = [t for t in recent if t["pnl"] < 0]
-    loss_rate = len(losses) / len(recent)
-
-    cur_move = cfg.get("min_exit_move_pct", 0.0) or 0.0
-    if cur_move <= 0:
-        cur_move = base_move  # ilk değer: komisyon × güvenlik
-
-    if loss_rate > 0.5:
-        # Çok zarar ediyor -> eşiği yükselt (işlemi daha az ama daha emin yap)
-        cur_move = min(cur_move * 1.15, base_move * 3.0)
-        cfg["commission_tolerance"] = min(3.0, cfg.get("commission_tolerance", 1.5) * 1.1)
-        lesson += f" Sık zarar (%{loss_rate*100:.0f}) → min çıkış hareketi %{cur_move:.2f}'ye, güvenlik %{cfg['commission_tolerance']:.2f}'ye çıkarıldı (komisyon koruması güçlendi)."
-    elif loss_rate < 0.25 and avg_pnl > 0:
-        # Az zarar, kârlı -> eşiği düşür (daha sık ama güvenli işlem)
-        cur_move = max(cur_move * 0.95, base_move * 0.8)
-        cfg["commission_tolerance"] = max(1.2, cfg.get("commission_tolerance", 1.5) * 0.97)
-        lesson += f" Az zarar, kârlı (%{win_rate*100:.0f}) → min çıkış hareketi %{cur_move:.2f}'ye çekildi (daha sık işlem, komisyon hâlâ karşılanıyor)."
-
-    cfg["min_exit_move_pct"] = round(cur_move, 4)
+    # Öğrenilen değeri komisyon tabanının çok az üstünde (max 1.5x) tut,
+    # böylece pozisyonlar mantıklı seviyede kapanır, asla tuzağa düşmez.
+    learned = cfg.get("min_exit_move_pct", 0.0) or 0.0
+    cfg["min_exit_move_pct"] = round(min(max(learned, base_move), base_move * 1.5), 4)
+    cfg["commission_tolerance"] = settings.commission_safety
 
     # Ortalama tutma süresini öğren (son 10 işlemden)
     try:
