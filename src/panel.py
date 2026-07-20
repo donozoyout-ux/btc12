@@ -9,6 +9,7 @@ from src.config import settings
 from src.telegram import tg
 from src.quant_agent import quant_agent
 from src.database import db
+from src import risk
 
 app = Flask(__name__)
 
@@ -166,6 +167,11 @@ body {
 </style>
 </head>
 <body class="font-sans antialiased pb-12">
+<!-- ACİL DURDURMA BANNER -->
+<div id="emergencyBanner" style="display:none" class="bg-rose-600 text-white text-center px-4 py-2.5 font-extrabold text-sm tracking-wide flex items-center justify-center gap-4 z-[60] shadow-lg shadow-rose-500/40">
+  <span class="animate-pulse">🛑 SYSTEM STOPPED — EMERGENCY MODE</span>
+  <button onclick="resumeSystem()" class="btn bg-white text-rose-700 text-xs font-extrabold px-3 py-1.5 rounded-md hover:bg-rose-100">SİSTEMİ YENİDEN BAŞLAT (RESUME)</button>
+</div>
 <header class="bg-surface-lowest/80 backdrop-blur-md border-b border-white/5 px-6 py-4 flex flex-col md:flex-row items-center justify-between sticky top-0 z-50">
   <div class="flex items-center space-x-4 mb-4 md:mb-0">
     <div class="p-2.5 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-xl shadow-lg shadow-indigo-500/20">
@@ -199,6 +205,12 @@ body {
         SAT
       </button>
     </div>
+
+    <!-- ACİL DURDURMA (KILL SWITCH) -->
+    <button id="btnKillSwitch" onclick="openKillModal()" class="btn bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold px-4 py-2 rounded-lg shadow-lg shadow-rose-500/30 flex items-center gap-1.5 animate-pulse" title="Tüm otonom işlemleri ve açık emirleri acilen durdur">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+      KILL SWITCH
+    </button>
 
     <!-- Sistem Kontrolleri -->
     <div class="flex items-center gap-2 bg-surface-lowest border border-white/5 rounded-lg p-1">
@@ -971,6 +983,71 @@ function showNotification(msg, type) {
   }, 3500);
 }
 
+// ─── ACİL DURDURMA (KILL SWITCH) ───
+function openKillModal() {
+  var modal = document.getElementById('killModal');
+  modal.style.display = 'flex';
+  setTimeout(function() { modal.classList.add('modal-visible'); }, 10);
+}
+function closeKillModal() {
+  var modal = document.getElementById('killModal');
+  modal.classList.remove('modal-visible');
+  setTimeout(function() { modal.style.display = 'none'; }, 200);
+}
+function confirmKill() {
+  closeKillModal();
+  showNotification('Acil durdurma tetikleniyor...', 'warning');
+  fetch('/api/risk/kill-switch', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({reason: 'Manuel panic button (dashboard)'})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      showNotification('🛑 SİSTEM DURDURULDU — EMERGENCY MODE', 'error');
+      updateRisk();
+      setTimeout(updateStatus, 800);
+    } else {
+      showNotification('Hata: ' + (d.message || 'bilinmiyor'), 'error');
+    }
+  })
+  .catch(() => showNotification('Sunucu bağlantı hatası', 'error'));
+}
+function resumeSystem() {
+  showNotification('Sistem yeniden başlatılıyor...', 'info');
+  fetch('/api/risk/resume', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({reason: 'Manuel resume (dashboard)'})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      showNotification('✅ SİSTEM YENİDEN AKTİF', 'success');
+      updateRisk();
+      setTimeout(updateStatus, 800);
+    } else {
+      showNotification('Hata: ' + (d.message || 'bilinmiyor'), 'error');
+    }
+  })
+  .catch(() => showNotification('Sunucu bağlantı hatası', 'error'));
+}
+function updateRisk() {
+  fetch('/api/risk/status').then(r => r.json()).then(d => {
+    var banner = document.getElementById('emergencyBanner');
+    var killBtn = document.getElementById('btnKillSwitch');
+    if (!banner) return;
+    if (d.mode === 'EMERGENCY_STOP') {
+      banner.style.display = 'flex';
+      if (killBtn) { killBtn.style.display = 'none'; }
+    } else {
+      banner.style.display = 'none';
+      if (killBtn) { killBtn.style.display = 'flex'; }
+    }
+  }).catch(() => {});
+}
+
 function openBrainsEditor() {
   fetch('/api/brains').then(r => r.json()).then(d => {
     var html = '';
@@ -1413,6 +1490,7 @@ updateAgents();
 updatePnlHistory();
 updateReflection();
 updateNews();
+updateRisk();
 
 // Polling intervals
 setInterval(updateStatus, 5000);
@@ -1426,6 +1504,7 @@ setInterval(updateAgents, 5000);
 setInterval(updateAnalytics, 10000);
 setInterval(updateNews, 30000);
 setInterval(loadFx, 300000);
+setInterval(updateRisk, 5000);
 
 // ==========================================
 // ==========================================
@@ -1620,6 +1699,25 @@ function closeAgentModal() {
 
 </script>
 
+<!-- KILL SWITCH KONFİRMASYON MODALI -->
+<div id="killModal" onclick="if(event.target===this)closeKillModal()" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(80,0,10,0.75);backdrop-filter:blur(8px);z-index:9999;justify-content:center;align-items:center;opacity:0;transition:opacity 0.2s ease">
+  <div style="background:linear-gradient(135deg,#2a0a10 0%,#3a0d16 100%);border-radius:20px;border:1px solid #ff5a78;max-width:460px;width:92%;padding:26px;box-shadow:0 25px 60px rgba(0,0,0,0.7)">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <div style="background:rgba(255,90,120,0.15);border:1px solid #ff5a78;border-radius:12px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg class="w-6 h-6 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path></svg>
+      </div>
+      <h3 style="font-size:18px;font-weight:900;color:#fff;margin:0">ACİL DURDURMA</h3>
+    </div>
+    <p style="font-size:13px;color:#ffd0d8;line-height:1.5;margin-bottom:20px">
+      Tüm otonom işlemler ve açık emirler durdurulacak. Onaylıyor musunuz?
+    </p>
+    <div style="display:flex;gap:10px">
+      <button onclick="confirmKill()" style="flex:1;background:#ff2d55;color:#fff;font-weight:800;font-size:13px;padding:12px;border-radius:12px;border:none;cursor:pointer">🛑 EVET, DURDUR</button>
+      <button onclick="closeKillModal()" style="background:rgba(255,255,255,0.08);color:#ffd0d8;font-weight:700;font-size:13px;padding:12px 18px;border-radius:12px;border:1px solid rgba(255,90,120,0.3);cursor:pointer">İPTAL</button>
+    </div>
+  </div>
+</div>
+
 <!-- AI BEYİNLERİ DÜZENLEME MODALI -->
 <div id="brainsModal" onclick="if(event.target===this)closeBrainsModal()" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;justify-content:center;align-items:center;opacity:0;transition:opacity 0.2s ease">
   <div style="background:linear-gradient(135deg,#14161f 0%,#1a1b21 100%);border-radius:20px;border:1px solid #232634;max-width:640px;width:92%;max-height:88vh;overflow-y:auto;padding:24px;box-shadow:0 25px 50px rgba(0,0,0,0.6)">
@@ -1664,6 +1762,43 @@ function closeAgentModal() {
 @app.route('/')
 def index():
     return render_template_string(HTML)
+
+
+@app.route('/api/risk/status')
+def api_risk_status():
+    return jsonify(risk.get_status())
+
+
+@app.route('/api/risk/kill-switch', methods=['POST'])
+def api_risk_kill():
+    data = request.get_json(silent=True) or {}
+    reason = data.get('reason') or 'Manuel panic button (dashboard)'
+    try:
+        s = risk.trigger(bot, reason)
+        return jsonify({
+            "success": True,
+            "mode": s["mode"],
+            "emergency_at": s["emergency_at"],
+            "message": "ACIL DURDURMA aktif. Tum otonom islemler ve acik emirler durduruldu."
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+
+@app.route('/api/risk/resume', methods=['POST'])
+def api_risk_resume():
+    data = request.get_json(silent=True) or {}
+    reason = data.get('reason') or 'Manuel resume (dashboard)'
+    try:
+        s = risk.resume(bot, reason)
+        return jsonify({
+            "success": True,
+            "mode": s["mode"],
+            "resumed_at": s["resumed_at"],
+            "message": "Sistem yeniden aktif. Ajan donguleri baslatildi."
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
 
 
 @app.route('/api/status')
@@ -1725,6 +1860,8 @@ def api_sell():
 @app.route('/api/manual_buy', methods=['POST'])
 def api_manual_buy():
     try:
+        if risk.is_emergency():
+            return jsonify({"success": False, "message": "Sistem ACİL DURDURMA modunda. İşlem yapılamaz."})
         from src.executor import executor
         data = request.get_json(silent=True) or {}
         amount = float(data.get('amount', 0))
@@ -1747,6 +1884,8 @@ def api_manual_buy():
 @app.route('/api/manual_sell', methods=['POST'])
 def api_manual_sell():
     try:
+        if risk.is_emergency():
+            return jsonify({"success": False, "message": "Sistem ACİL DURDURMA modunda. İşlem yapılamaz."})
         from src.executor import executor
         # Sells the entire BTC position
         result = executor.sell()

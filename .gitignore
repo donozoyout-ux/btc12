@@ -8,5 +8,6 @@ __pycache__/
 state.json
 memory.json
 config.json
-bot.log
+ bot.log
 executor_state.json
+risk_state.json

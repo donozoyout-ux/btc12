@@ -8,6 +8,7 @@ except Exception:
 from src.config import settings
 from src.trader import trader
 from src import supabase_store
+from src import risk
 
 STATE_FILE = "executor_state.json"
 
@@ -245,7 +246,26 @@ class Executor:
                 return self._dry_position()
         return self._dry_position()
 
+    def cancel_open_orders(self):
+        """Borsa entegrasyonundaki tüm açık emirleri iptal eder (Kill Switch).
+
+        SIM modunda açık emir olmaz (market emirleri anında işler) -> no-op.
+        Binance modunda ccxt ile tüm açık emirler iptal edilir.
+        """
+        if settings.executor_mode == "binance" and self._client is not None:
+            try:
+                self._client.cancel_all_orders(symbol=settings.symbol)
+                print("[EXECUTOR] Tum acik emirler iptal edildi (KILL SWITCH).")
+            except Exception as e:
+                print(f"[EXECUTOR] Acik emir iptal hatasi: {e}")
+        else:
+            print("[EXECUTOR] SIM modu: iptal edilecek acik emir yok.")
+
     def buy(self, size_pct=100, amount_usd=None):
+        # ─── RİSK GUARD: ACİL DURDURMA modunda hiçbir işlem yapılmaz ───
+        if risk.is_emergency():
+            print("[EXECUTOR] EMERGENCY_STOP: ALIS engellendi (kill switch).")
+            return None
         if settings.executor_mode == "binance":
             if not self._client:
                 try:
@@ -266,6 +286,10 @@ class Executor:
         return self._dry_buy(size_pct, amount_usd)
 
     def sell(self):
+        # ─── RİSK GUARD: ACİL DURDURMA modunda hiçbir işlem yapılmaz ───
+        if risk.is_emergency():
+            print("[EXECUTOR] EMERGENCY_STOP: SATIS engellendi (kill switch).")
+            return None
         if settings.executor_mode == "binance":
             if not self._client:
                 try:

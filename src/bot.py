@@ -13,6 +13,7 @@ from src.ai_model import ai_model
 from src.agents import consensus
 from src import llm_agent
 from src import self_improve
+from src import risk
 
 
 class Bot:
@@ -103,6 +104,13 @@ class Bot:
         self.total_scans += 1
         self.last_scan = datetime.now().strftime('%H:%M:%S')
         print(f"\n[SCAN #{self.total_scans}] {self.last_scan}")
+
+        # ─── AJAN GUARD / KONTROL KONTROLÜ ───
+        # ACİL DURDURMA (EMERGENCY_STOP) modundaysa hiçbir ajan işlem
+        # yapmadan döngüyü sonlandırır (sadece guard logu basılır).
+        if risk.is_emergency():
+            print("[SCAN] EMERGENCY_STOP: ajan dongusu islem yapmadan sonlandirildi (kill switch).")
+            return
 
         try:
             df = trader.get_bars(500)
@@ -789,6 +797,7 @@ class Bot:
                 "ai_trained": ai_state.get("is_trained", False),
                 "ai_memory_size": ai_state.get("memory_size", 0),
                 "executor_mode": settings.executor_mode,
+                "risk_mode": risk.get_status()["mode"],
                 "sim_balance": executor._sim_balance if hasattr(executor, '_sim_balance') else 0,
                 "gemini_active": bool(settings.llm_api_key),
                 "gemini_last_decision": self.last_gemini_debate.get("final_decision", "---") if self.last_gemini_debate else "---",
