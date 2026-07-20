@@ -1872,7 +1872,7 @@ def api_reset_sim():
 @app.route('/api/self_improve')
 def api_self_improve():
     from src import self_improve
-    return jsonify({"params": self_improve.get_params(), "lessons": self_improve.get_lessons(8)})
+    return jsonify({"params": self_improve.get_params(), "lessons": self_improve.get_lessons()})
 
 
 @app.route('/api/reset_all', methods=['POST'])

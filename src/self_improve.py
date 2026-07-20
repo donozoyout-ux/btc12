@@ -101,7 +101,9 @@ def compute_min_exit_move():
     return round(min_move, 4)
 
 
-def get_lessons(limit=8):
+def get_lessons(limit=500):
+    """Tüm öğrenilen dersleri döndürür (kullanıcı: hiçbir ders silinmesin).
+    Varsayılan tavan 500 ile pratikte sonsuz koruma saglanir."""
     s = load()
     return list(reversed(s.get("lessons", [])[-limit:]))
 
@@ -244,7 +246,9 @@ def record_pattern(cond_text, action, profitable, pnl=0.0):
 def _append_lesson(cfg, lesson):
     lessons = cfg.setdefault("lessons", [])
     lessons.append({"time": datetime.now().isoformat(), "lesson": lesson})
-    cfg["lessons"] = lessons[-20:]
+    # DERSLER SAKLANIR (kullanici: hicbir ders silinmesin). Makul bir tavan
+    # (500) ile dosya sismesi engellenir; bu da "sonsuza kadar" koruma saglar.
+    cfg["lessons"] = lessons[-500:]
     save(cfg)
 
 
@@ -272,7 +276,7 @@ def add_trade_lesson(text):
     _append_lesson(cfg, text)
 
 
-def get_trade_lessons(limit=10):
+def get_trade_lessons(limit=500):
     cfg = load()
     return list(reversed(cfg.get("lessons", [])[-limit:]))
 
@@ -412,7 +416,7 @@ def review_and_adapt(db, consensus):
         "win_rate": round(win_rate, 2),
         "avg_pnl": round(avg_pnl, 2),
     })
-    cfg["lessons"] = cfg["lessons"][-40:]
+    cfg["lessons"] = cfg["lessons"][-500:]
     cfg["last_review"] = datetime.now().isoformat()
     cfg["total_reviews"] = cfg.get("total_reviews", 0) + 1
     cfg["trades_since_review"] = 0

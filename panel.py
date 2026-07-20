@@ -1914,7 +1914,7 @@ def api_self_improve():
     from src import self_improve
     return jsonify({
         "params": self_improve.get_params(),
-        "lessons": self_improve.get_lessons(8),
+        "lessons": self_improve.get_lessons(),
         "commission_rate": settings.commission_rate,
         "min_exit_move_pct": self_improve.load().get("min_exit_move_pct", 0.0),
     })

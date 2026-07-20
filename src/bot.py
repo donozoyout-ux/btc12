@@ -472,8 +472,7 @@ class Bot:
         try:
             from src import self_improve
             s = self_improve.load()
-            s["lessons"] = []
-            s["trade_lessons"] = []
+            # DERSLER KORUNUR (silinmez) - sadece agresiflik/guven sifirlanir
             s["position_aggressiveness"] = 1.0
             s["min_confidence_threshold"] = 0.45
             s["total_reviews"] = 0
@@ -741,11 +740,10 @@ class Bot:
         consensus.total_decisions = 0
         consensus.consensus_reached = 0
 
-        # 4. Öz-değerlendirme derslerini temizle (ayarlar korunur)
+        # 4. Ayarlar sifirlancak AMA dersler korunur (kullanici: dersler silinmesin)
         try:
             from src import self_improve
             s = self_improve.load()
-            s["lessons"] = []
             s["position_aggressiveness"] = 1.0
             s["total_reviews"] = 0
             s["trades_since_review"] = 0
