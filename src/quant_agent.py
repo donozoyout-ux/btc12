@@ -160,7 +160,7 @@ class QuantAgent:
         # Ardışık işlemler arasında min bekleyiş (aşırı al-sat döngüsünü kırar,
         # komisyonu yiyen mikro-hareketleri engeller).
         from src import self_improve
-        MIN_TRADE_GAP_SN = 300  # 5 dakika
+        MIN_TRADE_GAP_SN = 180  # 3 dakika (daha az ama daha buyuk hareketli islem)
         if self_improve.seconds_since_last_trade() < MIN_TRADE_GAP_SN:
             return self._hold_karar(
                 self.state.get("risk_seviyesi_ayari", "normal"),

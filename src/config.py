@@ -53,14 +53,15 @@ class Settings:
     scalp_tp_atr_mult = float(os.getenv("SCALP_TP_ATR_MULT", "1.8"))
     # Guvenlik cap'i: ATR asiri buyukse bile SL/TP bu yuzdeyi asamaz.
     scalp_max_sl_pct = float(os.getenv("SCALP_MAX_SL_PCT", "0.6"))
-    scalp_max_tp_pct = float(os.getenv("SCALP_MAX_TP_PCT", "1.5"))
+    scalp_max_tp_pct = float(os.getenv("SCALP_MAX_TP_PCT", "3.0"))
     # Dinamik komisyon korumasi icin parametreler.
     # Gercek borsada islem basina toplam maliyet (giris+cikis maker + spread +
     # slippage). Binance maker %0.1 x2 = %0.2, spread+slippage ile efektif ~%0.35.
     # Bot bu degeri KENDISI ogrenip ayarlar (self_improve), burasi sadece baslangic.
     commission_rate = float(os.getenv("COMMISSION_RATE", "0.0035"))
-    # Komsiyonu karsilamak icin gereken min fiyat hareketi payi (guvenlik carpani)
-    commission_safety = float(os.getenv("COMMISSION_SAFETY", "1.5"))
+    # Komsiyonu karsilamak icin gereken min fiyat hareketi payi (guvenlik carpani).
+    # 3.0 => taban min_exit = comm*2*3 = %2.1 (komisyonun 3 kati; net kar payi birakir).
+    commission_safety = float(os.getenv("COMMISSION_SAFETY", "3.0"))
     # Baslangic min hold (sn) - bot bunu da ogrenir, bu sadece alt sinir
     scalp_min_hold_sec = float(os.getenv("SCALP_MIN_HOLD_SEC", "120"))
 

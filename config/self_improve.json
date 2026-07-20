@@ -60,9 +60,9 @@
       "lesson": "Zararlı işlem: [zayıflayan MACD momentumu] ile AL yapıldı, terste kalındı. Bu gösterge kombinasyonunda (özellikle aşırı şişmiş/aykırı bölgelerde) tekrar AL sinyali üretme."
     }
   ],
-  "min_exit_move_pct": 1.05,
+  "min_exit_move_pct": 2.1,
   "avg_hold_sec": 0.0,
-  "commission_tolerance": 1.5,
+  "commission_tolerance": 3.0,
   "patterns": {},
   "pattern_ttl_hours": 168
 }
